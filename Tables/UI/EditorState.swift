@@ -1,0 +1,178 @@
+import SwiftUI
+
+/// A modal panel presented over the grid. iOS shows these as sheets; macOS uses
+/// popovers anchored to the toolbar.
+enum EditorPanel: String, Identifiable, Hashable {
+    case format
+    case numberFormat
+    case rowsAndColumns
+    case functions
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .format: return "Format"
+        case .numberFormat: return "Number Format"
+        case .rowsAndColumns: return "Rows & Columns"
+        case .functions: return "Functions"
+        }
+    }
+}
+
+/// Everything about the editing session that isn't part of the document itself.
+@MainActor
+@Observable
+final class EditorState {
+    var activeSheetID: Worksheet.ID?
+    var selection = CellRange(CellAddress(row: 0, column: 0))
+    /// The cell keyboard entry extends from when the selection is grown.
+    var anchor = CellAddress(row: 0, column: 0)
+    var editingAddress: CellAddress?
+    var editingText = ""
+    var isFormulaBarActive = false
+
+    /// Distance scrolled from the top-left of the content, insets removed.
+    var scrollOffset = CGPoint.zero
+    /// The scroll view's leading/top content insets, needed to convert back to
+    /// the raw offsets `ScrollPosition` expects.
+    var scrollInsets = CGSize.zero
+    var viewportSize = CGSize.zero
+    var metrics = SheetMetrics()
+    var scrollTarget: CellAddress?
+
+    /// Pinch-to-zoom factor for the grid.
+    var zoom: Double = 1
+    static let zoomRange: ClosedRange<Double> = 0.5...3
+
+    /// While a formula is being typed, the range most recently inserted into it,
+    /// so dragging can grow that reference instead of appending a new one.
+    var pendingReferenceRange: CellRange?
+
+    var presentedPanel: EditorPanel?
+    var errorMessage: String?
+    var clipboard: [[Cell]]?
+
+    // MARK: - Sheet resolution
+
+    /// The active sheet's index, falling back to the first sheet.
+    func activeIndex(in workbook: Workbook) -> Int {
+        if let activeSheetID, let index = workbook.index(of: activeSheetID) { return index }
+        return 0
+    }
+
+    func activeSheet(in workbook: Workbook) -> Worksheet {
+        workbook.sheets[activeIndex(in: workbook)]
+    }
+
+    func selectSheet(_ id: Worksheet.ID, in workbook: Workbook) {
+        activeSheetID = id
+        editingAddress = nil
+        selection = CellRange(CellAddress(row: 0, column: 0))
+        anchor = CellAddress(row: 0, column: 0)
+        scrollOffset = .zero
+        refreshMetrics(in: workbook)
+    }
+
+    func refreshMetrics(in workbook: Workbook) {
+        metrics = SheetMetrics(sheet: activeSheet(in: workbook), zoom: zoom)
+    }
+
+    /// True while the user is typing a formula, when tapping a cell should
+    /// insert a reference rather than move the selection.
+    var isEnteringFormula: Bool {
+        editingAddress != nil && editingText.hasPrefix("=")
+    }
+
+    /// Keeps the selection inside the sheet after rows or columns disappear.
+    func clampSelection(to sheet: Worksheet) {
+        func clamp(_ address: CellAddress) -> CellAddress {
+            CellAddress(
+                row: min(max(0, address.row), max(0, sheet.rowCount - 1)),
+                column: min(max(0, address.column), max(0, sheet.columnCount - 1))
+            )
+        }
+        selection = CellRange(start: clamp(selection.start), end: clamp(selection.end))
+        anchor = clamp(anchor)
+        if let editingAddress, !sheet.contains(editingAddress) { self.editingAddress = nil }
+    }
+
+    // MARK: - Selection
+
+    var selectedAddress: CellAddress { selection.normalized.start }
+
+    func select(_ address: CellAddress, extending: Bool = false) {
+        if extending {
+            selection = CellRange(start: anchor, end: address)
+        } else {
+            anchor = address
+            selection = CellRange(address)
+        }
+    }
+
+    func selectEntireRows(_ range: ClosedRange<Int>, in sheet: Worksheet) {
+        anchor = CellAddress(row: range.lowerBound, column: 0)
+        selection = CellRange(
+            start: anchor,
+            end: CellAddress(row: range.upperBound, column: max(0, sheet.columnCount - 1))
+        )
+    }
+
+    func selectEntireColumns(_ range: ClosedRange<Int>, in sheet: Worksheet) {
+        anchor = CellAddress(row: 0, column: range.lowerBound)
+        selection = CellRange(
+            start: anchor,
+            end: CellAddress(row: max(0, sheet.rowCount - 1), column: range.upperBound)
+        )
+    }
+
+    func selectAll(in sheet: Worksheet) {
+        anchor = CellAddress(row: 0, column: 0)
+        selection = CellRange(
+            start: anchor,
+            end: CellAddress(row: max(0, sheet.rowCount - 1), column: max(0, sheet.columnCount - 1))
+        )
+    }
+
+    /// True when the selection covers every row of some columns, and vice versa.
+    func selectionSpansEntireColumns(in sheet: Worksheet) -> Bool {
+        let box = selection.normalized
+        return box.start.row == 0 && box.end.row >= sheet.rowCount - 1
+    }
+
+    func selectionSpansEntireRows(in sheet: Worksheet) -> Bool {
+        let box = selection.normalized
+        return box.start.column == 0 && box.end.column >= sheet.columnCount - 1
+    }
+
+    // MARK: - Movement
+
+    enum MoveDirection { case up, down, left, right }
+
+    func move(_ direction: MoveDirection, extending: Bool = false, in sheet: Worksheet) {
+        let origin = extending ? selection.end : selectedAddress
+        var row = origin.row
+        var column = origin.column
+        switch direction {
+        case .up: row -= 1
+        case .down: row += 1
+        case .left: column -= 1
+        case .right: column += 1
+        }
+        // Skip over hidden lines so arrow keys never land somewhere invisible.
+        while row > 0, row < sheet.rowCount, sheet.hiddenRows.contains(row) {
+            row += (direction == .up) ? -1 : (direction == .down ? 1 : 0)
+            if direction != .up && direction != .down { break }
+        }
+        while column > 0, column < sheet.columnCount, sheet.hiddenColumns.contains(column) {
+            column += (direction == .left) ? -1 : (direction == .right ? 1 : 0)
+            if direction != .left && direction != .right { break }
+        }
+        let target = CellAddress(
+            row: min(max(0, row), max(0, sheet.rowCount - 1)),
+            column: min(max(0, column), max(0, sheet.columnCount - 1))
+        )
+        select(target, extending: extending)
+        scrollTarget = target
+    }
+}

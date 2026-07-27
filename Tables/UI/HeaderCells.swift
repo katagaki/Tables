@@ -1,0 +1,148 @@
+import SwiftUI
+
+/// A column letter button with a drag-to-resize grip on its trailing edge.
+/// Long-press (or right-click) opens the structure menu; so does a double tap.
+struct ColumnHeaderCell: View {
+    let title: String
+    let width: Double
+    let height: Double
+    let isSelected: Bool
+    /// Marks the seam where a hidden column was collapsed away.
+    let isHiddenNeighbor: Bool
+    let onSelect: () -> Void
+    let onResize: (Double) -> Void
+    let onFit: () -> Void
+    let actions: [HeaderMenuAction]
+
+    @State private var menuTrigger = 0
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 11, weight: isSelected ? .bold : .medium))
+            .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+            .frame(width: width, height: height)
+            .background(isSelected ? Color.accentColor.opacity(0.16) : .clear)
+            .contentShape(.rect)
+            .onTapGesture(count: 2) { menuTrigger += 1 }
+            .onTapGesture(perform: onSelect)
+            .contextMenu { HeaderActionMenu(actions: actions) }
+            .background { NativeMenuPresenter(actions: actions, trigger: menuTrigger) }
+            .overlay(alignment: .bottom) { Rectangle().fill(Color.gridLine).frame(height: 1) }
+            .overlay(alignment: .trailing) { HiddenSeam(isVertical: true, isVisible: isHiddenNeighbor) }
+            .overlay(alignment: .trailing) {
+                ResizeGrip(isVertical: true, onResize: onResize, onDoubleTap: onFit)
+            }
+            .accessibilityLabel(title)
+            .accessibilityAddTraits(.isButton)
+    }
+}
+
+/// A row number button with a drag-to-resize grip on its bottom edge.
+struct RowHeaderCell: View {
+    let title: String
+    let width: Double
+    let height: Double
+    let isSelected: Bool
+    let isHiddenNeighbor: Bool
+    let onSelect: () -> Void
+    let onResize: (Double) -> Void
+    let actions: [HeaderMenuAction]
+
+    @State private var menuTrigger = 0
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 11, weight: isSelected ? .bold : .medium))
+            .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+            .frame(width: width, height: height)
+            .background(isSelected ? Color.accentColor.opacity(0.16) : .clear)
+            .contentShape(.rect)
+            .onTapGesture(count: 2) { menuTrigger += 1 }
+            .onTapGesture(perform: onSelect)
+            .contextMenu { HeaderActionMenu(actions: actions) }
+            .background { NativeMenuPresenter(actions: actions, trigger: menuTrigger) }
+            .overlay(alignment: .trailing) { Rectangle().fill(Color.gridLine).frame(width: 1) }
+            .overlay(alignment: .bottom) { HiddenSeam(isVertical: false, isVisible: isHiddenNeighbor) }
+            .overlay(alignment: .bottom) {
+                ResizeGrip(isVertical: false, onResize: onResize)
+            }
+            .accessibilityLabel("Row \(title)")
+            .accessibilityAddTraits(.isButton)
+    }
+}
+
+/// A doubled hairline marking where hidden rows or columns were collapsed.
+private struct HiddenSeam: View {
+    let isVertical: Bool
+    let isVisible: Bool
+
+    var body: some View {
+        Group {
+            if isVertical {
+                HStack(spacing: 1) {
+                    Rectangle().frame(width: 1.5)
+                    Rectangle().frame(width: 1.5)
+                }
+            } else {
+                VStack(spacing: 1) {
+                    Rectangle().frame(height: 1.5)
+                    Rectangle().frame(height: 1.5)
+                }
+            }
+        }
+        .foregroundStyle(Color.accentColor.opacity(0.75))
+        .opacity(isVisible ? 1 : 0)
+        .allowsHitTesting(false)
+    }
+}
+
+/// Attaches a double-tap handler only when there is one, so the view below
+/// keeps receiving the gesture otherwise.
+private struct DoubleTapAction: ViewModifier {
+    let perform: (() -> Void)?
+
+    func body(content: Content) -> some View {
+        if let perform {
+            content.onTapGesture(count: 2, perform: perform)
+        } else {
+            content
+        }
+    }
+}
+
+/// The thin hit area between headers that resizes the neighbouring line.
+private struct ResizeGrip: View {
+    let isVertical: Bool
+    let onResize: (Double) -> Void
+    /// Omitted when the grip has nothing to do on a double tap, so the header
+    /// underneath keeps receiving it and can open its menu.
+    var onDoubleTap: (() -> Void)?
+
+    @State private var lastTranslation: Double = 0
+
+    var body: some View {
+        Rectangle()
+            .fill(Color.clear)
+            .frame(width: isVertical ? 10 : nil, height: isVertical ? nil : 10)
+            .contentShape(.rect)
+            .gesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { value in
+                        let total = isVertical ? value.translation.width : value.translation.height
+                        onResize(total - lastTranslation)
+                        lastTranslation = total
+                    }
+                    .onEnded { _ in lastTranslation = 0 }
+            )
+            .modifier(DoubleTapAction(perform: onDoubleTap))
+            #if os(macOS)
+            .onHover { inside in
+                if inside {
+                    (isVertical ? NSCursor.resizeLeftRight : NSCursor.resizeUpDown).push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            #endif
+    }
+}
