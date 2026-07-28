@@ -29,10 +29,13 @@ struct FormatPanel: View {
                                 .frame(width: 30, height: 30)
                                 .contentShape(.rect)
                         }
+                        .accessibilityIdentifier("fontSize.decrease")
+                        .accessibilityLabel("Smaller text")
                         Text(String(Int(style.fontSize)))
                             .font(.system(size: 17, weight: .medium))
                             .monospacedDigit()
                             .frame(minWidth: 30)
+                            .accessibilityIdentifier("fontSize.value")
                         Button {
                             state.applyStyle(in: &workbook) { $0.fontSize = min(96, $0.fontSize + 1) }
                         } label: {
@@ -41,6 +44,8 @@ struct FormatPanel: View {
                                 .frame(width: 30, height: 30)
                                 .contentShape(.rect)
                         }
+                        .accessibilityIdentifier("fontSize.increase")
+                        .accessibilityLabel("Larger text")
                     }
                     .buttonStyle(.borderless)
                 }
