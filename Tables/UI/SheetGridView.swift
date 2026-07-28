@@ -48,7 +48,7 @@ struct SheetGridView: View {
                 // A sibling rather than an overlay: the scroll view draws under
                 // the navigation bar, and the pinned headers must not follow it
                 // up into the safe area.
-                headerOverlay
+                headerOverlay(in: proxy)
                     .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
                     .clipped()
             }
@@ -73,15 +73,23 @@ struct SheetGridView: View {
     private func grid(in proxy: GeometryProxy) -> some View {
         ScrollView([.horizontal, .vertical]) {
             content
+                // At least the viewport in both axes. A sheet small enough to
+                // fit leaves the scroll view sizing its content to the grid,
+                // and a content box smaller than the viewport gets centred —
+                // which drags the headers off the top-left corner and floats
+                // the whole sheet in the middle of the screen.
                 .frame(
-                    width: rowHeaderWidth + metrics.totalWidth + trailingPadding,
-                    height: columnHeaderHeight + metrics.totalHeight + bottomPadding,
+                    width: max(proxy.size.width, rowHeaderWidth + metrics.totalWidth + trailingPadding),
+                    height: max(proxy.size.height, columnHeaderHeight + metrics.totalHeight + bottomPadding),
                     alignment: .topLeading
                 )
         }
             .scrollPosition($scrollPosition)
             .scrollBounceBehavior(.basedOnSize)
-            .background(Color.sheetBackground)
+            // Canvas, not paper: the sheet paints its own extent, so anything
+            // past the last row and column reads as the space around the sheet
+            // rather than as grid that failed to draw.
+            .background(Color.sheetCanvas)
             // `contentOffset` is measured from the scroll view's origin, which
             // sits above the navigation bar's content inset — so it is already
             // negative at rest. Adding the insets back gives distance scrolled
@@ -144,6 +152,10 @@ struct SheetGridView: View {
 
     private var content: some View {
         ZStack(alignment: .topLeading) {
+            Rectangle()
+                .fill(Color.sheetBackground)
+                .frame(width: metrics.totalWidth, height: metrics.totalHeight)
+
             ForEach(visibleRows, id: \.self) { row in
                 if !activeSheet.hiddenRows.contains(row) {
                     ForEach(visibleColumns, id: \.self) { column in
@@ -380,14 +392,25 @@ struct SheetGridView: View {
 
     // MARK: - Headers
 
-    private var headerOverlay: some View {
-        ZStack(alignment: .topLeading) {
+    /// The header strips stop where the sheet does rather than running the full
+    /// width and height of the screen: a sheet smaller than the viewport would
+    /// otherwise be framed by headers labelling rows and columns that are not
+    /// there.
+    private func headerOverlay(in proxy: GeometryProxy) -> some View {
+        let visibleGridWidth = max(
+            0, min(proxy.size.width - rowHeaderWidth, metrics.totalWidth - state.scrollOffset.x)
+        )
+        let visibleGridHeight = max(
+            0, min(proxy.size.height - columnHeaderHeight, metrics.totalHeight - state.scrollOffset.y)
+        )
+
+        return ZStack(alignment: .topLeading) {
             columnHeaders
-                .frame(height: columnHeaderHeight)
+                .frame(width: visibleGridWidth, height: columnHeaderHeight)
                 .offset(x: rowHeaderWidth)
 
             rowHeaders
-                .frame(width: rowHeaderWidth)
+                .frame(width: rowHeaderWidth, height: visibleGridHeight)
                 .offset(y: columnHeaderHeight)
 
             cornerButton
@@ -512,6 +535,15 @@ extension Color {
         return Color(uiColor: .systemBackground)
         #else
         return Color(nsColor: .textBackgroundColor)
+        #endif
+    }()
+
+    /// The surface the paper sits on, past the last row and column.
+    static let sheetCanvas: Color = {
+        #if canImport(UIKit)
+        return Color(uiColor: .secondarySystemBackground)
+        #else
+        return Color(nsColor: .underPageBackgroundColor)
         #endif
     }()
 }
