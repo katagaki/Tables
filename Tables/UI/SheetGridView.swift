@@ -25,7 +25,13 @@ struct SheetGridView: View {
     /// The grid point the selection handle started from, in content coordinates.
     /// Non-nil only while the handle is being dragged.
     @State private var handleDragOrigin: CGPoint?
+    /// The last cell tapped and when, so a second tap on it can open the editor.
+    @State private var lastTap: (address: CellAddress, time: Date)?
     @FocusState private var isCellEditorFocused: Bool
+
+    /// Matches the platform's own double-tap window closely enough that a
+    /// deliberate double tap always lands and a slow retap never does.
+    private static let doubleTapInterval: TimeInterval = 0.4
 
     private var activeSheet: Worksheet { state.activeSheet(in: workbook) }
     private var metrics: SheetMetrics { state.metrics }
@@ -166,7 +172,6 @@ struct SheetGridView: View {
             .equatable()
             .frame(width: frame.width, height: frame.height)
             .offset(x: frame.minX, y: frame.minY)
-            .onTapGesture(count: 2) { state.beginEditing(address, in: workbook) }
             .onTapGesture { tap(address) }
             // One leaf element per cell, so VoiceOver reads "B4, 2180.5" as a unit
             // instead of losing the cell inside the scroll view's contents.
@@ -205,7 +210,6 @@ struct SheetGridView: View {
             .equatable()
             .frame(width: frame.width, height: frame.height)
             .offset(x: frame.minX, y: frame.minY)
-            .onTapGesture(count: 2) { state.beginEditing(box.start, in: workbook) }
             .onTapGesture { tap(box.start) }
             .accessibilityElement(children: .ignore)
             .accessibilityIdentifier("cell.\(box.start.a1)")
@@ -220,13 +224,28 @@ struct SheetGridView: View {
         return text.isEmpty ? "\(address.a1), empty" : "\(address.a1), \(text)"
     }
 
-    /// A tap either points at a cell for the formula being typed, or moves the
-    /// selection there.
+    /// A tap either points at a cell for the formula being typed, moves the
+    /// selection there, or — when it is the second tap on the same cell —
+    /// opens the editor.
+    ///
+    /// The double tap is timed here rather than handed to a second
+    /// `onTapGesture(count: 2)`, because SwiftUI makes the two counts mutually
+    /// exclusive: every single tap is then held for the whole double-tap window
+    /// before it is delivered, which is a visible pause on every move between
+    /// cells. One immediate gesture and a stopwatch gives the same two
+    /// behaviours with the selection landing on touch-up.
     private func tap(_ address: CellAddress) {
         if state.isEnteringFormula {
             state.insertReference(CellRange(address), in: workbook)
             return
         }
+        if let last = lastTap, last.address == address,
+           Date.now.timeIntervalSince(last.time) < Self.doubleTapInterval {
+            lastTap = nil
+            state.beginEditing(address, in: workbook)
+            return
+        }
+        lastTap = (address, .now)
         if state.editingAddress != nil { state.commitEditing(in: &workbook, then: nil) }
         #if os(macOS)
         state.select(address, extending: NSEvent.modifierFlags.contains(.shift), in: activeSheet)
