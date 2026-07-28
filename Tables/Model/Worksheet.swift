@@ -31,10 +31,13 @@ struct Worksheet: Identifiable, Hashable, Sendable {
     /// heights, so a sheet sized here renders at the same size in Excel.
     ///
     /// 72pt ≈ 10.7 of Excel's character widths — wider than Excel's own 8.43
-    /// default because our default font is 12pt rather than Calibri 11 — and
-    /// 20pt gives a 12pt line the same headroom Excel's 15pt gives an 11pt one.
+    /// default because our default font is 12pt rather than Calibri 11.
+    ///
+    /// Rows are 28pt rather than the 20pt that merely clears a 12pt line: a row
+    /// is a touch target here, not just a line box, and 20pt is well under the
+    /// 44pt a finger expects even before the text needs room to breathe.
     static let defaultColumnWidth: Double = 72
-    static let defaultRowHeight: Double = 20
+    static let defaultRowHeight: Double = 28
     /// Floors for the resize handles only. Imported sheets keep whatever the
     /// file said, however thin, because Excel users make spacer rows that way.
     static let minimumColumnWidth: Double = 24
