@@ -12,6 +12,18 @@ struct SheetTabBarView: View {
     /// Bumped per tab to raise that tab's menu; see `NativeMenuPresenter`.
     @State private var menuTriggers: [Worksheet.ID: Int] = [:]
 
+    // Long-press reordering.
+    @State private var draggingSheetID: Worksheet.ID?
+    /// How far the finger has travelled since the drag began.
+    @State private var dragTranslation: Double = 0
+    /// How far the dragged tab has been carried by the reorders it has already
+    /// caused. Subtracting it from the translation keeps the tab under the
+    /// finger instead of jumping a slot each time the strip rearranges.
+    @State private var layoutShift: Double = 0
+    @State private var tabWidths: [Worksheet.ID: Double] = [:]
+
+    private let tabSpacing: Double = 6
+
     var body: some View {
         GlassEffectContainer(spacing: 8) {
             HStack(spacing: 8) {
@@ -30,14 +42,18 @@ struct SheetTabBarView: View {
                 .accessibilityLabel("Add a sheet")
 
                 ScrollView(.horizontal) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: tabSpacing) {
                         ForEach(workbook.visibleSheets) { sheet in
                             tab(for: sheet)
                         }
                     }
                     .padding(.horizontal, 2)
+                    .animation(.snappy(duration: 0.22), value: workbook.visibleSheets.map(\.id))
                 }
                 .scrollIndicators(.hidden)
+                // A tab being carried has to ride over its neighbours, and a
+                // scroll view clips to its bounds by default.
+                .scrollClipDisabled(draggingSheetID != nil)
 
                 if !hiddenSheets.isEmpty { hiddenSheetsMenu }
             }
@@ -94,8 +110,20 @@ struct SheetTabBarView: View {
             in: .capsule
         )
         .contentShape(.capsule)
+        // Measured before the drag offset, so the width a reorder is judged
+        // against is the tab's resting width rather than its carried one.
+        .onGeometryChange(for: Double.self) { $0.size.width } action: { tabWidths[sheet.id] = $0 }
+        .scaleEffect(draggingSheetID == sheet.id ? 1.08 : 1)
+        .shadow(
+            color: .black.opacity(draggingSheetID == sheet.id ? 0.22 : 0),
+            radius: 8, y: 3
+        )
+        .offset(x: draggingSheetID == sheet.id ? dragTranslation - layoutShift : 0)
+        .zIndex(draggingSheetID == sheet.id ? 1 : 0)
+        .animation(.snappy(duration: 0.2), value: draggingSheetID)
         .onTapGesture(count: 2) { menuTriggers[sheet.id, default: 0] += 1 }
         .onTapGesture { state.selectSheet(sheet.id, in: workbook) }
+        .gesture(reorderGesture(for: sheet))
         .background { NativeMenuPresenter(actions: menuActions(for: sheet), trigger: menuTriggers[sheet.id] ?? 0) }
     }
 
@@ -121,6 +149,74 @@ struct SheetTabBarView: View {
                 state.deleteSheet(sheet.id, in: &workbook)
             },
         ]
+    }
+
+    // MARK: - Reordering
+
+    /// Press and hold to pick a tab up, then drag it along the strip.
+    ///
+    /// The long press has to come first: a bare drag on a tab is how the strip
+    /// itself is scrolled, and claiming it here would make a crowded workbook
+    /// impossible to move around in.
+    private func reorderGesture(for sheet: Worksheet) -> some Gesture {
+        LongPressGesture(minimumDuration: 0.35)
+            .sequenced(before: DragGesture(minimumDistance: 0))
+            .onChanged { value in
+                switch value {
+                // `.first(false)` is the touch that has not yet been held long
+                // enough — picking the tab up there would fire on every tap.
+                case .first(true):
+                    beginDragging(sheet)
+                case .second(true, let drag):
+                    beginDragging(sheet)
+                    guard let drag else { return }
+                    dragTranslation = drag.translation.width
+                    reorder(sheet, by: dragTranslation - layoutShift)
+                default:
+                    break
+                }
+            }
+            .onEnded { _ in endDragging() }
+    }
+
+    private func beginDragging(_ sheet: Worksheet) {
+        guard draggingSheetID != sheet.id else { return }
+        draggingSheetID = sheet.id
+        dragTranslation = 0
+        layoutShift = 0
+        // Picking a tab up also makes it the one being worked on, which is what
+        // dropping it somewhere implies anyway.
+        if sheet.id != state.activeSheet(in: workbook).id {
+            state.selectSheet(sheet.id, in: workbook)
+        }
+    }
+
+    private func endDragging() {
+        draggingSheetID = nil
+        dragTranslation = 0
+        layoutShift = 0
+    }
+
+    /// Swaps the dragged tab past a neighbour once it has been carried over
+    /// half of that neighbour, and books the distance the swap moved it.
+    private func reorder(_ sheet: Worksheet, by displacement: Double) {
+        let visible = workbook.visibleSheets
+        guard let position = visible.firstIndex(where: { $0.id == sheet.id }) else { return }
+
+        let neighborIndex = displacement > 0 ? position + 1 : position - 1
+        guard visible.indices.contains(neighborIndex) else { return }
+        let neighbor = visible[neighborIndex]
+        // The neighbour's own width is how far the swap will carry this tab —
+        // measured, because tabs are as wide as their names.
+        let step = (tabWidths[neighbor.id] ?? 0) + tabSpacing
+        guard step > 0, abs(displacement) > step / 2 else { return }
+
+        // Destination is the neighbour's index in the full sheet list, so a
+        // hidden sheet sitting between the two is stepped over rather than
+        // landed on.
+        guard let destination = workbook.index(of: neighbor.id) else { return }
+        workbook.moveSheet(sheet.id, to: destination)
+        layoutShift += displacement > 0 ? step : -step
     }
 
     private func beginRename(_ sheet: Worksheet) {
