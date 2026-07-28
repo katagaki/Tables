@@ -75,6 +75,10 @@ struct GridCellView: View, Equatable {
             .padding(.vertical, 2 * zoom)
             .padding(indentEdge, cell.style.indentPoints * zoom)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: frameAlignment)
+            // A font taller than the row, a rotated run, or wrapped text with
+            // more lines than fit all draw outside the cell otherwise — over
+            // the neighbours, which reads as corrupt rather than as clipped.
+            .clipped()
             .background(cell.style.fillColor(for: colorScheme) ?? .clear)
             .overlay(CellBorderOverlay(style: cell.style, scheme: colorScheme, zoom: zoom))
             .contentShape(.rect)
