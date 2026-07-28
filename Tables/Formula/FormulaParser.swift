@@ -12,6 +12,9 @@ indirect enum FormulaNode: Hashable, Sendable {
     case postfixPercent(FormulaNode)
     case call(String, [FormulaNode])
     case array([[FormulaNode]])
+    /// A defined name. Only the workbook knows what it stands for, so the
+    /// definition is left to the evaluator to look up and evaluate.
+    case definedName(sheet: String?, name: String)
 }
 
 struct FormulaParseError: Error, Sendable {
@@ -185,8 +188,11 @@ struct FormulaParser {
             }
         }
 
+        // Anything that is not an address is a defined name. Whether one exists
+        // is a workbook question, not a grammar one, so an unknown name has to
+        // reach the evaluator to become `#NAME?` rather than failing the parse.
         guard let start = CellAddress(a1: word) else {
-            throw FormulaParseError(message: "Unknown name “\(word)”")
+            return .definedName(sheet: sheet, name: word)
         }
         if current == .colon {
             index += 1

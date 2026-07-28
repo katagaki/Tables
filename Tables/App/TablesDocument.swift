@@ -15,6 +15,10 @@ struct TablesDocument: FileDocument {
     /// CSV holds a single sheet, so exporting picks one. Tracks the user's choice.
     var csvExportSheetIndex = 0
 
+    /// What the opened file used that Tables cannot edit. Empty for anything we
+    /// authored ourselves and for CSV, which has no such features to begin with.
+    var unsupportedFeatures: UnsupportedFeatureReport { workbook.unsupportedFeatures }
+
     init() {
         workbook = Workbook()
     }

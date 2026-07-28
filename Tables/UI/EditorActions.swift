@@ -9,10 +9,12 @@ extension EditorState {
     func beginEditing(_ address: CellAddress, in workbook: Workbook, replacingWith seed: String? = nil) {
         let sheet = activeSheet(in: workbook)
         guard sheet.contains(address) else { return }
-        select(address)
-        editingAddress = address
-        editingText = seed ?? sheet[address].editableText
-        scrollTarget = address
+        // A merged region has one editable cell: the one whose content it shows.
+        let target = sheet.mergedRange(containing: address)?.normalized.start ?? address
+        select(target, in: sheet)
+        editingAddress = target
+        editingText = seed ?? sheet[target].editableText
+        scrollTarget = target
     }
 
     func cancelEditing() {
@@ -244,6 +246,46 @@ extension EditorState {
         refreshMetrics(in: workbook)
     }
 
+    // MARK: - Merged cells
+
+    /// True when the selection describes a region worth merging: more than one
+    /// cell, and not already exactly one merge.
+    func canMergeSelection(in workbook: Workbook) -> Bool {
+        let sheet = activeSheet(in: workbook)
+        let box = sheet.expandedToMerges(selection)
+        return !box.isSingleCell && !sheet.mergedRanges.contains(box)
+    }
+
+    func canUnmergeSelection(in workbook: Workbook) -> Bool {
+        let sheet = activeSheet(in: workbook)
+        return sheet.mergedRanges.contains { $0.intersects(selection.normalized) }
+    }
+
+    /// Merges the selection into one cell. As in Excel, the top-left cell's
+    /// content survives and everything else in the region is discarded.
+    func mergeSelection(in workbook: inout Workbook) {
+        let index = activeIndex(in: workbook)
+        let box = workbook.sheets[index].expandedToMerges(selection)
+        guard !box.isSingleCell else { return }
+        guard workbook.sheets[index].merge(box) else {
+            errorMessage = "That selection crosses part of an existing merged cell."
+            return
+        }
+        for address in box.addresses where address != box.start {
+            workbook.sheets[index][address] = Cell()
+        }
+        // Formulas elsewhere may have pointed at what was just discarded.
+        workbook.recalculate()
+        anchor = box.start
+        selection = box
+    }
+
+    /// Splits every merged region the selection touches back into single cells.
+    func unmergeSelection(in workbook: inout Workbook) {
+        let index = activeIndex(in: workbook)
+        workbook.sheets[index].unmerge(selection.normalized)
+    }
+
     // MARK: - Clipboard
 
     func copySelection(in workbook: Workbook) {
@@ -331,8 +373,24 @@ extension EditorState {
         }
         let wasActive = activeSheet(in: workbook).id == id
         workbook.removeSheet(id)
-        if wasActive, let first = workbook.sheets.first {
+        if wasActive, let first = workbook.visibleSheets.first {
             selectSheet(first.id, in: workbook)
+        }
+    }
+
+    /// Hides or reveals a sheet, leaving at least one on the tab strip.
+    func setSheet(_ id: Worksheet.ID, hidden: Bool, in workbook: inout Workbook) {
+        guard workbook.setSheet(id, hidden: hidden) else {
+            errorMessage = "A workbook needs at least one visible sheet."
+            return
+        }
+        if hidden {
+            // The sheet just left the strip; don't leave the grid showing it.
+            guard activeSheet(in: workbook).id == id,
+                  let replacement = workbook.visibleSheets.first else { return }
+            selectSheet(replacement.id, in: workbook)
+        } else {
+            selectSheet(id, in: workbook)
         }
     }
 

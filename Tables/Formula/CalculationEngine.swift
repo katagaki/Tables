@@ -3,9 +3,13 @@ import Foundation
 /// Recalculates every formula in a workbook, memoizing per-cell results and
 /// detecting circular references.
 final class CalculationEngine: FormulaContext {
-    private struct Key: Hashable {
-        var sheet: Int
-        var address: CellAddress
+    /// What a recursion guard tracks: a cell, or a defined name being expanded.
+    private enum Key: Hashable {
+        case cell(sheet: Int, address: CellAddress)
+        /// Lowercased, because Excel matches defined names case-insensitively,
+        /// paired with the scope the lookup landed in so the same name on two
+        /// sheets counts as two definitions.
+        case definedName(String, scope: Worksheet.ID?)
     }
 
     private let workbook: Workbook
@@ -43,7 +47,7 @@ final class CalculationEngine: FormulaContext {
     static func preview(formula body: String, in workbook: Workbook, sheetIndex: Int) -> CellValue {
         let engine = CalculationEngine(workbook: workbook)
         engine.activeSheetIndex = sheetIndex
-        return engine.evaluate(body: body, sheetIndex: sheetIndex)
+        return engine.evaluate(body: body, sheetIndex: sheetIndex, at: nil)
     }
 
     // MARK: - FormulaContext
@@ -63,6 +67,33 @@ final class CalculationEngine: FormulaContext {
         return (sheet.rowCount, sheet.columnCount)
     }
 
+    func resolveDefinedName(_ name: String, sheetName: String?) -> FormulaValue? {
+        guard let scopeIndex = resolveSheetIndex(sheetName) else { return nil }
+        let scopeID = workbook.sheets[scopeIndex].id
+        guard let definition = workbook.definedName(name, visibleFrom: scopeID) else { return nil }
+
+        // A definition is a formula in its own right and may name others, so it
+        // gets the same guard cells do rather than a second mechanism.
+        let key = Key.definedName(name.lowercased(), scope: definition.scope)
+        guard !evaluating.contains(key) else { return .failure(.circularReference) }
+        evaluating.insert(key)
+        defer { evaluating.remove(key) }
+
+        // Unqualified references inside a sheet-scoped definition belong to the
+        // sheet it is scoped to; a workbook-scoped one reads from wherever it
+        // was used.
+        let previousSheet = activeSheetIndex
+        activeSheetIndex = definition.scope.flatMap { workbook.index(of: $0) } ?? scopeIndex
+        defer { activeSheetIndex = previousSheet }
+
+        switch parsed(definition.formula) {
+        case .failure:
+            return .failure(.nameError)
+        case .success(let node):
+            return FormulaEvaluator(context: self).evaluate(node)
+        }
+    }
+
     // MARK: - Evaluation
 
     private func resolveSheetIndex(_ name: String?) -> Int? {
@@ -75,7 +106,7 @@ final class CalculationEngine: FormulaContext {
         let sheet = workbook.sheets[sheetIndex]
         guard sheet.contains(address) else { return .empty }
 
-        let key = Key(sheet: sheetIndex, address: address)
+        let key = Key.cell(sheet: sheetIndex, address: address)
         if let cached = cache[key] { return cached }
 
         let cell = sheet[address]
@@ -87,14 +118,16 @@ final class CalculationEngine: FormulaContext {
 
         let previousSheet = activeSheetIndex
         activeSheetIndex = sheetIndex
-        let result = evaluate(body: formula, sheetIndex: sheetIndex)
+        let result = evaluate(body: formula, sheetIndex: sheetIndex, at: address)
         activeSheetIndex = previousSheet
 
         cache[key] = result
         return result
     }
 
-    private func evaluate(body: String, sheetIndex: Int) -> CellValue {
+    /// `address` is the cell the formula lives in, which `ROW()` and `COLUMN()`
+    /// report when called with no argument.
+    private func evaluate(body: String, sheetIndex: Int, at address: CellAddress?) -> CellValue {
         switch parsed(body) {
         case .failure:
             return .error(.nameError)
@@ -102,7 +135,7 @@ final class CalculationEngine: FormulaContext {
             let previousSheet = activeSheetIndex
             activeSheetIndex = sheetIndex
             defer { activeSheetIndex = previousSheet }
-            return FormulaEvaluator(context: self).evaluate(node).single
+            return FormulaEvaluator(context: self, currentAddress: address).evaluate(node).single
         }
     }
 

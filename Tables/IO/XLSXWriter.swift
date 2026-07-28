@@ -5,20 +5,38 @@ enum XLSXWriter {
     static func data(from workbook: Workbook) throws -> Data {
         let strings = SharedStringTable(workbook: workbook)
         let styles = StyleTable(workbook: workbook)
+        let preserved = workbook.preservedPackage
 
         var parts: [(path: String, data: Data)] = [
-            ("[Content_Types].xml", contentTypes(sheetCount: workbook.sheets.count).utf8Data),
-            ("_rels/.rels", rootRelationships.utf8Data),
+            (
+                "[Content_Types].xml",
+                contentTypes(sheetCount: workbook.sheets.count, preserved: preserved).utf8Data
+            ),
+            ("_rels/.rels", rootRelationships(preserved: preserved).utf8Data),
             ("xl/workbook.xml", workbookPart(workbook).utf8Data),
-            ("xl/_rels/workbook.xml.rels", workbookRelationships(sheetCount: workbook.sheets.count).utf8Data),
+            (
+                "xl/_rels/workbook.xml.rels",
+                workbookRelationships(sheetCount: workbook.sheets.count, preserved: preserved).utf8Data
+            ),
             ("xl/styles.xml", styles.xml.utf8Data),
             ("xl/sharedStrings.xml", strings.xml.utf8Data),
         ]
         for (index, sheet) in workbook.sheets.enumerated() {
+            let relationships = preserved.sheetRelationshipParts[sheet.id]
             parts.append((
                 "xl/worksheets/sheet\(index + 1).xml",
-                sheetPart(sheet, strings: strings, styles: styles).utf8Data
+                sheetPart(
+                    sheet, strings: strings, styles: styles, hasRelationshipsPart: relationships != nil
+                ).utf8Data
             ))
+            // A sheet's `_rels` follows it to its new position: the file names
+            // change when sheets are reordered, the contents do not.
+            if let relationships {
+                parts.append(("xl/worksheets/_rels/sheet\(index + 1).xml.rels", relationships))
+            }
+        }
+        for path in preserved.parts.keys.sorted() {
+            parts.append((path, preserved.parts[path] ?? Data()))
         }
         return try ZipArchive.archive(entries: parts)
     }
@@ -29,29 +47,47 @@ enum XLSXWriter {
 
     // MARK: - Package parts
 
-    private static func contentTypes(sheetCount: Int) -> String {
+    private static func contentTypes(sheetCount: Int, preserved: PreservedPackage) -> String {
         var xml = declaration
         xml += "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
         xml += "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>"
         xml += "<Default Extension=\"xml\" ContentType=\"application/xml\"/>"
+        // The two extensions above are already stated; restating either would
+        // make the part invalid rather than merely redundant.
+        for (ext, type) in preserved.contentTypeDefaults.sorted(by: { $0.key < $1.key })
+        where ext != "rels" && ext != "xml" {
+            xml += "<Default Extension=\"\(XMLLite.escape(ext))\" ContentType=\"\(XMLLite.escape(type))\"/>"
+        }
         xml += "<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>"
         for index in 1...max(1, sheetCount) {
             xml += "<Override PartName=\"/xl/worksheets/sheet\(index).xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>"
         }
         xml += "<Override PartName=\"/xl/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml\"/>"
         xml += "<Override PartName=\"/xl/sharedStrings.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml\"/>"
+        for (name, type) in preserved.contentTypeOverrides.sorted(by: { $0.key < $1.key })
+        where !generatedPartNames.contains(name) {
+            xml += "<Override PartName=\"\(XMLLite.escape(name))\" ContentType=\"\(XMLLite.escape(type))\"/>"
+        }
         xml += "</Types>"
         return xml
     }
 
-    private static var rootRelationships: String {
-        declaration
-            + "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
-            + "<Relationship Id=\"rId1\" Type=\"\(relationshipNamespace)/officeDocument\" Target=\"xl/workbook.xml\"/>"
-            + "</Relationships>"
+    /// Part names we always write an override for ourselves, so a preserved
+    /// one naming the same part is skipped rather than duplicated.
+    private static let generatedPartNames: Set<String> = [
+        "/xl/workbook.xml", "/xl/styles.xml", "/xl/sharedStrings.xml",
+    ]
+
+    private static func rootRelationships(preserved: PreservedPackage) -> String {
+        var xml = declaration
+        xml += "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+        xml += "<Relationship Id=\"rId1\" Type=\"\(relationshipNamespace)/officeDocument\" Target=\"xl/workbook.xml\"/>"
+        xml += relationshipEntries(preserved.rootRelationships, startingAt: 2)
+        xml += "</Relationships>"
+        return xml
     }
 
-    private static func workbookRelationships(sheetCount: Int) -> String {
+    private static func workbookRelationships(sheetCount: Int, preserved: PreservedPackage) -> String {
         var xml = declaration
         xml += "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
         for index in 1...max(1, sheetCount) {
@@ -59,17 +95,62 @@ enum XLSXWriter {
         }
         xml += "<Relationship Id=\"rId\(sheetCount + 1)\" Type=\"\(relationshipNamespace)/styles\" Target=\"styles.xml\"/>"
         xml += "<Relationship Id=\"rId\(sheetCount + 2)\" Type=\"\(relationshipNamespace)/sharedStrings\" Target=\"sharedStrings.xml\"/>"
+        xml += relationshipEntries(preserved.workbookRelationships, startingAt: sheetCount + 3)
         xml += "</Relationships>"
+        return xml
+    }
+
+    /// Re-emits carried-over relationships under fresh ids.
+    ///
+    /// Renumbering is safe here and only here: nothing in the parts we generate
+    /// names these ids, because the parts they reach — the theme, the document
+    /// properties — are found by relationship type instead.
+    private static func relationshipEntries(
+        _ relationships: [PreservedRelationship], startingAt firstID: Int
+    ) -> String {
+        var xml = ""
+        for (offset, relationship) in relationships.enumerated() {
+            xml += "<Relationship Id=\"rId\(firstID + offset)\""
+            xml += " Type=\"\(XMLLite.escape(relationship.type))\""
+            xml += " Target=\"\(XMLLite.escape(relationship.target))\""
+            if let mode = relationship.targetMode { xml += " TargetMode=\"\(XMLLite.escape(mode))\"" }
+            xml += "/>"
+        }
         return xml
     }
 
     private static func workbookPart(_ workbook: Workbook) -> String {
         var xml = declaration
         xml += "<workbook xmlns=\"\(mainNamespace)\" xmlns:r=\"\(relationshipNamespace)\"><sheets>"
+        let hasVisibleSheet = workbook.sheets.contains { !$0.isHidden }
         for (index, sheet) in workbook.sheets.enumerated() {
-            xml += "<sheet name=\"\(XMLLite.escape(sheet.name))\" sheetId=\"\(index + 1)\" r:id=\"rId\(index + 1)\"/>"
+            xml += "<sheet name=\"\(XMLLite.escape(sheet.name))\" sheetId=\"\(index + 1)\""
+            // Excel refuses to open a workbook with nothing visible, so the
+            // first sheet stays visible however the model got into that state.
+            if sheet.isHidden, hasVisibleSheet || index > 0 { xml += " state=\"hidden\"" }
+            xml += " r:id=\"rId\(index + 1)\"/>"
         }
         xml += "</sheets>"
+        // Element order inside `<workbook>` is schema-enforced: `<definedNames>`
+        // sits between `<sheets>` and `<calcPr>`, and Excel rejects the part if
+        // it appears anywhere else.
+        // A name scoped to a sheet that is gone is dropped rather than written
+        // unscoped: promoting it to workbook scope would let it answer formulas
+        // it never applied to.
+        let names = workbook.definedNames.compactMap { name -> (DefinedName, Int?)? in
+            guard let scope = name.scope else { return (name, nil) }
+            guard let position = workbook.index(of: scope) else { return nil }
+            return (name, position)
+        }
+        if !names.isEmpty {
+            xml += "<definedNames>"
+            for (name, position) in names {
+                xml += "<definedName name=\"\(XMLLite.escape(name.name))\""
+                if let position { xml += " localSheetId=\"\(position)\"" }
+                xml += ">\(XMLLite.escape(name.formula))</definedName>"
+            }
+            xml += "</definedNames>"
+        }
         // Ask Excel to recalculate on open: we store our own cached results, and
         // where a function differs in the last digit its answer should win.
         xml += "<calcPr calcId=\"0\" fullCalcOnLoad=\"1\"/>"
@@ -79,10 +160,41 @@ enum XLSXWriter {
 
     // MARK: - Worksheets
 
-    private static func sheetPart(_ sheet: Worksheet, strings: SharedStringTable, styles: StyleTable) -> String {
-        var xml = declaration
-        xml += "<worksheet xmlns=\"\(mainNamespace)\">"
-        xml += "<dimension ref=\"A1:\(CellAddress(row: sheet.rowCount - 1, column: sheet.columnCount - 1).a1)\"/>"
+    /// The order `CT_Worksheet` fixes for the children of `<worksheet>`, from
+    /// ECMA-376 Part 1 §18.3.1.99. Excel refuses to open a worksheet whose
+    /// children appear in any other order, so every fragment we write — ours
+    /// and the ones carried over from the file — is placed by this list.
+    private static let worksheetChildOrder: [String] = [
+        "sheetPr", "dimension", "sheetViews", "sheetFormatPr", "cols", "sheetData",
+        "sheetCalcPr", "sheetProtection", "protectedRanges", "scenarios", "autoFilter",
+        "sortState", "dataConsolidate", "customSheetViews", "mergeCells", "phoneticPr",
+        "conditionalFormatting", "dataValidations", "hyperlinks", "printOptions",
+        "pageMargins", "pageSetup", "headerFooter", "rowBreaks", "colBreaks",
+        "customProperties", "cellWatches", "ignoredErrors", "smartTags", "drawing",
+        "legacyDrawing", "legacyDrawingHF", "picture", "oleObjects", "controls",
+        "webPublishItems", "tableParts", "extLst",
+    ]
+
+    private static func sheetPart(
+        _ sheet: Worksheet, strings: SharedStringTable, styles: StyleTable,
+        hasRelationshipsPart: Bool
+    ) -> String {
+        /// Fragments paired with their schema position, plus the order they
+        /// were added in so repeatable children — several `<conditionalFormatting>`
+        /// blocks, say — keep the sequence the file had them in.
+        var fragments: [(order: Int, sequence: Int, xml: String)] = []
+        func add(_ name: String, _ body: String) {
+            let order = worksheetChildOrder.firstIndex(of: name) ?? worksheetChildOrder.count
+            fragments.append((order, fragments.count, body))
+        }
+
+        add("dimension", "<dimension ref=\"A1:\(CellAddress(row: sheet.rowCount - 1, column: sheet.columnCount - 1).a1)\"/>")
+
+        // Our defaults differ from Excel's, so state them: otherwise every row
+        // and column we did not size explicitly would render at Excel's size.
+        var xml = "<sheetFormatPr defaultRowHeight=\"\(format(Worksheet.defaultRowHeight))\""
+        xml += " defaultColWidth=\"\(format(Worksheet.columnWidthCharacters(points: Worksheet.defaultColumnWidth)))\"/>"
+        add("sheetFormatPr", xml)
 
         // Column metadata: widths and hidden state.
         var columnEntries: [String] = []
@@ -91,16 +203,16 @@ enum XLSXWriter {
             let custom = sheet.columnWidths[column]
             guard hidden || custom != nil else { continue }
             let points = custom ?? Worksheet.defaultColumnWidth
-            let characters = max(1, (points - 5) / 7)
+            let characters = max(0, Worksheet.columnWidthCharacters(points: points))
             var entry = "<col min=\"\(column + 1)\" max=\"\(column + 1)\" width=\"\(format(characters))\""
             if custom != nil { entry += " customWidth=\"1\"" }
             if hidden { entry += " hidden=\"1\"" }
             entry += "/>"
             columnEntries.append(entry)
         }
-        if !columnEntries.isEmpty { xml += "<cols>" + columnEntries.joined() + "</cols>" }
+        if !columnEntries.isEmpty { add("cols", "<cols>" + columnEntries.joined() + "</cols>") }
 
-        xml += "<sheetData>"
+        xml = "<sheetData>"
         let populatedRows = Set(sheet.cells.keys.map(\.row))
         let interestingRows = populatedRows
             .union(sheet.hiddenRows)
@@ -111,7 +223,7 @@ enum XLSXWriter {
         for row in interestingRows {
             var attributes = "r=\"\(row + 1)\""
             if let height = sheet.rowHeights[row] {
-                attributes += " ht=\"\(format(height / 1.35))\" customHeight=\"1\""
+                attributes += " ht=\"\(format(height))\" customHeight=\"1\""
             }
             if sheet.hiddenRows.contains(row) { attributes += " hidden=\"1\"" }
 
@@ -128,8 +240,40 @@ enum XLSXWriter {
             }
             xml += "</row>"
         }
-        xml += "</sheetData></worksheet>"
-        return xml
+        xml += "</sheetData>"
+        add("sheetData", xml)
+
+        var merges: [CellRange] = []
+        for range in sheet.mergedRanges {
+            let box: CellRange = range.normalized
+            guard box.end.row < sheet.rowCount, box.end.column < sheet.columnCount else { continue }
+            merges.append(box)
+        }
+        merges.sort { first, second in
+            first.start == second.start ? first.end < second.end : first.start < second.start
+        }
+        if !merges.isEmpty {
+            xml = "<mergeCells count=\"\(merges.count)\">"
+            for merge in merges { xml += "<mergeCell ref=\"\(merge.a1)\"/>" }
+            xml += "</mergeCells>"
+            add("mergeCells", xml)
+        }
+
+        for element in sheet.preservedElements {
+            // A duplicated sheet carries its predecessor's fragments but not
+            // its `_rels`, so the ids in them would resolve to nothing.
+            guard hasRelationshipsPart || !element.needsSheetRelationships else { continue }
+            add(element.name, element.xml)
+        }
+
+        // Sorting rather than appending in place is what keeps the carried-over
+        // fragments in their schema slots instead of wherever we happened to
+        // reach them.
+        fragments.sort { $0.order == $1.order ? $0.sequence < $1.sequence : $0.order < $1.order }
+        return declaration
+            + "<worksheet xmlns=\"\(mainNamespace)\">"
+            + fragments.map(\.xml).joined()
+            + "</worksheet>"
     }
 
     private static func cellPart(
@@ -212,10 +356,21 @@ enum XLSXWriter {
     // MARK: - Styles
 
     final class StyleTable {
+        /// Stand-in for a side whose source file named no colour.
+        private let defaultBorderColorHex = "FF8E8E93"
+
         private var styles: [CellStyle] = [.default]
         private var lookup: [CellStyle: Int] = [.default: 0]
+        /// Carried-over children of the original `<styleSheet>`.
+        private let preservedElements: [PreservedElement]
+
+        /// The order `CT_Stylesheet` fixes for the children we re-emit, from
+        /// ECMA-376 Part 1 §18.8.39. They all follow `<cellStyles>`, which is
+        /// the last one we generate ourselves.
+        private static let trailingElementOrder = ["dxfs", "tableStyles", "colors", "extLst"]
 
         init(workbook: Workbook) {
+            preservedElements = workbook.preservedPackage.styleSheetElements
             for sheet in workbook.sheets {
                 for cell in sheet.cells.values where !cell.style.isDefault {
                     _ = index(for: cell.style)
@@ -287,20 +442,30 @@ enum XLSXWriter {
             xml += "<borders count=\"\(styles.count + 1)\">"
             xml += "<border><left/><right/><top/><bottom/><diagonal/></border>"
             for style in styles {
-                xml += "<border>"
-                let sides: [(String, BorderEdges)] = [
-                    ("left", .leading), ("right", .trailing), ("top", .top), ("bottom", .bottom),
-                ]
-                for (tag, edge) in sides {
-                    if style.borders.contains(edge) {
-                        xml += "<\(tag) style=\"thin\">"
-                        xml += "<color rgb=\"\(style.borderColorHex ?? "FF8E8E93")\"/>"
-                        xml += "</\(tag)>"
-                    } else {
-                        xml += "<\(tag)/>"
+                let diagonal = style.diagonalBorder.flatMap { $0.isVisible ? $0 : nil }
+                xml += "<border"
+                if diagonal?.goesUp == true { xml += " diagonalUp=\"1\"" }
+                if diagonal?.goesDown == true { xml += " diagonalDown=\"1\"" }
+                xml += ">"
+                // Excel requires the sides in schema order, not the order we
+                // happen to iterate a dictionary in.
+                for edge in [BorderEdge.leading, .trailing, .top, .bottom] {
+                    guard let side = style.borderSides[edge] else {
+                        xml += "<\(edge.ooxmlTag)/>"
+                        continue
                     }
+                    xml += "<\(edge.ooxmlTag) style=\"\(side.lineStyle.rawValue)\">"
+                    xml += "<color rgb=\"\(side.colorHex ?? defaultBorderColorHex)\"/>"
+                    xml += "</\(edge.ooxmlTag)>"
                 }
-                xml += "<diagonal/></border>"
+                if let diagonal {
+                    xml += "<diagonal style=\"\(diagonal.lineStyle.rawValue)\">"
+                    xml += "<color rgb=\"\(diagonal.colorHex ?? defaultBorderColorHex)\"/>"
+                    xml += "</diagonal>"
+                } else {
+                    xml += "<diagonal/>"
+                }
+                xml += "</border>"
             }
             xml += "</borders>"
 
@@ -309,7 +474,8 @@ enum XLSXWriter {
             for (index, style) in styles.enumerated() {
                 let formatID = style.numberFormat == "General" ? 0 : (formats[style.numberFormat] ?? 0)
                 let fillID = style.fillColorHex == nil ? 0 : index + 2
-                let borderID = style.borders.isEmpty ? 0 : index + 1
+                let hasBorder = !style.borderSides.isEmpty || style.diagonalBorder?.isVisible == true
+                let borderID = hasBorder ? index + 1 : 0
                 xml += "<xf numFmtId=\"\(formatID)\" fontId=\"\(index)\" fillId=\"\(fillID)\" borderId=\"\(borderID)\""
                 xml += " xfId=\"0\" applyFont=\"1\" applyNumberFormat=\"1\" applyFill=\"1\" applyBorder=\"1\""
                 xml += " applyAlignment=\"1\">"
@@ -326,10 +492,18 @@ enum XLSXWriter {
                 case .bottom: xml += " vertical=\"bottom\""
                 }
                 if style.wrapsText { xml += " wrapText=\"1\"" }
+                if style.indent > 0 { xml += " indent=\"\(style.indent)\"" }
+                if style.textRotation != 0 { xml += " textRotation=\"\(style.textRotation)\"" }
                 xml += "/></xf>"
             }
             xml += "</cellXfs>"
             xml += "<cellStyles count=\"1\"><cellStyle name=\"Normal\" xfId=\"0\" builtinId=\"0\"/></cellStyles>"
+            for element in preservedElements.sorted(by: {
+                (Self.trailingElementOrder.firstIndex(of: $0.name) ?? Self.trailingElementOrder.count)
+                    < (Self.trailingElementOrder.firstIndex(of: $1.name) ?? Self.trailingElementOrder.count)
+            }) {
+                xml += element.xml
+            }
             xml += "</styleSheet>"
             return xml
         }

@@ -30,7 +30,7 @@ struct ColumnHeaderCell: View {
             .overlay(alignment: .bottom) { Rectangle().fill(Color.gridLine).frame(height: 1) }
             .overlay(alignment: .trailing) { HiddenSeam(isVertical: true, isVisible: isHiddenNeighbor) }
             .overlay(alignment: .trailing) {
-                ResizeGrip(isVertical: true, onResize: onResize, onDoubleTap: onFit)
+                ResizeGrip(isVertical: true, extent: width, onResize: onResize, onDoubleTap: onFit)
             }
             .accessibilityLabel(title)
             .accessibilityAddTraits(.isButton)
@@ -64,7 +64,7 @@ struct RowHeaderCell: View {
             .overlay(alignment: .trailing) { Rectangle().fill(Color.gridLine).frame(width: 1) }
             .overlay(alignment: .bottom) { HiddenSeam(isVertical: false, isVisible: isHiddenNeighbor) }
             .overlay(alignment: .bottom) {
-                ResizeGrip(isVertical: false, onResize: onResize)
+                ResizeGrip(isVertical: false, extent: height, onResize: onResize)
             }
             .accessibilityLabel("Row \(title)")
             .accessibilityAddTraits(.isButton)
@@ -113,6 +113,10 @@ private struct DoubleTapAction: ViewModifier {
 /// The thin hit area between headers that resizes the neighbouring line.
 private struct ResizeGrip: View {
     let isVertical: Bool
+    /// The header's size along the axis being resized. The grip is a fraction of
+    /// it rather than a fixed width: on a short row a fixed grip would cover
+    /// most of the header and swallow taps meant for the header itself.
+    let extent: Double
     let onResize: (Double) -> Void
     /// Omitted when the grip has nothing to do on a double tap, so the header
     /// underneath keeps receiving it and can open its menu.
@@ -120,10 +124,14 @@ private struct ResizeGrip: View {
 
     @State private var lastTranslation: Double = 0
 
+    /// Never more than a third of the header, so most of it stays tappable,
+    /// and never so thin it cannot be grabbed.
+    private var thickness: Double { min(10, max(4, extent / 3)) }
+
     var body: some View {
         Rectangle()
             .fill(Color.clear)
-            .frame(width: isVertical ? 10 : nil, height: isVertical ? nil : 10)
+            .frame(width: isVertical ? thickness : nil, height: isVertical ? nil : thickness)
             .contentShape(.rect)
             .gesture(
                 DragGesture(minimumDistance: 1)

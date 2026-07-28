@@ -4,16 +4,19 @@ import Foundation
 /// that `IF`, `IFERROR` and friends can control evaluation themselves.
 enum FormulaFunctions {
     static let names: [String] = [
-        "ABS", "AND", "AVERAGE", "AVERAGEA", "AVERAGEIF", "CEILING", "CHAR", "CHOOSE", "CODE",
-        "COLUMN", "CONCAT", "CONCATENATE", "COUNT", "COUNTA", "COUNTBLANK", "COUNTIF", "DATE",
+        "ABS", "AND", "AVERAGE", "AVERAGEA", "AVERAGEIF", "AVERAGEIFS", "CEILING", "CHAR",
+        "CHOOSE", "CODE", "COLUMN", "CONCAT", "CONCATENATE", "COUNT", "COUNTA", "COUNTBLANK",
+        "COUNTIF", "COUNTIFS", "DATE",
         "DAY", "DEGREES", "EXACT", "EXP", "FALSE", "FIND", "FLOOR", "HLOOKUP", "HOUR", "IF",
         "IFERROR", "IFNA", "IFS", "INDEX", "INT", "ISBLANK", "ISERROR", "ISEVEN", "ISLOGICAL",
         "ISNUMBER", "ISODD", "ISTEXT", "LARGE", "LEFT", "LEN", "LN", "LOG", "LOG10", "LOWER",
         "MATCH", "MAX", "MEDIAN", "MID", "MIN", "MINUTE", "MOD", "MONTH", "NA", "NOT", "NOW",
         "OR", "PI", "POWER", "PRODUCT", "PROPER", "RADIANS", "RAND", "RANDBETWEEN", "REPLACE",
         "REPT", "RIGHT", "ROUND", "ROUNDDOWN", "ROUNDUP", "ROW", "SEARCH", "SECOND", "SIGN",
-        "SMALL", "SQRT", "STDEV", "SUBSTITUTE", "SUM", "SUMIF", "SUMPRODUCT", "TEXT", "TIME",
-        "TODAY", "TRIM", "TRUE", "TRUNC", "UPPER", "VALUE", "VAR", "VLOOKUP", "WEEKDAY", "XOR",
+        "SMALL", "SQRT", "STDEV", "SUBSTITUTE", "SUM", "SUMIF", "SUMIFS", "SUMPRODUCT", "SWITCH",
+        "TEXT", "TEXTJOIN", "TIME",
+        "TODAY", "TRIM", "TRUE", "TRUNC", "UPPER", "VALUE", "VAR", "VLOOKUP", "WEEKDAY",
+        "XLOOKUP", "XOR",
         "YEAR", "COS", "SIN", "TAN", "ACOS", "ASIN", "ATAN", "ATAN2",
     ]
 
@@ -129,6 +132,8 @@ enum FormulaFunctions {
         // MARK: Conditional aggregates
         case "SUMIF", "COUNTIF", "AVERAGEIF":
             return conditionalAggregate(call)
+        case "SUMIFS", "COUNTIFS", "AVERAGEIFS":
+            return multiCriteriaAggregate(call)
 
         // MARK: Logic
         case "IF":
@@ -144,6 +149,8 @@ enum FormulaFunctions {
                 index += 2
             }
             return .failure(.notAvailable)
+        case "SWITCH":
+            return switchCase(call)
         case "IFERROR", "IFNA":
             let primary = call.value(0)
             let trapped: Bool
@@ -185,7 +192,16 @@ enum FormulaFunctions {
             let isEven = Int(number.rounded(.towardZero)) % 2 == 0
             return .boolean(call.name == "ISEVEN" ? isEven : !isEven)
         case "ROW", "COLUMN":
-            guard case .reference(_, let address)? = call.nodes.first else { return .failure(.valueError) }
+            // With no argument the answer is the position of the calling cell.
+            let address: CellAddress?
+            if call.nodes.isEmpty {
+                address = call.evaluator.currentAddress
+            } else if case .reference(_, let referenced)? = call.nodes.first {
+                address = referenced
+            } else {
+                address = nil
+            }
+            guard let address else { return .failure(.valueError) }
             return .number(Double(call.name == "ROW" ? address.row + 1 : address.column + 1))
 
         // MARK: Math
@@ -243,6 +259,8 @@ enum FormulaFunctions {
         // MARK: Text
         case "CONCAT", "CONCATENATE":
             return .text(call.allValues.map(\.stringValue).joined())
+        case "TEXTJOIN":
+            return textJoin(call)
         case "LEN": return .number(Double(call.string(0).count))
         case "LOWER": return .text(call.string(0).lowercased())
         case "UPPER": return .text(call.string(0).uppercased())
@@ -363,6 +381,8 @@ enum FormulaFunctions {
             return match(call)
         case "VLOOKUP", "HLOOKUP":
             return lookup(call)
+        case "XLOOKUP":
+            return crossLookup(call)
 
         default:
             return .failure(.nameError)
@@ -494,7 +514,110 @@ enum FormulaFunctions {
         return .number(collected.reduce(0, +) / Double(collected.count))
     }
 
+    /// `SUMIFS`, `AVERAGEIFS` and `COUNTIFS`. Unlike `SUMIF`, the aggregated range
+    /// comes first and every criteria pair must match for a position to count.
+    private static func multiCriteriaAggregate(_ call: CallFrame) -> FormulaValue {
+        let counting = call.name == "COUNTIFS"
+        let firstPair = counting ? 0 : 1
+        guard call.count >= firstPair + 2, (call.count - firstPair) % 2 == 0 else {
+            return .failure(.valueError)
+        }
+
+        var tests: [(values: [CellValue], criterion: Criterion)] = []
+        var index = firstPair
+        while index + 1 < call.count {
+            tests.append((call.value(index).flattened, Criterion(call.scalar(index + 1))))
+            index += 2
+        }
+        // Excel requires every criteria range to have the same shape.
+        guard let width = tests.first?.values.count,
+              tests.allSatisfy({ $0.values.count == width }) else { return .failure(.valueError) }
+
+        let aggregated = counting ? [] : call.value(0).flattened
+        guard counting || aggregated.count == width else { return .failure(.valueError) }
+
+        var matched = 0
+        var collected: [Double] = []
+        for position in 0..<width where tests.allSatisfy({ $0.criterion.matches($0.values[position]) }) {
+            matched += 1
+            guard !counting, !aggregated[position].isEmpty,
+                  let number = aggregated[position].numericValue else { continue }
+            collected.append(number)
+        }
+
+        switch call.name {
+        case "COUNTIFS": return .number(Double(matched))
+        case "SUMIFS": return .number(collected.reduce(0, +))
+        default:
+            guard !collected.isEmpty else { return .failure(.divideByZero) }
+            return .number(collected.reduce(0, +) / Double(collected.count))
+        }
+    }
+
+    // MARK: - Text assembly
+
+    /// `TEXTJOIN(delimiter, ignore_empty, text1, …)`, expanding ranges in order.
+    private static func textJoin(_ call: CallFrame) -> FormulaValue {
+        guard call.count >= 2 else { return .failure(.valueError) }
+        if let error = call.propagatedError { return .failure(error) }
+        let delimiter = call.string(0)
+        let skipsBlanks = call.boolean(1)
+        var pieces: [String] = []
+        for index in 2..<call.count {
+            for value in call.value(index).flattened {
+                let text = value.stringValue
+                // A formula that produced "" reads as blank here, just as a blank cell does.
+                if skipsBlanks, text.isEmpty { continue }
+                pieces.append(text)
+            }
+        }
+        return .text(pieces.joined(separator: delimiter))
+    }
+
+    // MARK: - Logic
+
+    /// `SWITCH(expression, value1, result1, …, [default])`.
+    private static func switchCase(_ call: CallFrame) -> FormulaValue {
+        guard call.count >= 3 else { return .failure(.valueError) }
+        let subject = call.scalar(0)
+        if let error = subject.errorValue { return .failure(error) }
+
+        var index = 1
+        while index + 1 < call.count {
+            if let error = call.scalar(index).errorValue { return .failure(error) }
+            if sameValue(call.scalar(index), subject) { return call.value(index + 1) }
+            index += 2
+        }
+        // A leftover trailing argument is the default result.
+        let hasDefault = (call.count - 1) % 2 == 1
+        return hasDefault ? call.value(call.count - 1) : .failure(.notAvailable)
+    }
+
     // MARK: - Lookup
+
+    /// Equality as the exact-match lookups define it: text comparison, ignoring case.
+    private static func sameValue(_ lhs: CellValue, _ rhs: CellValue) -> Bool {
+        lhs.stringValue.compare(rhs.stringValue, options: .caseInsensitive) == .orderedSame
+    }
+
+    /// `XLOOKUP(lookup_value, lookup_array, return_array, [if_not_found], [match_mode])`.
+    /// Only exact matching (mode 0) is supported; other modes report `#VALUE!`
+    /// rather than quietly returning a neighbouring row.
+    private static func crossLookup(_ call: CallFrame) -> FormulaValue {
+        guard call.count >= 3 else { return .failure(.valueError) }
+        guard call.count < 5 || Int(call.number(4) ?? 0) == 0 else { return .failure(.valueError) }
+
+        let needle = call.scalar(0)
+        if let error = needle.errorValue { return .failure(error) }
+        let keys = call.value(1).flattened
+        let results = call.value(2).flattened
+        guard keys.count == results.count else { return .failure(.valueError) }
+
+        for (position, candidate) in keys.enumerated() where sameValue(candidate, needle) {
+            return .scalar(results[position])
+        }
+        return call.count >= 4 ? call.value(3) : .failure(.notAvailable)
+    }
 
     private static func match(_ call: CallFrame) -> FormulaValue {
         guard call.count >= 2 else { return .failure(.valueError) }

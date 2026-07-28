@@ -7,6 +7,10 @@ enum ZipError: LocalizedError {
     case corruptEntry(String)
     case decompressionFailed(String)
     case compressionFailed(String)
+    /// The file is an OLE compound document: either a password-protected
+    /// workbook or a legacy `.xls` one. Both look nothing like a ZIP.
+    case protectedOrLegacyWorkbook
+    case encryptedEntry(String)
 
     var errorDescription: String? {
         switch self {
@@ -20,6 +24,16 @@ enum ZipError: LocalizedError {
             return "Couldn’t decompress “\(name)”."
         case .compressionFailed(let name):
             return "Couldn’t compress “\(name)”."
+        case .protectedOrLegacyWorkbook:
+            return """
+                This file looks password-protected, or saved in the older .xls format. \
+                Tables can’t open either one. Remove the password or re-save it as .xlsx, then try again.
+                """
+        case .encryptedEntry(let name):
+            return """
+                The package entry “\(name)” is password-protected. \
+                Tables can’t open protected workbooks — remove the password and save the file again.
+                """
         }
     }
 }
@@ -28,79 +42,212 @@ enum ZipError: LocalizedError {
 /// stored and deflated entries, no encryption, no spanning.
 enum ZipArchive {
 
+    // MARK: - Format constants
+
+    private static let localHeaderSignature: UInt32 = 0x0403_4B50
+    private static let centralDirectorySignature: UInt32 = 0x0201_4B50
+    private static let endOfCentralDirectorySignature: UInt32 = 0x0605_4B50
+    private static let zip64EndOfCentralDirectorySignature: UInt32 = 0x0606_4B50
+    private static let zip64LocatorSignature: UInt32 = 0x0706_4B50
+
+    /// Header id of the ZIP64 extended information extra field.
+    private static let zip64ExtraFieldID: UInt16 = 0x0001
+
+    /// The value a 32-bit size or offset carries when the real one lives in the
+    /// ZIP64 extra field instead.
+    private static let zip64Placeholder: UInt32 = 0xFFFF_FFFF
+
+    /// OLE compound file signature, which is what password-protected and legacy
+    /// `.xls` workbooks start with.
+    private static let compoundFileSignature: [UInt8] = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]
+
+    /// A ceiling on how much we will allocate for one inflated entry, so a
+    /// damaged or hostile header can't ask us to reserve gigabytes.
+    private static let maximumInflatedSize = 512 * 1024 * 1024
+
     // MARK: - Reading
 
     /// Reads every entry into a path-keyed table.
     static func entries(in data: Data) throws -> [String: Data] {
         let bytes = [UInt8](data)
+        guard !bytes.starts(with: compoundFileSignature) else { throw ZipError.protectedOrLegacyWorkbook }
         guard let directoryStart = locateCentralDirectory(bytes) else { throw ZipError.notAnArchive }
 
         var result: [String: Data] = [:]
         var offset = directoryStart
-        while offset + 46 <= bytes.count, readUInt32(bytes, offset) == 0x0201_4B50 {
-            let method = readUInt16(bytes, offset + 10)
-            let compressedSize = Int(readUInt32(bytes, offset + 20))
-            let uncompressedSize = Int(readUInt32(bytes, offset + 24))
-            let nameLength = Int(readUInt16(bytes, offset + 28))
-            let extraLength = Int(readUInt16(bytes, offset + 30))
-            let commentLength = Int(readUInt16(bytes, offset + 32))
-            let localOffset = Int(readUInt32(bytes, offset + 42))
+        while offset + 46 <= bytes.count, readUInt32(bytes, offset) == centralDirectorySignature {
+            let record = try directoryRecord(bytes, at: offset)
 
-            guard offset + 46 + nameLength <= bytes.count else { throw ZipError.notAnArchive }
-            let name = String(decoding: bytes[(offset + 46)..<(offset + 46 + nameLength)], as: UTF8.self)
+            // Bit 0 of the general purpose flags means the entry's bytes are
+            // encrypted; decompressing them anyway would yield noise.
+            guard record.flags & 1 == 0 else { throw ZipError.encryptedEntry(record.name) }
 
-            if !name.hasSuffix("/") {
-                let payload = try extract(
-                    bytes, localHeaderOffset: localOffset, method: method,
-                    compressedSize: compressedSize, uncompressedSize: uncompressedSize, name: name
-                )
-                result[name] = payload
+            if !record.name.hasSuffix("/") {
+                result[record.name] = try extract(bytes, record: record)
             }
-            offset += 46 + nameLength + extraLength + commentLength
+            offset += record.length
         }
         guard !result.isEmpty else { throw ZipError.notAnArchive }
         return result
     }
 
-    private static func extract(
-        _ bytes: [UInt8], localHeaderOffset: Int, method: UInt16,
-        compressedSize: Int, uncompressedSize: Int, name: String
-    ) throws -> Data {
-        guard localHeaderOffset + 30 <= bytes.count,
-              readUInt32(bytes, localHeaderOffset) == 0x0403_4B50 else {
-            throw ZipError.corruptEntry(name)
-        }
-        let nameLength = Int(readUInt16(bytes, localHeaderOffset + 26))
-        let extraLength = Int(readUInt16(bytes, localHeaderOffset + 28))
-        let start = localHeaderOffset + 30 + nameLength + extraLength
-        guard start + compressedSize <= bytes.count else { throw ZipError.corruptEntry(name) }
-        let payload = Data(bytes[start..<(start + compressedSize)])
-
-        switch method {
-        case 0:
-            return payload
-        case 8:
-            guard let inflated = inflate(payload, expectedSize: uncompressedSize) else {
-                throw ZipError.decompressionFailed(name)
-            }
-            return inflated
-        default:
-            throw ZipError.unsupportedCompression(method)
-        }
+    /// Everything one central directory record says about a single entry.
+    private struct DirectoryRecord {
+        var name: String
+        var flags: UInt16
+        var method: UInt16
+        var crc: UInt32
+        var compressedSize: Int
+        var uncompressedSize: Int
+        var localHeaderOffset: Int
+        /// Byte length of the record itself, for walking to the next one.
+        var length: Int
     }
 
-    /// Scans backwards for the end-of-central-directory record.
+    private static func directoryRecord(_ bytes: [UInt8], at offset: Int) throws -> DirectoryRecord {
+        let nameLength = Int(readUInt16(bytes, offset + 28))
+        let extraLength = Int(readUInt16(bytes, offset + 30))
+        let commentLength = Int(readUInt16(bytes, offset + 32))
+
+        guard offset + 46 + nameLength + extraLength <= bytes.count else { throw ZipError.notAnArchive }
+        let name = String(decoding: bytes[(offset + 46)..<(offset + 46 + nameLength)], as: UTF8.self)
+
+        let compressed = readUInt32(bytes, offset + 20)
+        let uncompressed = readUInt32(bytes, offset + 24)
+        let localOffset = readUInt32(bytes, offset + 42)
+
+        var record = DirectoryRecord(
+            name: name,
+            flags: readUInt16(bytes, offset + 8),
+            method: readUInt16(bytes, offset + 10),
+            crc: readUInt32(bytes, offset + 16),
+            compressedSize: Int(compressed),
+            uncompressedSize: Int(uncompressed),
+            localHeaderOffset: Int(localOffset),
+            length: 46 + nameLength + extraLength + commentLength
+        )
+
+        if compressed == zip64Placeholder || uncompressed == zip64Placeholder || localOffset == zip64Placeholder {
+            let extra = (offset + 46 + nameLength)..<(offset + 46 + nameLength + extraLength)
+            guard var cursor = zip64ExtraField(bytes, in: extra) else { throw ZipError.corruptEntry(name) }
+
+            // The field carries only the saturated values, always in this order.
+            if uncompressed == zip64Placeholder {
+                record.uncompressedSize = try readZip64Value(bytes, at: &cursor, name: name)
+            }
+            if compressed == zip64Placeholder {
+                record.compressedSize = try readZip64Value(bytes, at: &cursor, name: name)
+            }
+            if localOffset == zip64Placeholder {
+                record.localHeaderOffset = try readZip64Value(bytes, at: &cursor, name: name)
+            }
+        }
+        return record
+    }
+
+    /// Locates the body of the ZIP64 extended information field inside an extra
+    /// field block, returning a cursor over its 64-bit values.
+    private static func zip64ExtraField(_ bytes: [UInt8], in range: Range<Int>) -> Zip64Cursor? {
+        var offset = range.lowerBound
+        while offset + 4 <= range.upperBound {
+            let identifier = readUInt16(bytes, offset)
+            let size = Int(readUInt16(bytes, offset + 2))
+            let body = (offset + 4)..<min(offset + 4 + size, range.upperBound)
+            if identifier == zip64ExtraFieldID { return Zip64Cursor(offset: body.lowerBound, end: body.upperBound) }
+            offset += 4 + size
+        }
+        return nil
+    }
+
+    /// Walks the fixed-order 64-bit values of a ZIP64 extended information field.
+    private struct Zip64Cursor {
+        var offset: Int
+        let end: Int
+    }
+
+    private static func readZip64Value(_ bytes: [UInt8], at cursor: inout Zip64Cursor, name: String) throws -> Int {
+        guard cursor.offset + 8 <= cursor.end else { throw ZipError.corruptEntry(name) }
+        let value = readUInt64(bytes, cursor.offset)
+        guard value <= UInt64(Int.max) else { throw ZipError.corruptEntry(name) }
+        cursor.offset += 8
+        return Int(value)
+    }
+
+    private static func extract(_ bytes: [UInt8], record: DirectoryRecord) throws -> Data {
+        let name = record.name
+        guard record.localHeaderOffset >= 0, record.localHeaderOffset + 30 <= bytes.count,
+              readUInt32(bytes, record.localHeaderOffset) == localHeaderSignature else {
+            throw ZipError.corruptEntry(name)
+        }
+        let nameLength = Int(readUInt16(bytes, record.localHeaderOffset + 26))
+        let extraLength = Int(readUInt16(bytes, record.localHeaderOffset + 28))
+        let start = record.localHeaderOffset + 30 + nameLength + extraLength
+        guard record.compressedSize >= 0, start + record.compressedSize <= bytes.count else {
+            throw ZipError.corruptEntry(name)
+        }
+        let payload = Data(bytes[start..<(start + record.compressedSize)])
+
+        let content: Data
+        switch record.method {
+        case 0:
+            content = payload
+        case 8:
+            // An entry that deflates to nothing decodes to zero bytes, which the
+            // Compression framework reports the same way it reports failure. A
+            // zero size with a real CRC means the writer just omitted the size.
+            if record.uncompressedSize == 0, record.crc == 0 {
+                content = Data()
+            } else if let inflated = inflate(payload, expectedSize: record.uncompressedSize) {
+                content = inflated
+            } else {
+                throw ZipError.decompressionFailed(name)
+            }
+        default:
+            throw ZipError.unsupportedCompression(record.method)
+        }
+
+        // The CRC is the only thing that catches a stream which merely stopped
+        // early: a truncated DEFLATE body still decodes, just to fewer bytes.
+        guard crc32(content) == record.crc else { throw ZipError.corruptEntry(name) }
+        return content
+    }
+
+    /// Scans backwards for the end-of-central-directory record, preferring the
+    /// ZIP64 record behind it when the archive has one.
     private static func locateCentralDirectory(_ bytes: [UInt8]) -> Int? {
         guard bytes.count >= 22 else { return nil }
         let lowerBound = max(0, bytes.count - 22 - 65_535)
         var offset = bytes.count - 22
         while offset >= lowerBound {
-            if readUInt32(bytes, offset) == 0x0605_4B50 {
-                return Int(readUInt32(bytes, offset + 16))
+            if readUInt32(bytes, offset) == endOfCentralDirectorySignature {
+                if let zip64Start = zip64CentralDirectoryStart(bytes, endOfCentralDirectory: offset) {
+                    return zip64Start
+                }
+                let start = readUInt32(bytes, offset + 16)
+                // A saturated offset with no usable ZIP64 record behind it is a lie.
+                guard start != zip64Placeholder else { return nil }
+                return Int(start)
             }
             offset -= 1
         }
         return nil
+    }
+
+    /// Follows the ZIP64 locator that sits immediately before the classic
+    /// end-of-central-directory record.
+    private static func zip64CentralDirectoryStart(_ bytes: [UInt8], endOfCentralDirectory: Int) -> Int? {
+        let locator = endOfCentralDirectory - 20
+        guard locator >= 0, readUInt32(bytes, locator) == zip64LocatorSignature else { return nil }
+
+        guard let record = offsetWithin(bytes, readUInt64(bytes, locator + 8)),
+              record + 56 <= bytes.count,
+              readUInt32(bytes, record) == zip64EndOfCentralDirectorySignature else { return nil }
+        return offsetWithin(bytes, readUInt64(bytes, record + 48))
+    }
+
+    private static func offsetWithin(_ bytes: [UInt8], _ value: UInt64) -> Int? {
+        guard value <= UInt64(bytes.count) else { return nil }
+        return Int(value)
     }
 
     // MARK: - Writing
@@ -179,17 +326,23 @@ enum ZipArchive {
     // MARK: - DEFLATE
 
     /// ZIP stores raw DEFLATE streams, which is exactly `COMPRESSION_ZLIB` here.
+    ///
+    /// A `nil` result means the decoder produced nothing usable. Output that is
+    /// merely short — a truncated stream — still comes back here; the caller's
+    /// CRC check is what rejects it.
     private static func inflate(_ data: Data, expectedSize: Int) -> Data? {
         guard !data.isEmpty else { return Data() }
 
-        // The central directory usually tells us the exact output size.
-        if expectedSize > 0, let exact = decode(data, into: expectedSize), exact.count == expectedSize {
+        // The central directory usually tells us the exact output size, but a
+        // damaged header can name an absurd one, so don't reserve it blindly.
+        if expectedSize > 0, expectedSize <= maximumInflatedSize,
+           let exact = decode(data, into: expectedSize), exact.count == expectedSize {
             return exact
         }
         // Otherwise grow the buffer until the output fits with room to spare,
-        // which is how we know it wasn't truncated.
-        var capacity = max(data.count * 8, 64 * 1024)
-        for _ in 0..<8 {
+        // which is how we know the buffer, not the stream, ended it.
+        var capacity = max(min(data.count, maximumInflatedSize / 8) * 8, 64 * 1024)
+        while capacity <= maximumInflatedSize {
             if let decoded = decode(data, into: capacity), decoded.count < capacity {
                 return decoded
             }
@@ -252,6 +405,11 @@ enum ZipArchive {
         guard offset + 4 <= bytes.count else { return 0 }
         return UInt32(bytes[offset]) | (UInt32(bytes[offset + 1]) << 8)
             | (UInt32(bytes[offset + 2]) << 16) | (UInt32(bytes[offset + 3]) << 24)
+    }
+
+    private static func readUInt64(_ bytes: [UInt8], _ offset: Int) -> UInt64 {
+        guard offset + 8 <= bytes.count else { return 0 }
+        return UInt64(readUInt32(bytes, offset)) | (UInt64(readUInt32(bytes, offset + 4)) << 32)
     }
 }
 

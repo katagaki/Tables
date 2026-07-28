@@ -25,17 +25,40 @@ struct SheetTabBarView: View {
 
                 ScrollView(.horizontal) {
                     HStack(spacing: 6) {
-                        ForEach(workbook.sheets) { sheet in
+                        ForEach(workbook.visibleSheets) { sheet in
                             tab(for: sheet)
                         }
                     }
                     .padding(.horizontal, 2)
                 }
                 .scrollIndicators(.hidden)
+
+                if !hiddenSheets.isEmpty { hiddenSheetsMenu }
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+    }
+
+    private var hiddenSheets: [Worksheet] { workbook.sheets.filter(\.isHidden) }
+
+    /// The only way back to a hidden sheet, so hiding one is never a one-way door.
+    private var hiddenSheetsMenu: some View {
+        Menu {
+            ForEach(hiddenSheets) { sheet in
+                Button(sheet.name) { state.setSheet(sheet.id, hidden: false, in: &workbook) }
+            }
+        } label: {
+            Image(systemName: "eye.slash")
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 30, height: 30)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .frame(width: 30, height: 30)
+        .glassEffect(.regular.interactive(), in: .circle)
+        .help("Show a hidden sheet")
+        .accessibilityLabel("Hidden sheets (\(hiddenSheets.count))")
     }
 
     @ViewBuilder
@@ -77,6 +100,8 @@ struct SheetTabBarView: View {
                 state.selectSheet(sheet.id, in: workbook)
                 state.duplicateActiveSheet(in: &workbook)
             }
+            Button("Hide") { state.setSheet(sheet.id, hidden: true, in: &workbook) }
+                .disabled(workbook.visibleSheets.count <= 1)
             Divider()
             Button("Delete", role: .destructive) {
                 state.deleteSheet(sheet.id, in: &workbook)

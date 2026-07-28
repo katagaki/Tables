@@ -20,6 +20,17 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<!-- Export compliance: this app uses no encryption. Verified by auditing the
+	     sources under Tables/ for CryptoKit, CommonCrypto, Security/SecKey/kSecAttr,
+	     CC_SHA, AES, keychain access, password-protected file handling, URLSession
+	     or any HTTPS/TLS networking, and third-party crypto packages — none are
+	     present. The app is a fully offline .xlsx/.csv editor with no network
+	     entitlement. The only relevant system framework is Compression, used for
+	     DEFLATE within the ZIP container of .xlsx files, which is compression and
+	     not encryption. Declaring false so App Store Connect stops prompting on
+	     every upload; revisit if encryption, networking, or keychain use is added. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<!-- An empty launch screen opts the app into the device's full resolution
 	     instead of the letterboxed 320x480 compatibility mode. -->
 	<key>UILaunchScreen</key>

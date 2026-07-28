@@ -87,6 +87,38 @@ struct FormatPanel: View {
                     get: { style.wrapsText },
                     set: { value in state.applyStyle(in: &workbook) { $0.wrapsText = value } }
                 ))
+
+                LabeledContent("Indent") {
+                    HStack(spacing: 12) {
+                        Button {
+                            state.applyStyle(in: &workbook) { $0.indent = max(0, $0.indent - 1) }
+                        } label: {
+                            Image(systemName: "decrease.indent")
+                        }
+                        Text(String(style.indent))
+                            .font(.system(size: 13, weight: .medium))
+                            .frame(minWidth: 26)
+                        Button {
+                            state.applyStyle(in: &workbook) { $0.indent = min(250, $0.indent + 1) }
+                        } label: {
+                            Image(systemName: "increase.indent")
+                        }
+                    }
+                    .buttonStyle(.borderless)
+                }
+
+                Picker("Rotation", selection: Binding(
+                    get: { style.textRotation },
+                    set: { value in state.applyStyle(in: &workbook) { $0.textRotation = value } }
+                )) {
+                    // OOXML stores clockwise angles as 90 + the angle.
+                    Text("None").tag(0)
+                    Text("45° Up").tag(45)
+                    Text("90° Up").tag(90)
+                    Text("45° Down").tag(135)
+                    Text("90° Down").tag(180)
+                    Text("Stacked").tag(CellStyle.stackedTextRotation)
+                }
             }
 
             Section("Borders") {
@@ -97,9 +129,58 @@ struct FormatPanel: View {
                     borderButton("square.lefthalf.filled", edges: .leading, label: "Left")
                     borderButton("square.righthalf.filled", edges: .trailing, label: "Right")
                 }
-                Button("Remove Borders") {
-                    state.applyStyle(in: &workbook) { $0.borders = [] }
+
+                Picker("Line Style", selection: Binding(
+                    // Dictionary order is arbitrary, so pick a fixed edge order:
+                    // a mixed selection has to show one style, not a random one.
+                    get: {
+                        BorderEdge.allCases.compactMap { style.borderSides[$0]?.lineStyle }.first
+                            ?? style.diagonalBorder?.lineStyle ?? .thin
+                    },
+                    set: { value in
+                        state.applyStyle(in: &workbook) { current in
+                            for edge in current.borderSides.keys {
+                                current.borderSides[edge]?.lineStyle = value
+                            }
+                            current.diagonalBorder?.lineStyle = value
+                        }
+                    }
+                )) {
+                    ForEach(BorderLineStyle.allCases, id: \.self) { option in
+                        Text(option.label).tag(option)
+                    }
                 }
+
+                Toggle("Diagonal Up", isOn: Binding(
+                    get: { style.diagonalBorder?.goesUp ?? false },
+                    set: { value in
+                        state.applyStyle(in: &workbook) { current in
+                            current.setDiagonal(up: value, down: current.diagonalBorder?.goesDown ?? false)
+                        }
+                    }
+                ))
+                Toggle("Diagonal Down", isOn: Binding(
+                    get: { style.diagonalBorder?.goesDown ?? false },
+                    set: { value in
+                        state.applyStyle(in: &workbook) { current in
+                            current.setDiagonal(up: current.diagonalBorder?.goesUp ?? false, down: value)
+                        }
+                    }
+                ))
+
+                Button("Remove Borders") {
+                    state.applyStyle(in: &workbook) {
+                        $0.borders = []
+                        $0.diagonalBorder = nil
+                    }
+                }
+            }
+
+            Section("Merge") {
+                Button("Merge Cells") { state.mergeSelection(in: &workbook) }
+                    .disabled(!state.canMergeSelection(in: workbook))
+                Button("Unmerge Cells") { state.unmergeSelection(in: &workbook) }
+                    .disabled(!state.canUnmergeSelection(in: workbook))
             }
 
             Section {

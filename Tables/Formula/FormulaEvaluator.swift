@@ -39,10 +39,24 @@ protocol FormulaContext: AnyObject {
     func value(at address: CellAddress, sheetName: String?) -> CellValue
     /// The extent of a sheet, so open-ended ranges can be clamped.
     func bounds(forSheetNamed name: String?) -> (rows: Int, columns: Int)?
+    /// The value a defined name stands for, or `nil` when the workbook declares
+    /// no such name so the caller can report `#NAME?`. A name standing for a
+    /// range answers with the whole matrix, which is what makes `SUM(Sales)`
+    /// behave like `SUM(Sheet1!$A$2:$A$10)`.
+    func resolveDefinedName(_ name: String, sheetName: String?) -> FormulaValue?
+}
+
+extension FormulaContext {
+    /// A context with no workbook behind it has no names to resolve.
+    func resolveDefinedName(_ name: String, sheetName: String?) -> FormulaValue? { nil }
 }
 
 struct FormulaEvaluator {
     let context: any FormulaContext
+    /// The cell whose formula is being evaluated, so `ROW()` and `COLUMN()` can
+    /// report their own position when called without a reference. `nil` when the
+    /// caller evaluates an expression that belongs to no particular cell.
+    var currentAddress: CellAddress? = nil
 
     func evaluate(_ node: FormulaNode) -> FormulaValue {
         switch node {
@@ -83,6 +97,9 @@ struct FormulaEvaluator {
 
         case .call(let name, let arguments):
             return FormulaFunctions.call(name, arguments: arguments, evaluator: self)
+
+        case .definedName(let sheet, let name):
+            return context.resolveDefinedName(name, sheetName: sheet) ?? .failure(.nameError)
         }
     }
 

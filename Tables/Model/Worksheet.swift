@@ -27,12 +27,37 @@ struct Cell: Hashable, Sendable {
 struct Worksheet: Identifiable, Hashable, Sendable {
     static let defaultRowCount = 20
     static let defaultColumnCount = 5
-    static let defaultColumnWidth: Double = 104
-    static let defaultRowHeight: Double = 30
-    static let minimumColumnWidth: Double = 40
-    static let minimumRowHeight: Double = 20
+    /// Geometry is in points throughout, matching OOXML's own unit for row
+    /// heights, so a sheet sized here renders at the same size in Excel.
+    ///
+    /// 72pt ≈ 10.7 of Excel's character widths — wider than Excel's own 8.43
+    /// default because our default font is 12pt rather than Calibri 11 — and
+    /// 20pt gives a 12pt line the same headroom Excel's 15pt gives an 11pt one.
+    static let defaultColumnWidth: Double = 72
+    static let defaultRowHeight: Double = 20
+    /// Floors for the resize handles only. Imported sheets keep whatever the
+    /// file said, however thin, because Excel users make spacer rows that way.
+    static let minimumColumnWidth: Double = 24
+    static let minimumRowHeight: Double = 12
     static let maximumRowCount = 100_000
     static let maximumColumnCount = 4_096
+
+    /// Width in 96-dpi pixels of the "0" glyph in Excel's default font, which
+    /// is the unit an OOXML `width` attribute counts.
+    private static let maximumDigitWidth: Double = 7
+    /// Cell padding Excel adds either side of the text, also in pixels.
+    private static let columnPadding: Double = 5
+
+    /// Converts an OOXML column width in characters to points.
+    static func columnWidthPoints(characters: Double) -> Double {
+        (characters * maximumDigitWidth + columnPadding) * 0.75
+    }
+
+    /// The exact inverse of `columnWidthPoints(characters:)`, so a width that
+    /// survives one save/open cycle survives every later one unchanged.
+    static func columnWidthCharacters(points: Double) -> Double {
+        (points / 0.75 - columnPadding) / maximumDigitWidth
+    }
 
     /// Characters Excel forbids in a sheet name. A workbook containing one is
     /// not merely odd — conforming readers reject the whole file.
@@ -71,7 +96,15 @@ struct Worksheet: Identifiable, Hashable, Sendable {
     var rowHeights: [Int: Double] = [:]
     var hiddenRows: Set<Int> = []
     var hiddenColumns: Set<Int> = []
+    /// Rectangular regions drawn, selected and edited as a single cell. They
+    /// never overlap, and only the top-left cell of each keeps its content.
+    var mergedRanges: [CellRange] = []
+    /// Sheets Excel marks `state="hidden"`: kept in the document, kept out of
+    /// the tab strip.
+    var isHidden = false
     var tabColorHex: String?
+    /// Worksheet children we do not understand, in the order the file had them.
+    var preservedElements: [PreservedElement] = []
 
     init(name: String) {
         self.name = Self.sanitizedName(name)
@@ -93,6 +126,53 @@ struct Worksheet: Identifiable, Hashable, Sendable {
     func contains(_ address: CellAddress) -> Bool {
         address.row >= 0 && address.row < rowCount
             && address.column >= 0 && address.column < columnCount
+    }
+
+    // MARK: - Merged regions
+
+    /// The merge covering an address, if any.
+    func mergedRange(containing address: CellAddress) -> CellRange? {
+        // Sheets usually carry no merges at all, so the scan never starts.
+        guard !mergedRanges.isEmpty else { return nil }
+        return mergedRanges.first { $0.contains(address) }
+    }
+
+    /// Grows a range until it wholly contains every merge it touches, so a
+    /// selection can never cut a merged region in half. Growing can reach a
+    /// further merge, hence the loop.
+    func expandedToMerges(_ range: CellRange) -> CellRange {
+        var box = range.normalized
+        guard !mergedRanges.isEmpty else { return box }
+        var grew = true
+        while grew {
+            grew = false
+            for merge in mergedRanges where merge.intersects(box) && !box.contains(merge) {
+                box = box.union(merge)
+                grew = true
+            }
+        }
+        return box
+    }
+
+    /// Records a merged region.
+    ///
+    /// A range that wholly covers existing merges absorbs them; one that only
+    /// partly overlaps is rejected, because a half-covered merge has no sane
+    /// meaning and Excel would refuse to open the file.
+    @discardableResult
+    mutating func merge(_ range: CellRange) -> Bool {
+        let box = range.normalized
+        guard !box.isSingleCell, contains(box.start), contains(box.end) else { return false }
+        guard mergedRanges.allSatisfy({ !$0.intersects(box) || box.contains($0) }) else { return false }
+        mergedRanges.removeAll { box.contains($0) }
+        mergedRanges.append(box)
+        return true
+    }
+
+    /// Drops every merge the range touches.
+    mutating func unmerge(_ range: CellRange) {
+        let box = range.normalized
+        mergedRanges.removeAll { $0.intersects(box) }
     }
 
     // MARK: - Geometry
@@ -141,6 +221,7 @@ struct Worksheet: Identifiable, Hashable, Sendable {
         remapCells { $0.row >= index ? CellAddress(row: $0.row + count, column: $0.column) : $0 }
         rowHeights = Self.shift(rowHeights, from: index, by: count)
         hiddenRows = Self.shift(hiddenRows, from: index, by: count)
+        remapMerges(along: \.row) { Self.span($0, insertingAt: index, count: count) }
         rowCount += count
     }
 
@@ -151,6 +232,7 @@ struct Worksheet: Identifiable, Hashable, Sendable {
         remapCells { $0.column >= index ? CellAddress(row: $0.row, column: $0.column + count) : $0 }
         columnWidths = Self.shift(columnWidths, from: index, by: count)
         hiddenColumns = Self.shift(hiddenColumns, from: index, by: count)
+        remapMerges(along: \.column) { Self.span($0, insertingAt: index, count: count) }
         columnCount += count
     }
 
@@ -162,6 +244,7 @@ struct Worksheet: Identifiable, Hashable, Sendable {
         remapCells { $0.row > range.upperBound ? CellAddress(row: $0.row - count, column: $0.column) : $0 }
         rowHeights = Self.shift(rowHeights.filter { !range.contains($0.key) }, from: range.upperBound + 1, by: -count)
         hiddenRows = Self.shift(hiddenRows.filter { !range.contains($0) }, from: range.upperBound + 1, by: -count)
+        remapMerges(along: \.row) { Self.span($0, removing: range) }
         rowCount -= count
     }
 
@@ -173,6 +256,7 @@ struct Worksheet: Identifiable, Hashable, Sendable {
         remapCells { $0.column > range.upperBound ? CellAddress(row: $0.row, column: $0.column - count) : $0 }
         columnWidths = Self.shift(columnWidths.filter { !range.contains($0.key) }, from: range.upperBound + 1, by: -count)
         hiddenColumns = Self.shift(hiddenColumns.filter { !range.contains($0) }, from: range.upperBound + 1, by: -count)
+        remapMerges(along: \.column) { Self.span($0, removing: range) }
         columnCount -= count
     }
 
@@ -213,5 +297,106 @@ struct Worksheet: Identifiable, Hashable, Sendable {
 
     private static func shift(_ values: Set<Int>, from index: Int, by delta: Int) -> Set<Int> {
         Set(values.map { $0 >= index ? $0 + delta : $0 })
+    }
+
+    /// Moves one axis of every merge through a structural edit. A merge left
+    /// spanning a single cell is no longer a merge, so it is dropped.
+    private mutating func remapMerges(
+        along axis: WritableKeyPath<CellAddress, Int>,
+        _ transform: (ClosedRange<Int>) -> ClosedRange<Int>?
+    ) {
+        guard !mergedRanges.isEmpty else { return }
+        mergedRanges = mergedRanges.compactMap { merge in
+            let box = merge.normalized
+            guard let span = transform(box.start[keyPath: axis]...box.end[keyPath: axis]) else { return nil }
+            var start = box.start
+            var end = box.end
+            start[keyPath: axis] = span.lowerBound
+            end[keyPath: axis] = span.upperBound
+            let moved = CellRange(start: start, end: end)
+            return moved.isSingleCell ? nil : moved
+        }
+    }
+
+    /// Where a span lands when lines are inserted. Inserting inside a merge
+    /// stretches it, the way Excel widens a merged heading you insert into.
+    private static func span(
+        _ span: ClosedRange<Int>, insertingAt index: Int, count: Int
+    ) -> ClosedRange<Int> {
+        if span.lowerBound >= index { return (span.lowerBound + count)...(span.upperBound + count) }
+        if span.upperBound >= index { return span.lowerBound...(span.upperBound + count) }
+        return span
+    }
+
+    /// Where a span lands once `removed` disappears, or nil when the removal
+    /// takes every line the span covered.
+    private static func span(
+        _ span: ClosedRange<Int>, removing removed: ClosedRange<Int>
+    ) -> ClosedRange<Int>? {
+        let count = removed.count
+        let start: Int
+        if span.lowerBound < removed.lowerBound {
+            start = span.lowerBound
+        } else if span.lowerBound > removed.upperBound {
+            start = span.lowerBound - count
+        } else {
+            // The span's own start went; it now begins where the gap closed.
+            start = removed.lowerBound
+        }
+        let end: Int
+        if span.upperBound < removed.lowerBound {
+            end = span.upperBound
+        } else if span.upperBound > removed.upperBound {
+            end = span.upperBound - count
+        } else {
+            end = removed.lowerBound - 1
+        }
+        return start <= end ? start...end : nil
+    }
+}
+
+// MARK: - Range geometry
+
+extension CellRange {
+    /// Parses OOXML's "A9:C9" — and a bare "A9" as a one-cell range.
+    init?(a1Range reference: String) {
+        let parts = reference.split(separator: ":", maxSplits: 1)
+        guard let first = parts.first, let start = CellAddress(a1: String(first)) else { return nil }
+        if parts.count == 1 {
+            self.init(start)
+            return
+        }
+        guard let end = CellAddress(a1: String(parts[1])) else { return nil }
+        self.init(start: start, end: end)
+    }
+
+    func intersects(_ other: CellRange) -> Bool {
+        let box = normalized
+        let candidate = other.normalized
+        return box.start.row <= candidate.end.row && box.end.row >= candidate.start.row
+            && box.start.column <= candidate.end.column && box.end.column >= candidate.start.column
+    }
+
+    func contains(_ other: CellRange) -> Bool {
+        let box = normalized
+        let candidate = other.normalized
+        return candidate.start.row >= box.start.row && candidate.end.row <= box.end.row
+            && candidate.start.column >= box.start.column && candidate.end.column <= box.end.column
+    }
+
+    /// The smallest range covering both — a bounding box, not a set union.
+    func union(_ other: CellRange) -> CellRange {
+        let box = normalized
+        let candidate = other.normalized
+        return CellRange(
+            start: CellAddress(
+                row: min(box.start.row, candidate.start.row),
+                column: min(box.start.column, candidate.start.column)
+            ),
+            end: CellAddress(
+                row: max(box.end.row, candidate.end.row),
+                column: max(box.end.column, candidate.end.column)
+            )
+        )
     }
 }

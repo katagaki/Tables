@@ -48,20 +48,35 @@ struct GridCellView: View, Equatable {
         return cell.style.textColor(for: colorScheme) ?? .primary
     }
 
+    /// Stacked text is drawn as one glyph per line rather than by rotating the
+    /// run, which is what Excel's `textRotation="255"` actually looks like.
+    private var displayText: String {
+        let text = CellFormatter.displayText(for: cell)
+        guard cell.style.isTextStacked else { return text }
+        return text.map(String.init).joined(separator: "\n")
+    }
+
+    /// Indent pads the edge the text is aligned to, matching Excel.
+    private var indentEdge: Edge.Set { alignment == .trailing ? .trailing : .leading }
+
     var body: some View {
-        Text(CellFormatter.displayText(for: cell))
+        Text(displayText)
             .font(cell.style.font(zoom: zoom))
             .foregroundStyle(textColor)
             .underline(cell.style.isUnderlined)
             .strikethrough(cell.style.isStruckThrough)
             .multilineTextAlignment(textAlignment)
-            .lineLimit(cell.style.wrapsText ? nil : 1)
+            .lineLimit(cell.style.wrapsText || cell.style.isTextStacked ? nil : 1)
             .truncationMode(.tail)
+            // Rotation is applied before padding so the padded box, not the
+            // glyphs, is what the cell frame aligns.
+            .rotationEffect(.degrees(-cell.style.rotationDegrees))
             .padding(.horizontal, 6 * zoom)
             .padding(.vertical, 2 * zoom)
+            .padding(indentEdge, cell.style.indentPoints * zoom)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: frameAlignment)
             .background(cell.style.fillColor(for: colorScheme) ?? .clear)
-            .overlay(CellBorderOverlay(style: cell.style, scheme: colorScheme))
+            .overlay(CellBorderOverlay(style: cell.style, scheme: colorScheme, zoom: zoom))
             .contentShape(.rect)
     }
 }
@@ -70,6 +85,7 @@ struct GridCellView: View, Equatable {
 private struct CellBorderOverlay: View {
     let style: CellStyle
     let scheme: ColorScheme
+    let zoom: Double
 
     var body: some View {
         GeometryReader { proxy in
@@ -82,30 +98,72 @@ private struct CellBorderOverlay: View {
                 }
                 .stroke(Color.gridLine, lineWidth: 1)
 
-                if !style.borders.isEmpty {
-                    Path { path in
-                        if style.borders.contains(.top) {
-                            path.move(to: .zero)
-                            path.addLine(to: CGPoint(x: size.width, y: 0))
-                        }
-                        if style.borders.contains(.bottom) {
-                            path.move(to: CGPoint(x: 0, y: size.height))
-                            path.addLine(to: CGPoint(x: size.width, y: size.height))
-                        }
-                        if style.borders.contains(.leading) {
-                            path.move(to: .zero)
-                            path.addLine(to: CGPoint(x: 0, y: size.height))
-                        }
-                        if style.borders.contains(.trailing) {
-                            path.move(to: CGPoint(x: size.width, y: 0))
-                            path.addLine(to: CGPoint(x: size.width, y: size.height))
+                // Each edge gets its own stroke because line width, dash pattern
+                // and colour all vary per edge in OOXML.
+                ForEach(BorderEdge.allCases, id: \.self) { edge in
+                    if let side = style.borderSides[edge] {
+                        stroke(side.lineStyle, color: side.colorHex) { offset in
+                            edgePath(edge, in: size, offset: offset)
                         }
                     }
-                    .stroke(style.borderColor(for: scheme), lineWidth: 1.5)
+                }
+
+                if let diagonal = style.diagonalBorder, diagonal.isVisible {
+                    stroke(diagonal.lineStyle, color: diagonal.colorHex) { offset in
+                        diagonalPath(diagonal, in: size, offset: offset)
+                    }
                 }
             }
         }
         .allowsHitTesting(false)
+    }
+
+    /// Strokes a line style, drawing a double rule as two offset passes.
+    @ViewBuilder
+    private func stroke(
+        _ lineStyle: BorderLineStyle, color: String?, path: @escaping (Double) -> Path
+    ) -> some View {
+        let width = lineStyle.lineWidth * zoom
+        let dash = lineStyle.dashPattern.map { CGFloat($0 * zoom) }
+        let paint = AdaptiveColor.resolve(hex: color, for: scheme, isText: true) ?? .secondary
+        let offsets: [Double] = lineStyle.doubleLineGap.map { [-$0 * zoom / 2, $0 * zoom / 2] } ?? [0]
+        ForEach(Array(offsets.enumerated()), id: \.offset) { _, offset in
+            path(offset).stroke(paint, style: StrokeStyle(lineWidth: width, dash: dash))
+        }
+    }
+
+    /// One edge of the cell rectangle, nudged inwards by `offset` so that a
+    /// double rule's two passes both land inside the cell.
+    private func edgePath(_ edge: BorderEdge, in size: CGSize, offset: Double) -> Path {
+        Path { path in
+            switch edge {
+            case .top:
+                path.move(to: CGPoint(x: 0, y: offset + abs(offset)))
+                path.addLine(to: CGPoint(x: size.width, y: offset + abs(offset)))
+            case .bottom:
+                path.move(to: CGPoint(x: 0, y: size.height + offset - abs(offset)))
+                path.addLine(to: CGPoint(x: size.width, y: size.height + offset - abs(offset)))
+            case .leading:
+                path.move(to: CGPoint(x: offset + abs(offset), y: 0))
+                path.addLine(to: CGPoint(x: offset + abs(offset), y: size.height))
+            case .trailing:
+                path.move(to: CGPoint(x: size.width + offset - abs(offset), y: 0))
+                path.addLine(to: CGPoint(x: size.width + offset - abs(offset), y: size.height))
+            }
+        }
+    }
+
+    private func diagonalPath(_ diagonal: DiagonalBorder, in size: CGSize, offset: Double) -> Path {
+        Path { path in
+            if diagonal.goesDown {
+                path.move(to: CGPoint(x: 0, y: offset))
+                path.addLine(to: CGPoint(x: size.width, y: size.height + offset))
+            }
+            if diagonal.goesUp {
+                path.move(to: CGPoint(x: 0, y: size.height + offset))
+                path.addLine(to: CGPoint(x: size.width, y: offset))
+            }
+        }
     }
 }
 

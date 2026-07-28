@@ -2,16 +2,33 @@ import Foundation
 
 /// A tiny read-only XML tree, built on `XMLParser`. Namespace prefixes are
 /// dropped so `<x:sheetData>` and `<sheetData>` look the same to callers.
+///
+/// The qualified spellings are kept alongside the stripped ones so a subtree
+/// can be written back out exactly as it came in — a part of the file we do
+/// not model is only safe to re-emit if its prefixes survive the trip.
 final class XMLElement {
     let name: String
+    /// The name as the file spelled it, prefix and all.
+    let qualifiedName: String
     private(set) var attributes: [String: String]
+    /// Attributes keyed by their qualified names, including `xmlns` declarations.
+    private(set) var qualifiedAttributes: [String: String]
     private(set) var children: [XMLElement] = []
     private(set) var text: String = ""
     weak var parent: XMLElement?
 
-    init(name: String, attributes: [String: String]) {
+    convenience init(name: String, attributes: [String: String]) {
+        self.init(name: name, qualifiedName: name, attributes: attributes, qualifiedAttributes: attributes)
+    }
+
+    init(
+        name: String, qualifiedName: String,
+        attributes: [String: String], qualifiedAttributes: [String: String]
+    ) {
         self.name = name
+        self.qualifiedName = qualifiedName
         self.attributes = attributes
+        self.qualifiedAttributes = qualifiedAttributes
     }
 
     func attribute(_ key: String) -> String? { attributes[key] }
@@ -37,6 +54,51 @@ final class XMLElement {
 
     fileprivate func appendText(_ value: String) {
         text += value
+    }
+
+    // MARK: - Namespaces
+
+    /// The namespace bindings this element declares, keyed by prefix. The
+    /// default namespace uses the empty string.
+    var namespaceDeclarations: [String: String] {
+        var result: [String: String] = [:]
+        for (key, value) in qualifiedAttributes {
+            if key == "xmlns" {
+                result[""] = value
+            } else if key.hasPrefix("xmlns:") {
+                result[String(key.dropFirst("xmlns:".count))] = value
+            }
+        }
+        return result
+    }
+
+    /// Every namespace prefix this element itself uses, in its own name and in
+    /// its attribute names. Unprefixed attributes carry no namespace at all, so
+    /// they are not counted.
+    var usedNamespacePrefixes: Set<String> {
+        var result: Set<String> = [Self.prefix(of: qualifiedName) ?? ""]
+        for key in qualifiedAttributes.keys where key != "xmlns" && !key.hasPrefix("xmlns:") {
+            if let prefix = Self.prefix(of: key) { result.insert(prefix) }
+        }
+        return result
+    }
+
+    /// What `prefix` was bound to at this point in the source document.
+    ///
+    /// An unbound default namespace is "no namespace", which is a real answer;
+    /// an unbound prefix is a document we cannot make sense of, hence `nil`.
+    func sourceNamespaceBinding(forPrefix prefix: String) -> String? {
+        var element: XMLElement? = self
+        while let current = element {
+            if let binding = current.namespaceDeclarations[prefix] { return binding }
+            element = current.parent
+        }
+        return prefix.isEmpty ? "" : nil
+    }
+
+    private static func prefix(of qualified: String) -> String? {
+        guard let colon = qualified.firstIndex(of: ":") else { return nil }
+        return String(qualified[qualified.startIndex..<colon])
     }
 }
 
@@ -76,7 +138,10 @@ enum XMLLite {
             stripped.reserveCapacity(attributes.count)
             for (key, value) in attributes { stripped[localName(key)] = value }
 
-            let element = XMLElement(name: localName(elementName), attributes: stripped)
+            let element = XMLElement(
+                name: localName(elementName), qualifiedName: elementName,
+                attributes: stripped, qualifiedAttributes: attributes
+            )
             if let parent = stack.last {
                 parent.appendChild(element)
             } else {
@@ -103,6 +168,78 @@ enum XMLLite {
         func parser(_ parser: XMLParser, parseErrorOccurred parseError: any Error) {
             failure = parseError.localizedDescription
         }
+    }
+
+    /// Writes an element and its subtree back out as XML text.
+    ///
+    /// The result is self-contained: every prefix it uses is declared inside
+    /// it, so the fragment can be dropped into any document without inheriting
+    /// anything. `inheritedNamespaces` names the bindings the destination
+    /// already has in scope, purely so redundant declarations can be skipped.
+    ///
+    /// Returns `nil` when the subtree carries mixed content — text alongside
+    /// child elements — or uses a prefix the source never declared. The parser
+    /// flattens an element's text into one string, so re-emitting mixed content
+    /// would move it; a fragment we cannot reproduce faithfully is one we have
+    /// no business writing back.
+    static func serialize(
+        _ element: XMLElement, inheritedNamespaces: [String: String] = [:]
+    ) -> String? {
+        var output = ""
+        guard append(element, to: &output, inScope: inheritedNamespaces) else { return nil }
+        return output
+    }
+
+    private static func append(
+        _ element: XMLElement, to output: inout String, inScope: [String: String]
+    ) -> Bool {
+        var scope = inScope
+        var declarations: [String: String] = [:]
+
+        // Declarations the source put on this element travel with it, so that a
+        // binding a descendant relies on is not quietly re-pointed.
+        for (prefix, uri) in element.namespaceDeclarations where scope[prefix] != uri {
+            declarations[prefix] = uri
+            scope[prefix] = uri
+        }
+        for prefix in element.usedNamespacePrefixes where prefix != "xml" {
+            guard let uri = element.sourceNamespaceBinding(forPrefix: prefix) else { return false }
+            guard scope[prefix] != uri else { continue }
+            declarations[prefix] = uri
+            scope[prefix] = uri
+        }
+
+        var attributes: [(name: String, value: String)] = declarations
+            .map { (name: $0.key.isEmpty ? "xmlns" : "xmlns:\($0.key)", value: $0.value) }
+            .sorted { $0.name < $1.name }
+        // Attribute order carries no meaning in XML, but a stable one keeps the
+        // bytes we write reproducible.
+        attributes += element.qualifiedAttributes
+            .filter { $0.key != "xmlns" && !$0.key.hasPrefix("xmlns:") }
+            .map { (name: $0.key, value: $0.value) }
+            .sorted { $0.name < $1.name }
+
+        output += "<" + element.qualifiedName
+        for attribute in attributes {
+            output += " \(attribute.name)=\"\(escape(attribute.value))\""
+        }
+
+        if element.children.isEmpty {
+            if element.text.isEmpty {
+                output += "/>"
+                return true
+            }
+            output += ">" + escape(element.text) + "</" + element.qualifiedName + ">"
+            return true
+        }
+
+        guard element.text.trimmed.isEmpty else { return false }
+        output += ">"
+        for child in element.children {
+            guard append(child, to: &output, inScope: scope) else { return false }
+        }
+        output += "</" + element.qualifiedName + ">"
+        return true
     }
 
     /// Escapes text for inclusion in XML content or a quoted attribute.

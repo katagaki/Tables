@@ -52,6 +52,10 @@ final class EditorState {
     var presentedPanel: EditorPanel?
     var errorMessage: String?
     var clipboard: [[Cell]]?
+    /// Whether the notice about parts of the file we cannot edit is up. It is
+    /// raised once when a document opens: the situation does not change while
+    /// the document is open, so repeating it on every save would only nag.
+    var isShowingUnsupportedFeatureNotice = false
 
     // MARK: - Sheet resolution
 
@@ -92,7 +96,7 @@ final class EditorState {
                 column: min(max(0, address.column), max(0, sheet.columnCount - 1))
             )
         }
-        selection = CellRange(start: clamp(selection.start), end: clamp(selection.end))
+        selection = sheet.expandedToMerges(CellRange(start: clamp(selection.start), end: clamp(selection.end)))
         anchor = clamp(anchor)
         if let editingAddress, !sheet.contains(editingAddress) { self.editingAddress = nil }
     }
@@ -107,6 +111,22 @@ final class EditorState {
         } else {
             anchor = address
             selection = CellRange(address)
+        }
+    }
+
+    /// Selects a cell, growing the range to cover any merged region it falls
+    /// inside so that clicking anywhere in a merge selects the whole of it.
+    func select(_ address: CellAddress, extending: Bool = false, in sheet: Worksheet) {
+        if extending {
+            let raw = CellRange(start: anchor, end: address)
+            let expanded = sheet.expandedToMerges(raw)
+            // Keep the raw range while no merge grew it: its `end` is the edge
+            // the user is dragging, and normalizing would lose that direction.
+            selection = expanded == raw.normalized ? raw : expanded
+        } else {
+            let merge = sheet.mergedRange(containing: address)
+            anchor = merge?.normalized.start ?? address
+            selection = merge ?? CellRange(address)
         }
     }
 
@@ -150,7 +170,7 @@ final class EditorState {
     enum MoveDirection { case up, down, left, right }
 
     func move(_ direction: MoveDirection, extending: Bool = false, in sheet: Worksheet) {
-        let origin = extending ? selection.end : selectedAddress
+        let origin = extending ? selection.end : stepOrigin(for: direction, in: sheet)
         var row = origin.row
         var column = origin.column
         switch direction {
@@ -168,11 +188,29 @@ final class EditorState {
             column += (direction == .left) ? -1 : (direction == .right ? 1 : 0)
             if direction != .left && direction != .right { break }
         }
-        let target = CellAddress(
+        var target = CellAddress(
             row: min(max(0, row), max(0, sheet.rowCount - 1)),
             column: min(max(0, column), max(0, sheet.columnCount - 1))
         )
-        select(target, extending: extending)
+        // Landing inside a merge means landing on the merge: selecting from its
+        // top-left corner is what makes the next step leave from the far edge.
+        if !extending, let merge = sheet.mergedRange(containing: target) {
+            target = merge.normalized.start
+        }
+        select(target, extending: extending, in: sheet)
         scrollTarget = target
+    }
+
+    /// Where a step starts from. Leaving a merged region measures from the edge
+    /// the movement exits by, so one press steps clear of it instead of landing
+    /// back inside.
+    private func stepOrigin(for direction: MoveDirection, in sheet: Worksheet) -> CellAddress {
+        guard let merge = sheet.mergedRange(containing: selectedAddress)?.normalized else {
+            return selectedAddress
+        }
+        switch direction {
+        case .down, .right: return merge.end
+        case .up, .left: return merge.start
+        }
     }
 }

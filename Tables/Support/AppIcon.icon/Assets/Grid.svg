@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!--
+    The table glyph: two columns by three rows. Only the four outermost corners
+    are rounded, so the block reads as one table divided into cells rather than
+    six loose tiles. The cells step through opacity so the grid carries the
+    weight of data. Drawn in white — Icon Composer tints and lights the layer,
+    so the artwork carries only shape and opacity.
+  -->
+  <g fill="#FFFFFF">
+    <path d="M236 244H504V412H188V292A48 48 0 0 1 236 244Z" opacity="0.95"/>
+    <path d="M520 244H788A48 48 0 0 1 836 292V412H520V244Z" opacity="0.55"/>
+    <path d="M188 428H504V596H188V428Z" opacity="0.72"/>
+    <path d="M520 428H836V596H520V428Z" opacity="0.95"/>
+    <path d="M188 612H504V780H236A48 48 0 0 1 188 732V612Z" opacity="0.45"/>
+    <path d="M520 612H836V732A48 48 0 0 1 788 780H520V612Z" opacity="0.78"/>
+  </g>
+</svg>

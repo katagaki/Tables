@@ -230,3 +230,31 @@ struct NumberFormatTests {
         #expect(CellFormatter.displayText(for: .boolean(true), format: "0.00") == "TRUE")
     }
 }
+
+@Suite("Position functions through the engine")
+struct EnginePositionFunctionTests {
+    /// `ROW()` and `COLUMN()` with no argument report the cell they sit in, so
+    /// they only work if the engine tells the evaluator where it is.
+    @Test("Bare ROW and COLUMN report the containing cell")
+    func bareForms() {
+        var sheet = Worksheet(name: "S")
+        sheet[CellAddress(a1: "C7")!] = CellInputParser.cell(from: "=ROW()", inheriting: .default)
+        sheet[CellAddress(a1: "D2")!] = CellInputParser.cell(from: "=COLUMN()", inheriting: .default)
+        sheet[CellAddress(a1: "B3")!] = CellInputParser.cell(from: "=ROW()*COLUMN()", inheriting: .default)
+        var workbook = Workbook(sheets: [sheet])
+        workbook.recalculate()
+
+        #expect(workbook.sheets[0][CellAddress(a1: "C7")!].value == .number(7))
+        #expect(workbook.sheets[0][CellAddress(a1: "D2")!].value == .number(4))
+        #expect(workbook.sheets[0][CellAddress(a1: "B3")!].value == .number(6))
+    }
+
+    @Test("An explicit reference still wins over the containing cell")
+    func referenceForm() {
+        var sheet = Worksheet(name: "S")
+        sheet[CellAddress(a1: "A1")!] = CellInputParser.cell(from: "=ROW(B9)", inheriting: .default)
+        var workbook = Workbook(sheets: [sheet])
+        workbook.recalculate()
+        #expect(workbook.sheets[0][CellAddress(a1: "A1")!].value == .number(9))
+    }
+}

@@ -141,11 +141,15 @@ struct SheetGridView: View {
             ForEach(visibleRows, id: \.self) { row in
                 if !activeSheet.hiddenRows.contains(row) {
                     ForEach(visibleColumns, id: \.self) { column in
-                        if !activeSheet.hiddenColumns.contains(column) {
+                        if !activeSheet.hiddenColumns.contains(column),
+                           activeSheet.mergedRange(containing: CellAddress(row: row, column: column)) == nil {
                             cell(row: row, column: column)
                         }
                     }
                 }
+            }
+            ForEach(visibleMerges, id: \.self) { merge in
+                mergedCell(merge)
             }
             selectionOverlay
             editorOverlay
@@ -173,6 +177,43 @@ struct SheetGridView: View {
             .accessibilityRespondsToUserInteraction(true)
     }
 
+    /// Merged regions intersecting the viewport.
+    ///
+    /// Merges get a pass of their own rather than being drawn by the cell at
+    /// their top-left corner: that corner is frequently scrolled outside the
+    /// built window while the rest of the region is on screen, and the region
+    /// still has to draw. Testing the whole rectangle against the window — not
+    /// just its origin — is what makes that case work.
+    private var visibleMerges: [CellRange] {
+        guard !activeSheet.mergedRanges.isEmpty else { return [] }
+        let rows = visibleRows
+        let columns = visibleColumns
+        guard !rows.isEmpty, !columns.isEmpty else { return [] }
+        let window = CellRange(
+            start: CellAddress(row: rows.lowerBound, column: columns.lowerBound),
+            end: CellAddress(row: rows.upperBound - 1, column: columns.upperBound - 1)
+        )
+        return activeSheet.mergedRanges.filter { $0.intersects(window) }
+    }
+
+    /// One merged region: the top-left cell's content and style, drawn across
+    /// the whole range.
+    private func mergedCell(_ range: CellRange) -> some View {
+        let box = range.normalized
+        let frame = metrics.frame(for: box)
+        return GridCellView(cell: activeSheet[box.start], zoom: metrics.zoom)
+            .equatable()
+            .frame(width: frame.width, height: frame.height)
+            .offset(x: frame.minX, y: frame.minY)
+            .onTapGesture(count: 2) { state.beginEditing(box.start, in: workbook) }
+            .onTapGesture { tap(box.start) }
+            .accessibilityElement(children: .ignore)
+            .accessibilityIdentifier("cell.\(box.start.a1)")
+            .accessibilityLabel(accessibilityDescription(of: box.start))
+            .accessibilityAddTraits(.isButton)
+            .accessibilityRespondsToUserInteraction(true)
+    }
+
     /// "B4, 2180.5" — the reference followed by whatever the cell shows.
     private func accessibilityDescription(of address: CellAddress) -> String {
         let text = CellFormatter.displayText(for: activeSheet[address])
@@ -188,9 +229,9 @@ struct SheetGridView: View {
         }
         if state.editingAddress != nil { state.commitEditing(in: &workbook, then: nil) }
         #if os(macOS)
-        state.select(address, extending: NSEvent.modifierFlags.contains(.shift))
+        state.select(address, extending: NSEvent.modifierFlags.contains(.shift), in: activeSheet)
         #else
-        state.select(address)
+        state.select(address, in: activeSheet)
         #endif
     }
 
@@ -210,7 +251,12 @@ struct SheetGridView: View {
             // Fill everything but the anchor cell, the way a spreadsheet does.
             Path { path in
                 path.addRect(CGRect(origin: .zero, size: frame.size))
-                let anchor = metrics.frame(for: state.selectedAddress)
+                // The anchor is a whole merged region when it lands in one, so
+                // the unfilled hole matches what the user sees as one cell.
+                let anchor = metrics.frame(
+                    for: activeSheet.mergedRange(containing: state.selectedAddress)
+                        ?? CellRange(state.selectedAddress)
+                )
                 if box.contains(state.selectedAddress), !state.isEnteringFormula {
                     path.addRect(anchor.offsetBy(dx: -frame.minX, dy: -frame.minY))
                 }
@@ -265,7 +311,7 @@ struct SheetGridView: View {
                                 CellRange(start: start, end: target), in: workbook
                             )
                         } else {
-                            state.selection = CellRange(start: state.anchor, end: target)
+                            state.select(target, extending: true, in: activeSheet)
                         }
                     }
                     .onEnded { _ in handleDragOrigin = nil }
@@ -287,7 +333,9 @@ struct SheetGridView: View {
         // While the formula bar has the caret, it owns the edit — showing a
         // second field here would fight it for keyboard focus.
         if let address = state.editingAddress, !state.isFormulaBarActive {
-            let frame = metrics.frame(for: address)
+            let frame = metrics.frame(
+                for: activeSheet.mergedRange(containing: address) ?? CellRange(address)
+            )
             // Single-line on purpose: a vertical-axis field treats Return as a
             // newline instead of committing the cell.
             TextField("", text: $state.editingText)

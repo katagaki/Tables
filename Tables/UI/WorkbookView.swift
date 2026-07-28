@@ -35,6 +35,9 @@ struct WorkbookView: View {
             if state.activeSheetID == nil {
                 state.activeSheetID = document.workbook.sheets.first?.id
                 state.refreshMetrics(in: document.workbook)
+                // Saying this on open, once, is what gives the user a chance to
+                // decide before they have changed anything.
+                state.isShowingUnsupportedFeatureNotice = !document.unsupportedFeatures.isEmpty
             }
         }
         .onChange(of: state.activeSheetID) { _, _ in
@@ -78,6 +81,14 @@ struct WorkbookView: View {
             Button("OK", role: .cancel) { state.errorMessage = nil }
         } message: {
             Text(state.errorMessage ?? "")
+        }
+        .alert(
+            "Some of this file can’t be edited here",
+            isPresented: $state.isShowingUnsupportedFeatureNotice
+        ) {
+            Button("Continue", role: .cancel) { state.isShowingUnsupportedFeatureNotice = false }
+        } message: {
+            Text(document.unsupportedFeatures.noticeMessage)
         }
     }
 
