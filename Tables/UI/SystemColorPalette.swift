@@ -1,0 +1,132 @@
+import SwiftUI
+
+/// The Human Interface Guidelines system colours, offered as swatches.
+///
+/// Formatting a spreadsheet from a colour wheel produces documents that look
+/// improvised; picking from the platform palette produces ones that look like
+/// they belong on the platform. The wheel is still there for anything else.
+///
+/// The values are the HIG light-appearance sRGB definitions rather than the
+/// live dynamic colours: a stored cell colour has to mean one fixed thing in
+/// the file, and `AdaptiveColor` is what adjusts it for a dark viewer.
+enum SystemColorPalette {
+    struct Swatch: Identifiable, Hashable {
+        /// Stable across releases — the UI tests and any saved preference key off it.
+        let id: String
+        let label: String
+        /// OOXML "AARRGGBB", which is how `CellStyle` stores colour.
+        let argbHex: String
+
+        var color: Color { Color(argbHex: argbHex) ?? .primary }
+    }
+
+    /// The accent colours, for text and for emphatic fills.
+    static let accents: [Swatch] = [
+        Swatch(id: "red", label: "Red", argbHex: "FFFF3B30"),
+        Swatch(id: "orange", label: "Orange", argbHex: "FFFF9500"),
+        Swatch(id: "yellow", label: "Yellow", argbHex: "FFFFCC00"),
+        Swatch(id: "green", label: "Green", argbHex: "FF34C759"),
+        Swatch(id: "mint", label: "Mint", argbHex: "FF00C7BE"),
+        Swatch(id: "teal", label: "Teal", argbHex: "FF30B0C7"),
+        Swatch(id: "cyan", label: "Cyan", argbHex: "FF32ADE6"),
+        Swatch(id: "blue", label: "Blue", argbHex: "FF007AFF"),
+        Swatch(id: "indigo", label: "Indigo", argbHex: "FF5856D6"),
+        Swatch(id: "purple", label: "Purple", argbHex: "FFAF52DE"),
+        Swatch(id: "pink", label: "Pink", argbHex: "FFFF2D55"),
+        Swatch(id: "brown", label: "Brown", argbHex: "FFA2845E"),
+    ]
+
+    /// The greys, which is what most sheet furniture actually wants — header
+    /// bands, banding, rules — plus plain black and white.
+    static let neutrals: [Swatch] = [
+        Swatch(id: "black", label: "Black", argbHex: "FF000000"),
+        Swatch(id: "gray", label: "Grey", argbHex: "FF8E8E93"),
+        Swatch(id: "gray2", label: "Grey 2", argbHex: "FFAEAEB2"),
+        Swatch(id: "gray3", label: "Grey 3", argbHex: "FFC7C7CC"),
+        Swatch(id: "gray4", label: "Grey 4", argbHex: "FFD1D1D6"),
+        Swatch(id: "gray5", label: "Grey 5", argbHex: "FFE5E5EA"),
+        Swatch(id: "gray6", label: "Grey 6", argbHex: "FFF2F2F7"),
+        Swatch(id: "white", label: "White", argbHex: "FFFFFFFF"),
+    ]
+
+    static let all: [Swatch] = accents + neutrals
+
+    static func swatch(id: String) -> Swatch? {
+        all.first { $0.id == id }
+    }
+}
+
+/// A horizontal carousel of system colour swatches, led by the system colour
+/// picker. `role` distinguishes the text and fill rows so each swatch has its
+/// own identifier.
+///
+/// The carousel runs edge to edge — the row's own insets are removed so the
+/// swatches scroll out under the card's rounded corners rather than stopping
+/// short of them — and carries its own inner padding so the first and last
+/// swatch still line up with the rest of the form at rest.
+struct SystemColorSwatches: View {
+    enum Role: String {
+        case text = "textColor"
+        case fill = "fillColor"
+
+        var description: String {
+            switch self {
+            case .text: return "text colour"
+            case .fill: return "fill colour"
+            }
+        }
+    }
+
+    let role: Role
+    /// The colour currently applied, so the matching swatch can show as chosen.
+    let selectedHex: String?
+    /// Drives the escape-hatch colour picker that leads the carousel.
+    @Binding var customColor: Color
+    let onSelect: (SystemColorPalette.Swatch) -> Void
+
+    private let swatchSize: CGFloat = 32
+
+    var body: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 10) {
+                // The system palette is the escape hatch, not the first offer —
+                // but it stays reachable without scrolling.
+                ColorPicker("More Colours…", selection: $customColor, supportsOpacity: false)
+                    .labelsHidden()
+                    .frame(width: swatchSize, height: swatchSize)
+                    .padding(3)
+                    .accessibilityIdentifier("\(role.rawValue).more")
+                    .accessibilityLabel("More \(role.description)s")
+
+                Divider().frame(height: swatchSize)
+
+                ForEach(SystemColorPalette.all) { swatch in
+                    let isSelected = selectedHex?.caseInsensitiveCompare(swatch.argbHex) == .orderedSame
+                    Button {
+                        onSelect(swatch)
+                    } label: {
+                        Circle()
+                            .fill(swatch.color)
+                            .frame(width: swatchSize, height: swatchSize)
+                            .overlay(Circle().strokeBorder(Color.primary.opacity(0.15), lineWidth: 1))
+                            .overlay {
+                                if isSelected {
+                                    Circle().strokeBorder(Color.accentColor, lineWidth: 3).padding(-3)
+                                }
+                            }
+                            .padding(3)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("\(role.rawValue).\(swatch.id)")
+                    .accessibilityLabel("\(swatch.label) \(role.description)")
+                    .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+        }
+        .scrollIndicators(.hidden)
+        .listRowInsets(EdgeInsets())
+        .accessibilityIdentifier("\(role.rawValue).swatches")
+    }
+}

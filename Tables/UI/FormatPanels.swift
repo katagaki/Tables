@@ -10,7 +10,7 @@ struct FormatPanel: View {
     var body: some View {
         Form {
             Section("Text") {
-                HStack(spacing: 8) {
+                HStack(spacing: 12) {
                     styleToggle("bold", isOn: style.isBold) { state.toggleBold(in: &workbook) }
                     styleToggle("italic", isOn: style.isItalic) { state.toggleItalic(in: &workbook) }
                     styleToggle("underline", isOn: style.isUnderlined) { state.toggleUnderline(in: &workbook) }
@@ -20,47 +20,59 @@ struct FormatPanel: View {
                 }
 
                 LabeledContent("Size") {
-                    HStack(spacing: 12) {
+                    HStack(spacing: 16) {
                         Button {
                             state.applyStyle(in: &workbook) { $0.fontSize = max(6, $0.fontSize - 1) }
                         } label: {
                             Image(systemName: "minus")
+                                .font(.system(size: 17, weight: .medium))
+                                .frame(width: 30, height: 30)
+                                .contentShape(.rect)
                         }
                         Text(String(Int(style.fontSize)))
-                            .font(.system(size: 13, weight: .medium))
-                            .frame(minWidth: 26)
+                            .font(.system(size: 17, weight: .medium))
+                            .monospacedDigit()
+                            .frame(minWidth: 30)
                         Button {
                             state.applyStyle(in: &workbook) { $0.fontSize = min(96, $0.fontSize + 1) }
                         } label: {
                             Image(systemName: "plus")
+                                .font(.system(size: 17, weight: .medium))
+                                .frame(width: 30, height: 30)
+                                .contentShape(.rect)
                         }
                     }
                     .buttonStyle(.borderless)
                 }
 
-                ColorPicker(
-                    "Text Colour",
-                    selection: Binding(
+                SystemColorSwatches(
+                    role: .text,
+                    selectedHex: style.textColorHex,
+                    customColor: Binding(
                         get: { style.textColor ?? .primary },
                         set: { newValue in
                             state.applyStyle(in: &workbook) { $0.textColorHex = newValue.argbHex }
                         }
-                    ),
-                    supportsOpacity: false
-                )
+                    )
+                ) { swatch in
+                    state.applyStyle(in: &workbook) { $0.textColorHex = swatch.argbHex }
+                }
             }
 
             Section("Fill") {
-                ColorPicker(
-                    "Background",
-                    selection: Binding(
+                SystemColorSwatches(
+                    role: .fill,
+                    selectedHex: style.fillColorHex,
+                    customColor: Binding(
                         get: { style.fillColor ?? .clear },
                         set: { newValue in
                             state.applyStyle(in: &workbook) { $0.fillColorHex = newValue.argbHex }
                         }
-                    ),
-                    supportsOpacity: false
-                )
+                    )
+                ) { swatch in
+                    state.applyStyle(in: &workbook) { $0.fillColorHex = swatch.argbHex }
+                }
+
                 Button("Remove Fill") {
                     state.applyStyle(in: &workbook) { $0.fillColorHex = nil }
                 }
@@ -195,8 +207,8 @@ struct FormatPanel: View {
     private func styleToggle(_ symbol: String, isOn: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 14, weight: .medium))
-                .frame(width: 38, height: 38)
+                .font(.system(size: 19, weight: .medium))
+                .frame(width: 46, height: 46)
                 .background(isOn ? Color.accentColor.opacity(0.2) : .clear, in: .circle)
                 .foregroundStyle(isOn ? Color.accentColor : .primary)
         }
@@ -215,8 +227,8 @@ struct FormatPanel: View {
             }
         } label: {
             Image(systemName: symbol)
-                .font(.system(size: 14))
-                .frame(width: 38, height: 38)
+                .font(.system(size: 19))
+                .frame(width: 46, height: 46)
         }
         .buttonStyle(.plain)
         .help(label)

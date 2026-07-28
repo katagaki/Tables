@@ -22,6 +22,9 @@ struct SheetTabBarView: View {
                 .buttonStyle(.plain)
                 .glassEffect(.regular.interactive(), in: .circle)
                 .help("Add a sheet")
+                // `help` is a tooltip, and tooltips do not exist on iOS — without
+                // this the control is an unlabelled glyph to VoiceOver.
+                .accessibilityLabel("Add a sheet")
 
                 ScrollView(.horizontal) {
                     HStack(spacing: 6) {
@@ -58,6 +61,7 @@ struct SheetTabBarView: View {
         .frame(width: 30, height: 30)
         .glassEffect(.regular.interactive(), in: .circle)
         .help("Show a hidden sheet")
+        .accessibilityLabel("Show a hidden sheet")
         .accessibilityLabel("Hidden sheets (\(hiddenSheets.count))")
     }
 

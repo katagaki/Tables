@@ -316,7 +316,9 @@ struct SheetGridView: View {
                     }
                     .onEnded { _ in handleDragOrigin = nil }
             )
+            .accessibilityIdentifier("selectionGrip")
             .accessibilityLabel("Extend selection")
+            .accessibilityAddTraits(.isButton)
     }
 
     /// A point just inside the bottom-right cell of a range — where the grip
