@@ -53,10 +53,14 @@ struct FormatPanel: View {
                         set: { newValue in
                             state.applyStyle(in: &workbook) { $0.textColorHex = newValue.argbHex }
                         }
-                    )
-                ) { swatch in
-                    state.applyStyle(in: &workbook) { $0.textColorHex = swatch.argbHex }
-                }
+                    ),
+                    onSelect: { swatch in
+                        state.applyStyle(in: &workbook) { $0.textColorHex = swatch.argbHex }
+                    },
+                    onClear: {
+                        state.applyStyle(in: &workbook) { $0.textColorHex = nil }
+                    }
+                )
             }
 
             Section("Fill") {
@@ -68,14 +72,14 @@ struct FormatPanel: View {
                         set: { newValue in
                             state.applyStyle(in: &workbook) { $0.fillColorHex = newValue.argbHex }
                         }
-                    )
-                ) { swatch in
-                    state.applyStyle(in: &workbook) { $0.fillColorHex = swatch.argbHex }
-                }
-
-                Button("Remove Fill") {
-                    state.applyStyle(in: &workbook) { $0.fillColorHex = nil }
-                }
+                    ),
+                    onSelect: { swatch in
+                        state.applyStyle(in: &workbook) { $0.fillColorHex = swatch.argbHex }
+                    },
+                    onClear: {
+                        state.applyStyle(in: &workbook) { $0.fillColorHex = nil }
+                    }
+                )
             }
 
             Section("Alignment") {

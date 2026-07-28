@@ -83,8 +83,13 @@ struct SystemColorSwatches: View {
     /// Drives the escape-hatch colour picker that leads the carousel.
     @Binding var customColor: Color
     let onSelect: (SystemColorPalette.Swatch) -> Void
+    /// Clears the colour. The carousel shows a struck-through swatch for it, so
+    /// "no colour" is a choice among the colours rather than a separate button.
+    let onClear: () -> Void
 
-    private let swatchSize: CGFloat = 32
+    /// Matches the system colour picker's own swatch, so the carousel reads as
+    /// one row of equals rather than a picker followed by larger circles.
+    private let swatchSize: CGFloat = 28
 
     var body: some View {
         ScrollView(.horizontal) {
@@ -99,6 +104,8 @@ struct SystemColorSwatches: View {
                     .accessibilityLabel("More \(role.description)s")
 
                 Divider().frame(height: swatchSize)
+
+                clearSwatch
 
                 ForEach(SystemColorPalette.all) { swatch in
                     let isSelected = selectedHex?.caseInsensitiveCompare(swatch.argbHex) == .orderedSame
@@ -128,5 +135,35 @@ struct SystemColorSwatches: View {
         .scrollIndicators(.hidden)
         .listRowInsets(EdgeInsets())
         .accessibilityIdentifier("\(role.rawValue).swatches")
+    }
+
+    /// The "no colour" swatch: an empty ring with a rule through it, the way a
+    /// colour well shows an absent colour everywhere else on the platform.
+    private var clearSwatch: some View {
+        let isSelected = selectedHex == nil
+        return Button(action: onClear) {
+            Circle()
+                .strokeBorder(Color.secondary.opacity(0.55), lineWidth: 1.5)
+                .overlay {
+                    // 45°, corner to corner of the circle's inscribed square.
+                    Path { path in
+                        let inset = swatchSize / 2 * (1 - 1 / sqrt(2))
+                        path.move(to: CGPoint(x: inset, y: swatchSize - inset))
+                        path.addLine(to: CGPoint(x: swatchSize - inset, y: inset))
+                    }
+                    .stroke(Color.red.opacity(0.8), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                }
+                .frame(width: swatchSize, height: swatchSize)
+                .overlay {
+                    if isSelected {
+                        Circle().strokeBorder(Color.accentColor, lineWidth: 3).padding(-3)
+                    }
+                }
+                .padding(3)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("\(role.rawValue).none")
+        .accessibilityLabel("No \(role.description)")
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 }
