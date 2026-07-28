@@ -175,11 +175,15 @@ final class BudgetWorkbookUITests: XCTestCase {
         renameCurrentSheet(to: name)
     }
 
-    /// Tapping the active tab starts an inline rename.
+    /// Double-tapping a tab raises its menu; rename is the first entry.
     private func renameCurrentSheet(to name: String) {
         let tab = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Sheet'")).firstMatch
         XCTAssertTrue(tab.waitForExistence(timeout: 5), "no active sheet tab to rename")
-        tab.tap()
+        tab.doubleTap()
+
+        let rename = app.buttons["Rename…"]
+        XCTAssertTrue(rename.waitForExistence(timeout: 5), "the sheet menu never appeared")
+        rename.tap()
 
         let field = app.textFields["Sheet name"]
         XCTAssertTrue(field.waitForExistence(timeout: 5), "the rename field never appeared")

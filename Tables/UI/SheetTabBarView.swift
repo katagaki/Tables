@@ -9,6 +9,9 @@ struct SheetTabBarView: View {
     @State private var draftName = ""
     @FocusState private var isRenaming: Bool
 
+    /// Bumped per tab to raise that tab's menu; see `NativeMenuPresenter`.
+    @State private var menuTriggers: [Worksheet.ID: Int] = [:]
+
     var body: some View {
         GlassEffectContainer(spacing: 8) {
             HStack(spacing: 8) {
@@ -91,27 +94,33 @@ struct SheetTabBarView: View {
             in: .capsule
         )
         .contentShape(.capsule)
-        .onTapGesture {
-            if isActive {
-                beginRename(sheet)
-            } else {
-                state.selectSheet(sheet.id, in: workbook)
-            }
-        }
-        .contextMenu {
-            Button("Rename…") { beginRename(sheet) }
-            Button("Duplicate") {
+        .onTapGesture(count: 2) { menuTriggers[sheet.id, default: 0] += 1 }
+        .onTapGesture { state.selectSheet(sheet.id, in: workbook) }
+        .background { NativeMenuPresenter(actions: menuActions(for: sheet), trigger: menuTriggers[sheet.id] ?? 0) }
+    }
+
+    // MARK: - Menu
+
+    private func menuActions(for sheet: Worksheet) -> [HeaderMenuAction] {
+        [
+            HeaderMenuAction(title: "Rename…", symbol: "pencil") { beginRename(sheet) },
+            HeaderMenuAction(title: "Duplicate", symbol: "plus.square.on.square") {
                 state.selectSheet(sheet.id, in: workbook)
                 state.duplicateActiveSheet(in: &workbook)
-            }
-            Button("Hide") { state.setSheet(sheet.id, hidden: true, in: &workbook) }
-                .disabled(workbook.visibleSheets.count <= 1)
-            Divider()
-            Button("Delete", role: .destructive) {
+            },
+            HeaderMenuAction(
+                title: "Hide", symbol: "eye.slash", isEnabled: workbook.visibleSheets.count > 1
+            ) {
+                state.setSheet(sheet.id, hidden: true, in: &workbook)
+            },
+            .separator,
+            HeaderMenuAction(
+                title: "Delete", symbol: "trash", kind: .destructive,
+                isEnabled: workbook.sheets.count > 1
+            ) {
                 state.deleteSheet(sheet.id, in: &workbook)
-            }
-            .disabled(workbook.sheets.count <= 1)
-        }
+            },
+        ]
     }
 
     private func beginRename(_ sheet: Worksheet) {
