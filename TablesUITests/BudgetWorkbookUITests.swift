@@ -45,16 +45,8 @@ final class BudgetWorkbookUITests: XCTestCase {
         waitForSelection(expecting ?? reference)
     }
 
-    /// Types one cell's contents and commits with Return.
     private func enter(_ text: String, into reference: String) {
-        let target = cell(reference)
-        XCTAssertTrue(target.waitForExistence(timeout: 5), "missing cell \(reference)")
-        target.doubleTap()
-        waitForSelection(reference)
-
-        let editor = app.textFields["cellEditor"]
-        XCTAssertTrue(editor.waitForExistence(timeout: 5), "the editor never opened on \(reference)")
-        editor.typeText(text + "\n")
+        enterText(text, into: reference, in: app)
     }
 
     /// Fills a row left to right from a starting column.
@@ -223,7 +215,10 @@ final class BudgetWorkbookUITests: XCTestCase {
 
     private func openNewDocument() {
         let formulaField = app.textFields["formulaField"]
-        if formulaField.waitForExistence(timeout: 5) { return }
+        if formulaField.waitForExistence(timeout: 5) {
+            settle()
+            return
+        }
 
         let create = app.buttons["Create Document"]
         XCTAssertTrue(create.waitForExistence(timeout: 30), "the document browser never appeared")
@@ -238,6 +233,7 @@ final class BudgetWorkbookUITests: XCTestCase {
             if existing.waitForExistence(timeout: 5) { existing.doubleTap() } else if create.exists { create.tap() }
         }
         XCTAssertTrue(formulaField.waitForExistence(timeout: 30), "the editor never appeared")
+        settle()
     }
 
     /// Income: a titled, coloured header band, three sources, and a SUM total.

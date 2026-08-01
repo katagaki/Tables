@@ -24,7 +24,10 @@ final class WorkbookUITests: XCTestCase {
     @discardableResult
     private func openEditor(_ app: XCUIApplication) -> XCUIElement {
         let formulaField = app.textFields["formulaField"]
-        if formulaField.waitForExistence(timeout: 5) { return formulaField }
+        if formulaField.waitForExistence(timeout: 5) {
+            settle()
+            return formulaField
+        }
 
         let create = app.buttons["Create Document"]
         XCTAssertTrue(create.waitForExistence(timeout: 30), "the document browser never appeared")
@@ -46,29 +49,12 @@ final class WorkbookUITests: XCTestCase {
             }
         }
         XCTAssertTrue(formulaField.waitForExistence(timeout: 30), "the editor never appeared")
+        settle()
         return formulaField
     }
 
-    /// Double-tapping a cell opens the in-place editor; typing there commits on return.
-    ///
-    /// Committing carries the editor to the next cell, so the editor element is
-    /// almost always already on screen. Wait for the address box to name the
-    /// cell we asked for before typing, or the text lands in the previous one.
     private func type(_ text: String, into reference: String, app: XCUIApplication) {
-        let target = cell(reference, in: app)
-        XCTAssertTrue(target.waitForExistence(timeout: 5), "missing cell \(reference)")
-        target.doubleTap()
-
-        let addressBox = app.staticTexts["addressBox"]
-        let deadline = Date().addingTimeInterval(5)
-        while addressBox.label != reference, Date() < deadline {
-            usleep(50_000)
-        }
-        XCTAssertEqual(addressBox.label, reference, "the selection never reached \(reference)")
-
-        let editor = app.textFields["cellEditor"]
-        XCTAssertTrue(editor.waitForExistence(timeout: 5), "the in-cell editor never opened on \(reference)")
-        editor.typeText(text + "\n")
+        enterText(text, into: reference, in: app)
     }
 
     /// Enters a small table and checks the SUM formula evaluates in the grid.
@@ -126,6 +112,25 @@ final class WorkbookUITests: XCTestCase {
             addressBox.label, "A1:F21",
             "a new sheet plus one row and one column should span A1:F21"
         )
+    }
+
+    /// A double tap on a cell raises the cell menu — the same one a long press
+    /// gives — rather than opening the editor directly.
+    func testDoubleTapRaisesCellMenu() throws {
+        let app = XCUIApplication.launchedInEnglish()
+        openEditor(app)
+
+        let target = cell("B2", in: app)
+        XCTAssertTrue(target.waitForExistence(timeout: 5), "missing cell B2")
+        target.doubleTap()
+
+        XCTAssertTrue(
+            app.buttons["Edit"].waitForExistence(timeout: 5),
+            "the double tap did not raise the cell menu"
+        )
+        for item in ["Copy", "Cut", "Reset Formatting"] {
+            XCTAssertTrue(app.buttons[item].exists, "the menu is missing \(item)")
+        }
     }
 
     /// Formatting the selection updates the grid without disturbing values.
