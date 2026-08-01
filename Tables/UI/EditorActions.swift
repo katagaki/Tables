@@ -85,7 +85,9 @@ extension EditorState {
     /// Replaces the contents of every selected cell, keeping formatting.
     func clearContents(in workbook: inout Workbook) {
         let index = activeIndex(in: workbook)
-        for address in selection.addresses where workbook.sheets[index].contains(address) {
+        let targets = workbook.sheets[index].storedAddresses(in: selection)
+        guard !targets.isEmpty else { return }
+        for address in targets {
             var cell = workbook.sheets[index][address]
             cell.value = .empty
             cell.formula = nil
@@ -96,7 +98,7 @@ extension EditorState {
 
     func clearFormatting(in workbook: inout Workbook) {
         let index = activeIndex(in: workbook)
-        for address in selection.addresses where workbook.sheets[index].contains(address) {
+        for address in workbook.sheets[index].storedAddresses(in: selection) {
             var cell = workbook.sheets[index][address]
             cell.style = .default
             workbook.sheets[index][address] = cell
@@ -112,7 +114,24 @@ extension EditorState {
 
     func applyStyle(in workbook: inout Workbook, _ transform: (inout CellStyle) -> Void) {
         let index = activeIndex(in: workbook)
-        for address in selection.addresses where workbook.sheets[index].contains(address) {
+
+        // A cell the sheet never stored has the default style, so a change that
+        // leaves the default alone — switching bold off, say — cannot show on
+        // one. Skipping those keeps a whole-sheet selection from writing an
+        // entry for every cell in the grid to store nothing.
+        var probe = CellStyle.default
+        transform(&probe)
+        guard !probe.isDefault else {
+            for address in workbook.sheets[index].storedAddresses(in: selection) {
+                var cell = workbook.sheets[index][address]
+                transform(&cell.style)
+                workbook.sheets[index][address] = cell
+            }
+            return
+        }
+
+        selection.forEachAddress { address in
+            guard workbook.sheets[index].contains(address) else { return }
             var cell = workbook.sheets[index][address]
             transform(&cell.style)
             workbook.sheets[index][address] = cell
@@ -230,8 +249,11 @@ extension EditorState {
         let index = activeIndex(in: workbook)
         let sheet = workbook.sheets[index]
         var widest = Worksheet.minimumColumnWidth
-        for row in 0..<sheet.rowCount where !sheet.hiddenRows.contains(row) {
-            let cell = sheet[CellAddress(row: row, column: column)]
+        // Walking the column's stored cells rather than its rows: an empty cell
+        // measures nothing, and a sheet is thousands of rows long before it is
+        // thousands of cells deep in any one column.
+        for (address, cell) in sheet.cells
+        where address.column == column && !sheet.hiddenRows.contains(address.row) {
             let text = CellFormatter.displayText(for: cell)
             guard !text.isEmpty else { continue }
             let estimate = Double(text.count) * cell.style.fontSize * 0.62 + 20
@@ -268,10 +290,12 @@ extension EditorState {
         let box = workbook.sheets[index].expandedToMerges(selection)
         guard !box.isSingleCell else { return }
         guard workbook.sheets[index].merge(box) else {
-            errorMessage = "That selection crosses part of an existing merged cell."
+            errorMessage = String(localized: "Error.Merge.CrossesExistingMerge")
             return
         }
-        for address in box.addresses where address != box.start {
+        // Only stored cells have anything to discard, and a merge can cover
+        // rather more of the sheet than the sheet actually holds.
+        for address in workbook.sheets[index].storedAddresses(in: box) where address != box.start {
             workbook.sheets[index][address] = Cell()
         }
         // Formulas elsewhere may have pointed at what was just discarded.
@@ -368,7 +392,7 @@ extension EditorState {
 
     func deleteSheet(_ id: Worksheet.ID, in workbook: inout Workbook) {
         guard workbook.sheets.count > 1 else {
-            errorMessage = "A workbook needs at least one sheet."
+            errorMessage = String(localized: "Error.Workbook.NeedsOneSheet")
             return
         }
         let wasActive = activeSheet(in: workbook).id == id
@@ -381,7 +405,7 @@ extension EditorState {
     /// Hides or reveals a sheet, leaving at least one on the tab strip.
     func setSheet(_ id: Worksheet.ID, hidden: Bool, in workbook: inout Workbook) {
         guard workbook.setSheet(id, hidden: hidden) else {
-            errorMessage = "A workbook needs at least one visible sheet."
+            errorMessage = String(localized: "Error.Workbook.NeedsOneVisibleSheet")
             return
         }
         if hidden {

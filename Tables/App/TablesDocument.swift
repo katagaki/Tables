@@ -9,7 +9,9 @@ extension UTType {
 /// The app's document: an entire workbook, loaded from `.xlsx` or `.csv`.
 struct TablesDocument: FileDocument {
     static let readableContentTypes: [UTType] = [.openXMLWorkbook, .commaSeparatedText, .tabSeparatedText]
-    static let writableContentTypes: [UTType] = [.openXMLWorkbook, .commaSeparatedText]
+    static let writableContentTypes: [UTType] = [
+        .openXMLWorkbook, .commaSeparatedText, .tabSeparatedText
+    ]
 
     var workbook: Workbook
     /// CSV holds a single sheet, so exporting picks one. Tracks the user's choice.
@@ -33,7 +35,7 @@ struct TablesDocument: FileDocument {
         }
         let name = configuration.file.preferredFilename.map {
             ($0 as NSString).deletingPathExtension
-        } ?? "Sheet 1"
+        } ?? Workbook.defaultSheetName(1)
 
         if configuration.contentType.conforms(to: .openXMLWorkbook) {
             workbook = try XLSXReader.workbook(from: data)
@@ -53,12 +55,20 @@ struct TablesDocument: FileDocument {
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
         let data: Data
-        if configuration.contentType.conforms(to: .commaSeparatedText) {
-            let index = min(max(0, csvExportSheetIndex), workbook.sheets.count - 1)
-            data = CSVCodec.data(from: workbook.sheets[index])
+        // Tab separated text does not conform to the comma separated type, so
+        // ask about it in its own right rather than relying on the order here.
+        if configuration.contentType.conforms(to: .tabSeparatedText) {
+            data = CSVCodec.data(from: exportSheet, delimiter: "\t")
+        } else if configuration.contentType.conforms(to: .commaSeparatedText) {
+            data = CSVCodec.data(from: exportSheet)
         } else {
             data = try XLSXWriter.data(from: workbook)
         }
         return FileWrapper(regularFileWithContents: data)
+    }
+
+    /// Saving as delimited text writes whichever sheet the user picked.
+    private var exportSheet: Worksheet {
+        workbook.sheet(at: csvExportSheetIndex)
     }
 }

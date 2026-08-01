@@ -15,10 +15,10 @@ enum HorizontalTextAlignment: String, Hashable, Sendable, CaseIterable {
 
     var label: String {
         switch self {
-        case .automatic: return "Automatic"
-        case .leading: return "Left"
-        case .center: return "Center"
-        case .trailing: return "Right"
+        case .automatic: return String(localized: "Alignment.Horizontal.Automatic")
+        case .leading: return String(localized: "Alignment.Horizontal.Left")
+        case .center: return String(localized: "Alignment.Horizontal.Center")
+        case .trailing: return String(localized: "Alignment.Horizontal.Right")
         }
     }
 }
@@ -34,7 +34,13 @@ enum VerticalTextAlignment: String, Hashable, Sendable, CaseIterable {
         }
     }
 
-    var label: String { rawValue.capitalized }
+    var label: String {
+        switch self {
+        case .top: return String(localized: "Alignment.Vertical.Top")
+        case .middle: return String(localized: "Alignment.Vertical.Middle")
+        case .bottom: return String(localized: "Alignment.Vertical.Bottom")
+        }
+    }
 
     var alignment: Alignment {
         switch self {
@@ -122,19 +128,19 @@ enum BorderLineStyle: String, Hashable, Sendable, CaseIterable {
 
     var label: String {
         switch self {
-        case .hair: return "Hairline"
-        case .thin: return "Thin"
-        case .medium: return "Medium"
-        case .thick: return "Thick"
-        case .double: return "Double"
-        case .dotted: return "Dotted"
-        case .dashed: return "Dashed"
-        case .dashDot: return "Dash-Dot"
-        case .dashDotDot: return "Dash-Dot-Dot"
-        case .mediumDashed: return "Medium Dashed"
-        case .mediumDashDot: return "Medium Dash-Dot"
-        case .mediumDashDotDot: return "Medium Dash-Dot-Dot"
-        case .slantDashDot: return "Slanted Dash-Dot"
+        case .hair: return String(localized: "BorderLineStyle.Hairline")
+        case .thin: return String(localized: "BorderLineStyle.Thin")
+        case .medium: return String(localized: "BorderLineStyle.Medium")
+        case .thick: return String(localized: "BorderLineStyle.Thick")
+        case .double: return String(localized: "BorderLineStyle.Double")
+        case .dotted: return String(localized: "BorderLineStyle.Dotted")
+        case .dashed: return String(localized: "BorderLineStyle.Dashed")
+        case .dashDot: return String(localized: "BorderLineStyle.DashDot")
+        case .dashDotDot: return String(localized: "BorderLineStyle.DashDotDot")
+        case .mediumDashed: return String(localized: "BorderLineStyle.MediumDashed")
+        case .mediumDashDot: return String(localized: "BorderLineStyle.MediumDashDot")
+        case .mediumDashDotDot: return String(localized: "BorderLineStyle.MediumDashDotDot")
+        case .slantDashDot: return String(localized: "BorderLineStyle.SlantDashDot")
         }
     }
 }
@@ -301,19 +307,19 @@ enum NumberFormatPreset: String, CaseIterable, Identifiable, Sendable {
 
     var label: String {
         switch self {
-        case .general: return "Automatic"
-        case .number: return "Number"
-        case .numberTwoPlaces: return "Number (2 dp)"
-        case .thousands: return "Thousands"
-        case .currency: return "Currency"
-        case .accounting: return "Accounting"
-        case .percent: return "Percentage"
-        case .percentTwoPlaces: return "Percentage (2 dp)"
-        case .scientific: return "Scientific"
-        case .date: return "Date"
-        case .time: return "Time"
-        case .dateTime: return "Date & Time"
-        case .text: return "Text"
+        case .general: return String(localized: "NumberFormat.Preset.Automatic")
+        case .number: return String(localized: "NumberFormat.Preset.Number")
+        case .numberTwoPlaces: return String(localized: "NumberFormat.Preset.NumberTwoPlaces")
+        case .thousands: return String(localized: "NumberFormat.Preset.Thousands")
+        case .currency: return String(localized: "NumberFormat.Preset.Currency")
+        case .accounting: return String(localized: "NumberFormat.Preset.Accounting")
+        case .percent: return String(localized: "NumberFormat.Preset.Percentage")
+        case .percentTwoPlaces: return String(localized: "NumberFormat.Preset.PercentageTwoPlaces")
+        case .scientific: return String(localized: "NumberFormat.Preset.Scientific")
+        case .date: return String(localized: "NumberFormat.Preset.Date")
+        case .time: return String(localized: "NumberFormat.Preset.Time")
+        case .dateTime: return String(localized: "NumberFormat.Preset.DateTime")
+        case .text: return String(localized: "NumberFormat.Preset.Text")
         }
     }
 

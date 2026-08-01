@@ -213,8 +213,16 @@ enum XLSXWriter {
         if !columnEntries.isEmpty { add("cols", "<cols>" + columnEntries.joined() + "</cols>") }
 
         xml = "<sheetData>"
-        let populatedRows = Set(sheet.cells.keys.map(\.row))
-        let interestingRows = populatedRows
+        // Bucketed in one pass rather than by asking the sheet for each row's
+        // cells in turn: that question costs a scan of every cell in the sheet,
+        // and a sheet with tens of thousands of rows would pay it that many
+        // times over just to save the file once.
+        var cellsByRow: [Int: [(address: CellAddress, cell: Cell)]] = [:]
+        for (address, cell) in sheet.cells
+        where address.row < sheet.rowCount && address.column < sheet.columnCount {
+            cellsByRow[address.row, default: []].append((address, cell))
+        }
+        let interestingRows = Set(cellsByRow.keys)
             .union(sheet.hiddenRows)
             .union(sheet.rowHeights.keys)
             .filter { $0 < sheet.rowCount }
@@ -227,13 +235,11 @@ enum XLSXWriter {
             }
             if sheet.hiddenRows.contains(row) { attributes += " hidden=\"1\"" }
 
-            let cells = sheet.cells
-                .filter { $0.key.row == row && $0.key.column < sheet.columnCount }
-                .sorted { $0.key.column < $1.key.column }
-            guard !cells.isEmpty else {
+            guard var cells = cellsByRow[row], !cells.isEmpty else {
                 xml += "<row \(attributes)/>"
                 continue
             }
+            cells.sort { $0.address.column < $1.address.column }
             xml += "<row \(attributes)>"
             for (address, cell) in cells {
                 xml += cellPart(cell, at: address, strings: strings, styles: styles)

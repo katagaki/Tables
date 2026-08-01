@@ -43,7 +43,7 @@ struct FormulaBarView: View {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(isShowingFormula ? Color.accentColor : .secondary)
 
-            TextField("Enter a value or formula", text: displayedText)
+            TextField("FormulaBar.Field.Placeholder", text: displayedText)
                 .accessibilityIdentifier("formulaField")
                 .textFieldStyle(.plain)
                 .font(isShowingFormula ? .system(size: 16, design: .monospaced) : .system(size: 16))
@@ -64,7 +64,7 @@ struct FormulaBarView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
-                .accessibilityLabel("Discard edit")
+                .accessibilityLabel("FormulaBar.DiscardEdit")
 
                 Button {
                     state.commitEditing(in: &workbook, then: nil)
@@ -74,7 +74,7 @@ struct FormulaBarView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.accentColor)
-                .accessibilityLabel("Accept edit")
+                .accessibilityLabel("FormulaBar.AcceptEdit")
             }
         }
         .padding(.horizontal, 16)

@@ -10,7 +10,11 @@ import SwiftUI
 /// The view itself is invisible and does not take hits: it exists only to own a
 /// window-attached responder the menu can hang from. Bump `trigger` to present.
 struct NativeMenuPresenter: View {
-    var actions: [HeaderMenuAction]
+    /// The menu's contents, built when it is presented rather than when the
+    /// view is made. Headers and cells are rebuilt on every scroll frame, and
+    /// assembling a platform menu for each of them at that rate costs far more
+    /// than building one the moment somebody actually asks for it.
+    var actions: () -> [HeaderMenuAction]
     var trigger: Int
 
     var body: some View {
@@ -28,7 +32,7 @@ import UIKit
 
 private extension NativeMenuPresenter {
     struct Representable: UIViewRepresentable {
-        var actions: [HeaderMenuAction]
+        var actions: () -> [HeaderMenuAction]
         var trigger: Int
 
         func makeUIView(context: Context) -> UIButton {
@@ -47,7 +51,15 @@ private extension NativeMenuPresenter {
         }
 
         func updateUIView(_ button: UIButton, context: Context) {
-            button.menu = UIMenu(children: menuElements)
+            // A deferred element defers the whole list: nothing is built until
+            // the menu is on its way up, which is what makes reassigning it on
+            // every update cheap enough to do at scroll rate.
+            let build = actions
+            button.menu = UIMenu(children: [
+                UIDeferredMenuElement.uncached { completion in
+                    completion(Self.menuElements(for: build()))
+                },
+            ])
             guard context.coordinator.lastTrigger != trigger else { return }
             context.coordinator.lastTrigger = trigger
             // A trigger of zero is the initial state, not a request.
@@ -63,7 +75,7 @@ private extension NativeMenuPresenter {
 
         /// UIKit has no separator element, so runs between separators become
         /// inline sub-menus, which is how the system draws grouped items.
-        private var menuElements: [UIMenuElement] {
+        private static func menuElements(for actions: [HeaderMenuAction]) -> [UIMenuElement] {
             var groups: [[HeaderMenuAction]] = [[]]
             for action in actions {
                 if case .separator = action.kind {
@@ -77,7 +89,7 @@ private extension NativeMenuPresenter {
             }
         }
 
-        private func command(for action: HeaderMenuAction) -> UIAction {
+        private static func command(for action: HeaderMenuAction) -> UIAction {
             let command = UIAction(
                 title: action.title,
                 image: UIImage(systemName: action.symbol),
@@ -95,7 +107,7 @@ import AppKit
 
 private extension NativeMenuPresenter {
     struct Representable: NSViewRepresentable {
-        var actions: [HeaderMenuAction]
+        var actions: () -> [HeaderMenuAction]
         var trigger: Int
 
         func makeNSView(context: Context) -> NSView {
@@ -108,7 +120,7 @@ private extension NativeMenuPresenter {
             guard trigger > 0 else { return }
 
             let menu = NSMenu()
-            for action in actions {
+            for action in actions() {
                 menu.addItem(context.coordinator.item(for: action))
             }
             DispatchQueue.main.async {

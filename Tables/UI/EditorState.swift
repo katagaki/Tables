@@ -12,10 +12,10 @@ enum EditorPanel: String, Identifiable, Hashable {
 
     var title: String {
         switch self {
-        case .format: return "Format"
-        case .numberFormat: return "Number Format"
-        case .rowsAndColumns: return "Rows & Columns"
-        case .functions: return "Functions"
+        case .format: return String(localized: "Panel.Format.Title")
+        case .numberFormat: return String(localized: "Panel.NumberFormat.Title")
+        case .rowsAndColumns: return String(localized: "Panel.RowsAndColumns.Title")
+        case .functions: return String(localized: "Panel.Functions.Title")
         }
     }
 }

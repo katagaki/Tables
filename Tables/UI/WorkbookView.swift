@@ -72,21 +72,21 @@ struct WorkbookView: View {
         }
         #endif
         .alert(
-            "Couldn’t complete that",
+            "Alert.Error.Title",
             isPresented: Binding(
                 get: { state.errorMessage != nil },
                 set: { if !$0 { state.errorMessage = nil } }
             )
         ) {
-            Button("OK", role: .cancel) { state.errorMessage = nil }
+            Button("Common.OK", role: .cancel) { state.errorMessage = nil }
         } message: {
             Text(state.errorMessage ?? "")
         }
         .alert(
-            "Some of this file can’t be edited here",
+            "Alert.UnsupportedFeatures.Title",
             isPresented: $state.isShowingUnsupportedFeatureNotice
         ) {
-            Button("Continue", role: .cancel) { state.isShowingUnsupportedFeatureNotice = false }
+            Button("Common.Continue", role: .cancel) { state.isShowingUnsupportedFeatureNotice = false }
         } message: {
             Text(document.unsupportedFeatures.noticeMessage)
         }
@@ -109,7 +109,8 @@ struct WorkbookView: View {
     private var export: WorkbookExport {
         WorkbookExport(
             workbook: document.workbook,
-            name: state.activeSheet(in: document.workbook).name
+            name: state.activeSheet(in: document.workbook).name,
+            sheetIndex: state.activeIndex(in: document.workbook)
         )
     }
 
@@ -117,7 +118,7 @@ struct WorkbookView: View {
     private var sharingToolbar: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
             ShareLink(item: export, preview: SharePreview(export.name, image: Image(systemName: "tablecells")))
-                .accessibilityLabel("Share spreadsheet")
+                .accessibilityLabel("Toolbar.Share.Label")
         }
     }
 
@@ -126,13 +127,16 @@ struct WorkbookView: View {
     @ToolbarContentBuilder
     private var macToolbar: some ToolbarContent {
         ToolbarItemGroup {
-            toolbarToggle("bold", label: "Bold", isOn: currentStyle.isBold) {
+            toolbarToggle("bold", label: String(localized: "Toolbar.Bold"), isOn: currentStyle.isBold) {
                 state.toggleBold(in: &document.workbook)
             }
-            toolbarToggle("italic", label: "Italic", isOn: currentStyle.isItalic) {
+            toolbarToggle("italic", label: String(localized: "Toolbar.Italic"), isOn: currentStyle.isItalic) {
                 state.toggleItalic(in: &document.workbook)
             }
-            toolbarToggle("underline", label: "Underline", isOn: currentStyle.isUnderlined) {
+            toolbarToggle(
+                "underline", label: String(localized: "Toolbar.Underline"),
+                isOn: currentStyle.isUnderlined
+            ) {
                 state.toggleUnderline(in: &document.workbook)
             }
         }
@@ -149,19 +153,28 @@ struct WorkbookView: View {
         }
 
         ToolbarItemGroup {
-            toolbarToggle("number", label: "Number format", isOn: state.presentedPanel == .numberFormat) {
+            toolbarToggle(
+                "number", label: String(localized: "Toolbar.NumberFormat"),
+                isOn: state.presentedPanel == .numberFormat
+            ) {
                 state.presentedPanel = .numberFormat
             }
-            toolbarToggle("paintpalette", label: "Cell format", isOn: state.presentedPanel == .format) {
+            toolbarToggle(
+                "paintpalette", label: String(localized: "Toolbar.CellFormat"),
+                isOn: state.presentedPanel == .format
+            ) {
                 state.presentedPanel = .format
             }
-            toolbarToggle("sum", label: "Sum the selection", isOn: false) {
+            toolbarToggle("sum", label: String(localized: "Toolbar.Sum"), isOn: false) {
                 state.insertAggregate("SUM", in: &document.workbook)
             }
-            toolbarToggle("function", label: "Insert a function", isOn: state.presentedPanel == .functions) {
+            toolbarToggle(
+                "function", label: String(localized: "Toolbar.InsertFunction"),
+                isOn: state.presentedPanel == .functions
+            ) {
                 state.presentedPanel = .functions
             }
-            toolbarToggle("tablecells", label: "Rows and columns",
+            toolbarToggle("tablecells", label: String(localized: "Toolbar.RowsAndColumns"),
                           isOn: state.presentedPanel == .rowsAndColumns) {
                 state.presentedPanel = .rowsAndColumns
             }

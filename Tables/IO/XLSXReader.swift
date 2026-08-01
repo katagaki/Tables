@@ -34,7 +34,7 @@ enum XLSXReader {
         let sheetElements = workbookXML.firstChild(named: "sheets")?.children(named: "sheet") ?? []
 
         for (position, element) in sheetElements.enumerated() {
-            let name = element.attribute("name") ?? "Sheet \(position + 1)"
+            let name = element.attribute("name") ?? Workbook.defaultSheetName(position + 1)
             let target = element.attribute("id").flatMap { relationships[$0] }
             let fallbackPath = "xl/worksheets/sheet\(position + 1).xml"
             let path = resolvePath(target) ?? fallbackPath

@@ -7,8 +7,7 @@ final class SheetTabBarUITests: XCTestCase {
 
     override func setUp() {
         continueAfterFailure = false
-        app = XCUIApplication()
-        app.launch()
+        app = XCUIApplication.launchedInEnglish()
         openDocument()
     }
 

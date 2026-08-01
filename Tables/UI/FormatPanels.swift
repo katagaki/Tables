@@ -9,17 +9,23 @@ struct FormatPanel: View {
 
     var body: some View {
         Form {
-            Section("Text") {
+            Section("Format.Section.Text") {
                 HStack(spacing: 12) {
-                    styleToggle("bold", isOn: style.isBold) { state.toggleBold(in: &workbook) }
-                    styleToggle("italic", isOn: style.isItalic) { state.toggleItalic(in: &workbook) }
-                    styleToggle("underline", isOn: style.isUnderlined) { state.toggleUnderline(in: &workbook) }
-                    styleToggle("strikethrough", isOn: style.isStruckThrough) {
+                    styleToggle("bold", label: "Toolbar.Bold", isOn: style.isBold) {
+                        state.toggleBold(in: &workbook)
+                    }
+                    styleToggle("italic", label: "Toolbar.Italic", isOn: style.isItalic) {
+                        state.toggleItalic(in: &workbook)
+                    }
+                    styleToggle("underline", label: "Toolbar.Underline", isOn: style.isUnderlined) {
+                        state.toggleUnderline(in: &workbook)
+                    }
+                    styleToggle("strikethrough", label: "Toolbar.Strikethrough", isOn: style.isStruckThrough) {
                         state.toggleStrikethrough(in: &workbook)
                     }
                 }
 
-                LabeledContent("Size") {
+                LabeledContent("Format.Text.Size") {
                     HStack(spacing: 16) {
                         Button {
                             state.applyStyle(in: &workbook) { $0.fontSize = max(6, $0.fontSize - 1) }
@@ -30,7 +36,7 @@ struct FormatPanel: View {
                                 .contentShape(.rect)
                         }
                         .accessibilityIdentifier("fontSize.decrease")
-                        .accessibilityLabel("Smaller text")
+                        .accessibilityLabel("Format.Text.Size.Decrease")
                         Text(String(Int(style.fontSize)))
                             .font(.system(size: 17, weight: .medium))
                             .monospacedDigit()
@@ -45,7 +51,7 @@ struct FormatPanel: View {
                                 .contentShape(.rect)
                         }
                         .accessibilityIdentifier("fontSize.increase")
-                        .accessibilityLabel("Larger text")
+                        .accessibilityLabel("Format.Text.Size.Increase")
                     }
                     .buttonStyle(.borderless)
                 }
@@ -68,7 +74,7 @@ struct FormatPanel: View {
                 )
             }
 
-            Section("Fill") {
+            Section("Format.Section.Fill") {
                 SystemColorSwatches(
                     role: .fill,
                     selectedHex: style.fillColorHex,
@@ -87,8 +93,8 @@ struct FormatPanel: View {
                 )
             }
 
-            Section("Alignment") {
-                Picker("Horizontal", selection: Binding(
+            Section("Format.Section.Alignment") {
+                Picker("Format.Alignment.Horizontal", selection: Binding(
                     get: { style.horizontalAlignment },
                     set: { value in state.applyStyle(in: &workbook) { $0.horizontalAlignment = value } }
                 )) {
@@ -96,7 +102,7 @@ struct FormatPanel: View {
                         Label(option.label, systemImage: option.symbolName).tag(option)
                     }
                 }
-                Picker("Vertical", selection: Binding(
+                Picker("Format.Alignment.Vertical", selection: Binding(
                     get: { style.verticalAlignment },
                     set: { value in state.applyStyle(in: &workbook) { $0.verticalAlignment = value } }
                 )) {
@@ -104,12 +110,12 @@ struct FormatPanel: View {
                         Label(option.label, systemImage: option.symbolName).tag(option)
                     }
                 }
-                Toggle("Wrap Text", isOn: Binding(
+                Toggle("Format.Alignment.WrapText", isOn: Binding(
                     get: { style.wrapsText },
                     set: { value in state.applyStyle(in: &workbook) { $0.wrapsText = value } }
                 ))
 
-                LabeledContent("Indent") {
+                LabeledContent("Format.Alignment.Indent") {
                     HStack(spacing: 12) {
                         Button {
                             state.applyStyle(in: &workbook) { $0.indent = max(0, $0.indent - 1) }
@@ -128,30 +134,30 @@ struct FormatPanel: View {
                     .buttonStyle(.borderless)
                 }
 
-                Picker("Rotation", selection: Binding(
+                Picker("Format.Alignment.Rotation", selection: Binding(
                     get: { style.textRotation },
                     set: { value in state.applyStyle(in: &workbook) { $0.textRotation = value } }
                 )) {
                     // OOXML stores clockwise angles as 90 + the angle.
-                    Text("None").tag(0)
-                    Text("45° Up").tag(45)
-                    Text("90° Up").tag(90)
-                    Text("45° Down").tag(135)
-                    Text("90° Down").tag(180)
-                    Text("Stacked").tag(CellStyle.stackedTextRotation)
+                    Text("Format.Rotation.None").tag(0)
+                    Text("Format.Rotation.Up45").tag(45)
+                    Text("Format.Rotation.Up90").tag(90)
+                    Text("Format.Rotation.Down45").tag(135)
+                    Text("Format.Rotation.Down90").tag(180)
+                    Text("Format.Rotation.Stacked").tag(CellStyle.stackedTextRotation)
                 }
             }
 
-            Section("Borders") {
+            Section("Format.Section.Borders") {
                 HStack(spacing: 8) {
-                    borderButton("square", edges: .all, label: "All edges")
-                    borderButton("square.tophalf.filled", edges: .top, label: "Top")
-                    borderButton("square.bottomhalf.filled", edges: .bottom, label: "Bottom")
-                    borderButton("square.lefthalf.filled", edges: .leading, label: "Left")
-                    borderButton("square.righthalf.filled", edges: .trailing, label: "Right")
+                    borderButton("square", edges: .all, label: "Format.Border.AllEdges")
+                    borderButton("square.tophalf.filled", edges: .top, label: "Format.Border.Top")
+                    borderButton("square.bottomhalf.filled", edges: .bottom, label: "Format.Border.Bottom")
+                    borderButton("square.lefthalf.filled", edges: .leading, label: "Format.Border.Left")
+                    borderButton("square.righthalf.filled", edges: .trailing, label: "Format.Border.Right")
                 }
 
-                Picker("Line Style", selection: Binding(
+                Picker("Format.Border.LineStyle", selection: Binding(
                     // Dictionary order is arbitrary, so pick a fixed edge order:
                     // a mixed selection has to show one style, not a random one.
                     get: {
@@ -172,7 +178,7 @@ struct FormatPanel: View {
                     }
                 }
 
-                Toggle("Diagonal Up", isOn: Binding(
+                Toggle("Format.Border.DiagonalUp", isOn: Binding(
                     get: { style.diagonalBorder?.goesUp ?? false },
                     set: { value in
                         state.applyStyle(in: &workbook) { current in
@@ -180,7 +186,7 @@ struct FormatPanel: View {
                         }
                     }
                 ))
-                Toggle("Diagonal Down", isOn: Binding(
+                Toggle("Format.Border.DiagonalDown", isOn: Binding(
                     get: { style.diagonalBorder?.goesDown ?? false },
                     set: { value in
                         state.applyStyle(in: &workbook) { current in
@@ -189,7 +195,7 @@ struct FormatPanel: View {
                     }
                 ))
 
-                Button("Remove Borders") {
+                Button("Format.Border.Remove") {
                     state.applyStyle(in: &workbook) {
                         $0.borders = []
                         $0.diagonalBorder = nil
@@ -197,15 +203,15 @@ struct FormatPanel: View {
                 }
             }
 
-            Section("Merge") {
-                Button("Merge Cells") { state.mergeSelection(in: &workbook) }
+            Section("Format.Section.Merge") {
+                Button("Format.Merge.Merge") { state.mergeSelection(in: &workbook) }
                     .disabled(!state.canMergeSelection(in: workbook))
-                Button("Unmerge Cells") { state.unmergeSelection(in: &workbook) }
+                Button("Format.Merge.Unmerge") { state.unmergeSelection(in: &workbook) }
                     .disabled(!state.canUnmergeSelection(in: workbook))
             }
 
             Section {
-                Button("Clear All Formatting", role: .destructive) {
+                Button("Format.ClearAll", role: .destructive) {
                     state.clearFormatting(in: &workbook)
                 }
             }
@@ -213,7 +219,9 @@ struct FormatPanel: View {
         .formStyle(.grouped)
     }
 
-    private func styleToggle(_ symbol: String, isOn: Bool, action: @escaping () -> Void) -> some View {
+    private func styleToggle(
+        _ symbol: String, label: LocalizedStringKey, isOn: Bool, action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 19, weight: .medium))
@@ -222,10 +230,10 @@ struct FormatPanel: View {
                 .foregroundStyle(isOn ? Color.accentColor : .primary)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(symbol)
+        .accessibilityLabel(label)
     }
 
-    private func borderButton(_ symbol: String, edges: BorderEdges, label: String) -> some View {
+    private func borderButton(_ symbol: String, edges: BorderEdges, label: LocalizedStringKey) -> some View {
         Button {
             state.applyStyle(in: &workbook) { current in
                 if current.borders.isSuperset(of: edges) {
@@ -256,7 +264,7 @@ struct NumberFormatPanel: View {
 
     var body: some View {
         Form {
-            Section("Presets") {
+            Section("NumberFormat.Section.Presets") {
                 ForEach(NumberFormatPreset.allCases) { preset in
                     Button {
                         state.applyStyle(in: &workbook) { $0.numberFormat = preset.code }
@@ -279,14 +287,14 @@ struct NumberFormatPanel: View {
                 }
             }
 
-            Section("Custom Format Code") {
-                TextField("e.g. #,##0.00 \"kg\"", text: $customCode)
+            Section("NumberFormat.Section.CustomCode") {
+                TextField("NumberFormat.CustomCode.Placeholder", text: $customCode)
                     .font(.system(size: 13))
                     #if os(iOS)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
                     #endif
-                Button("Apply") {
+                Button("Common.Apply") {
                     let code = customCode.trimmed
                     guard !code.isEmpty else { return }
                     state.applyStyle(in: &workbook) { $0.numberFormat = code }
@@ -299,7 +307,9 @@ struct NumberFormatPanel: View {
     }
 
     private func sample(for preset: NumberFormatPreset) -> String {
-        let value: CellValue = preset == .text ? .text("Text") : .number(preset.code.contains("%") ? 0.128 : 1234.5)
+        let value: CellValue = preset == .text
+            ? .text(String(localized: "NumberFormat.Sample.Text"))
+            : .number(preset.code.contains("%") ? 0.128 : 1234.5)
         return CellFormatter.displayText(for: value, format: preset.code)
     }
 }
@@ -313,37 +323,45 @@ struct RowsColumnsPanel: View {
 
     var body: some View {
         Form {
-            Section("Sheet Size") {
-                LabeledContent("Rows", value: String(activeSheet.rowCount))
-                LabeledContent("Columns", value: String(activeSheet.columnCount))
-                Button("Add 1 Row") { state.addRows(in: &workbook) }
-                Button("Add 10 Rows") { state.addRows(10, in: &workbook) }
-                Button("Add 1 Column") { state.addColumns(in: &workbook) }
-                Button("Add 5 Columns") { state.addColumns(5, in: &workbook) }
+            Section("RowsColumns.Section.SheetSize") {
+                LabeledContent("RowsColumns.Rows", value: String(activeSheet.rowCount))
+                LabeledContent("RowsColumns.Columns", value: String(activeSheet.columnCount))
+                Button("RowsColumns.Add.OneRow") { state.addRows(in: &workbook) }
+                Button("RowsColumns.Add.TenRows") { state.addRows(10, in: &workbook) }
+                Button("RowsColumns.Add.OneColumn") { state.addColumns(in: &workbook) }
+                Button("RowsColumns.Add.FiveColumns") { state.addColumns(5, in: &workbook) }
             }
 
-            Section("Rows") {
-                Button("Insert Above") { state.insertRows(above: true, in: &workbook) }
-                Button("Insert Below") { state.insertRows(above: false, in: &workbook) }
-                Button("Hide Selected") { state.setSelectedRows(hidden: true, in: &workbook) }
-                Button("Show Selected") { state.setSelectedRows(hidden: false, in: &workbook) }
-                Button("Delete Selected", role: .destructive) { state.deleteSelectedRows(in: &workbook) }
-                    .disabled(activeSheet.rowCount <= 1)
+            Section("RowsColumns.Rows") {
+                Button("RowsColumns.Rows.InsertAbove") { state.insertRows(above: true, in: &workbook) }
+                Button("RowsColumns.Rows.InsertBelow") { state.insertRows(above: false, in: &workbook) }
+                Button("RowsColumns.HideSelected") { state.setSelectedRows(hidden: true, in: &workbook) }
+                Button("RowsColumns.ShowSelected") { state.setSelectedRows(hidden: false, in: &workbook) }
+                Button("RowsColumns.DeleteSelected", role: .destructive) {
+                    state.deleteSelectedRows(in: &workbook)
+                }
+                .disabled(activeSheet.rowCount <= 1)
             }
 
-            Section("Columns") {
-                Button("Insert Before") { state.insertColumns(before: true, in: &workbook) }
-                Button("Insert After") { state.insertColumns(before: false, in: &workbook) }
-                Button("Hide Selected") { state.setSelectedColumns(hidden: true, in: &workbook) }
-                Button("Show Selected") { state.setSelectedColumns(hidden: false, in: &workbook) }
-                Button("Delete Selected", role: .destructive) { state.deleteSelectedColumns(in: &workbook) }
-                    .disabled(activeSheet.columnCount <= 1)
+            Section("RowsColumns.Columns") {
+                Button("RowsColumns.Columns.InsertBefore") { state.insertColumns(before: true, in: &workbook) }
+                Button("RowsColumns.Columns.InsertAfter") { state.insertColumns(before: false, in: &workbook) }
+                Button("RowsColumns.HideSelected") { state.setSelectedColumns(hidden: true, in: &workbook) }
+                Button("RowsColumns.ShowSelected") { state.setSelectedColumns(hidden: false, in: &workbook) }
+                Button("RowsColumns.DeleteSelected", role: .destructive) {
+                    state.deleteSelectedColumns(in: &workbook)
+                }
+                .disabled(activeSheet.columnCount <= 1)
             }
 
             Section {
                 let hiddenCount = activeSheet.hiddenRows.count + activeSheet.hiddenColumns.count
-                Button("Show All Hidden (\(hiddenCount))") { state.unhideEverything(in: &workbook) }
-                    .disabled(hiddenCount == 0)
+                Button(String(
+                    format: String(localized: "RowsColumns.ShowAllHidden"), hiddenCount
+                )) {
+                    state.unhideEverything(in: &workbook)
+                }
+                .disabled(hiddenCount == 0)
             }
         }
         .formStyle(.grouped)
@@ -379,7 +397,7 @@ struct FunctionsPanel: View {
                 .buttonStyle(.plain)
             }
         }
-        .searchable(text: $query, prompt: "Search functions")
+        .searchable(text: $query, prompt: "Functions.Search.Prompt")
     }
 
     private func insert(_ name: String) {

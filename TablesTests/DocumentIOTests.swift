@@ -184,6 +184,41 @@ struct CSVTests {
         #expect(sheet[CellAddress(a1: "B3")!].value == .number(4))
     }
 
+    @Test("Delimiters inside quotes do not outvote the real separator")
+    func delimiterSniffingIgnoresQuotedText() {
+        // A European export: semicolons separate, commas are decimal points.
+        let european = CSVCodec.workbook(
+            from: Data("a;b\n\"1,5\";\"2,5\"\n".utf8), sheetName: "S"
+        ).sheets[0]
+        #expect(european[CellAddress(a1: "A1")!].value == .text("a"))
+        #expect(european[CellAddress(a1: "B1")!].value == .text("b"))
+
+        // And the reverse: a comma file whose text happens to be full of semicolons.
+        let commas = CSVCodec.workbook(
+            from: Data("a,b\n\"x;y;z;w\",\"p;q;r;s\"\n".utf8), sheetName: "S"
+        ).sheets[0]
+        #expect(commas[CellAddress(a1: "A2")!].value == .text("x;y;z;w"))
+        #expect(commas[CellAddress(a1: "B2")!].value == .text("p;q;r;s"))
+    }
+
+    @Test("Text encodings other than UTF-8 decode", arguments: [
+        String.Encoding.utf16LittleEndian, .utf16BigEndian, .utf16, .isoLatin1
+    ])
+    func encodings(encoding: String.Encoding) throws {
+        let data = try #require("nom,qté\nCafé,3\n".data(using: encoding))
+        let sheet = CSVCodec.workbook(from: data, sheetName: "S").sheets[0]
+        #expect(sheet[CellAddress(a1: "B1")!].value == .text("qté"))
+        #expect(sheet[CellAddress(a1: "A2")!].value == .text("Café"))
+        #expect(sheet[CellAddress(a1: "B2")!].value == .number(3))
+    }
+
+    @Test("A UTF-8 byte order mark is not mistaken for content")
+    func byteOrderMark() {
+        let data = Data([0xEF, 0xBB, 0xBF]) + Data("name,qty\nApple,3\n".utf8)
+        let sheet = CSVCodec.workbook(from: data, sheetName: "S").sheets[0]
+        #expect(sheet[CellAddress(a1: "A1")!].value == .text("name"))
+    }
+
     @Test("A blank import still gets the default grid")
     func defaultSize() {
         let workbook = CSVCodec.workbook(from: Data(), sheetName: "Blank")
@@ -199,5 +234,31 @@ struct DocumentTypeTests {
         #expect(UTType.openXMLWorkbook.identifier == "org.openxmlformats.spreadsheetml.sheet")
         #expect(UTType.openXMLWorkbook.preferredFilenameExtension == "xlsx")
         #expect(TablesDocument.writableContentTypes.first == .openXMLWorkbook)
+    }
+
+    @Test("Every readable delimited type can also be written back")
+    func delimitedTypesRoundTrip() {
+        for type in [UTType.commaSeparatedText, .tabSeparatedText] {
+            #expect(TablesDocument.readableContentTypes.contains(type))
+            // Otherwise saving one would quietly write xlsx bytes into it.
+            #expect(TablesDocument.writableContentTypes.contains(type))
+        }
+    }
+
+    @Test("Tab separated text is its own type, not a kind of CSV")
+    func tabSeparatedIsDistinct() {
+        // The write path asks about the two separately because of this.
+        #expect(!UTType.tabSeparatedText.conforms(to: .commaSeparatedText))
+        #expect(UTType.tabSeparatedText.preferredFilenameExtension == "tsv")
+    }
+
+    @Test("A tab separated sheet round-trips through the codec")
+    func tabSeparatedRoundTrip() {
+        let sheet = CSVCodec.workbook(from: Data("a\tb\n1\t2\n".utf8), sheetName: "S").sheets[0]
+        let exported = CSVCodec.data(from: sheet, delimiter: "\t")
+        #expect(String(decoding: exported, as: UTF8.self).hasPrefix("a\tb"))
+
+        let reimported = CSVCodec.workbook(from: exported, sheetName: "S").sheets[0]
+        #expect(reimported[CellAddress(a1: "B2")!].value == .number(2))
     }
 }

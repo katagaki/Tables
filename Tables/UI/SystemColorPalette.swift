@@ -13,40 +13,43 @@ enum SystemColorPalette {
     struct Swatch: Identifiable, Hashable {
         /// Stable across releases — the UI tests and any saved preference key off it.
         let id: String
-        let label: String
+        /// String catalog key for the colour's name, spoken by VoiceOver.
+        let labelKey: String
         /// OOXML "AARRGGBB", which is how `CellStyle` stores colour.
         let argbHex: String
 
         var color: Color { Color(argbHex: argbHex) ?? .primary }
+
+        var label: String { String(localized: String.LocalizationValue(labelKey)) }
     }
 
     /// The accent colours, for text and for emphatic fills.
     static let accents: [Swatch] = [
-        Swatch(id: "red", label: "Red", argbHex: "FFFF3B30"),
-        Swatch(id: "orange", label: "Orange", argbHex: "FFFF9500"),
-        Swatch(id: "yellow", label: "Yellow", argbHex: "FFFFCC00"),
-        Swatch(id: "green", label: "Green", argbHex: "FF34C759"),
-        Swatch(id: "mint", label: "Mint", argbHex: "FF00C7BE"),
-        Swatch(id: "teal", label: "Teal", argbHex: "FF30B0C7"),
-        Swatch(id: "cyan", label: "Cyan", argbHex: "FF32ADE6"),
-        Swatch(id: "blue", label: "Blue", argbHex: "FF007AFF"),
-        Swatch(id: "indigo", label: "Indigo", argbHex: "FF5856D6"),
-        Swatch(id: "purple", label: "Purple", argbHex: "FFAF52DE"),
-        Swatch(id: "pink", label: "Pink", argbHex: "FFFF2D55"),
-        Swatch(id: "brown", label: "Brown", argbHex: "FFA2845E"),
+        Swatch(id: "red", labelKey: "Color.Red", argbHex: "FFFF3B30"),
+        Swatch(id: "orange", labelKey: "Color.Orange", argbHex: "FFFF9500"),
+        Swatch(id: "yellow", labelKey: "Color.Yellow", argbHex: "FFFFCC00"),
+        Swatch(id: "green", labelKey: "Color.Green", argbHex: "FF34C759"),
+        Swatch(id: "mint", labelKey: "Color.Mint", argbHex: "FF00C7BE"),
+        Swatch(id: "teal", labelKey: "Color.Teal", argbHex: "FF30B0C7"),
+        Swatch(id: "cyan", labelKey: "Color.Cyan", argbHex: "FF32ADE6"),
+        Swatch(id: "blue", labelKey: "Color.Blue", argbHex: "FF007AFF"),
+        Swatch(id: "indigo", labelKey: "Color.Indigo", argbHex: "FF5856D6"),
+        Swatch(id: "purple", labelKey: "Color.Purple", argbHex: "FFAF52DE"),
+        Swatch(id: "pink", labelKey: "Color.Pink", argbHex: "FFFF2D55"),
+        Swatch(id: "brown", labelKey: "Color.Brown", argbHex: "FFA2845E"),
     ]
 
     /// The greys, which is what most sheet furniture actually wants — header
     /// bands, banding, rules — plus plain black and white.
     static let neutrals: [Swatch] = [
-        Swatch(id: "black", label: "Black", argbHex: "FF000000"),
-        Swatch(id: "gray", label: "Grey", argbHex: "FF8E8E93"),
-        Swatch(id: "gray2", label: "Grey 2", argbHex: "FFAEAEB2"),
-        Swatch(id: "gray3", label: "Grey 3", argbHex: "FFC7C7CC"),
-        Swatch(id: "gray4", label: "Grey 4", argbHex: "FFD1D1D6"),
-        Swatch(id: "gray5", label: "Grey 5", argbHex: "FFE5E5EA"),
-        Swatch(id: "gray6", label: "Grey 6", argbHex: "FFF2F2F7"),
-        Swatch(id: "white", label: "White", argbHex: "FFFFFFFF"),
+        Swatch(id: "black", labelKey: "Color.Black", argbHex: "FF000000"),
+        Swatch(id: "gray", labelKey: "Color.Grey", argbHex: "FF8E8E93"),
+        Swatch(id: "gray2", labelKey: "Color.Grey2", argbHex: "FFAEAEB2"),
+        Swatch(id: "gray3", labelKey: "Color.Grey3", argbHex: "FFC7C7CC"),
+        Swatch(id: "gray4", labelKey: "Color.Grey4", argbHex: "FFD1D1D6"),
+        Swatch(id: "gray5", labelKey: "Color.Grey5", argbHex: "FFE5E5EA"),
+        Swatch(id: "gray6", labelKey: "Color.Grey6", argbHex: "FFF2F2F7"),
+        Swatch(id: "white", labelKey: "Color.White", argbHex: "FFFFFFFF"),
     ]
 
     static let all: [Swatch] = accents + neutrals
@@ -69,10 +72,32 @@ struct SystemColorSwatches: View {
         case text = "textColor"
         case fill = "fillColor"
 
-        var description: String {
+        /// Accessibility wording is built per role rather than by pasting a role
+        /// noun onto a phrase: the two halves do not compose in every language.
+        var moreColoursLabel: LocalizedStringKey {
             switch self {
-            case .text: return "text colour"
-            case .fill: return "fill colour"
+            case .text: return "ColorSwatches.More.Text.Accessibility"
+            case .fill: return "ColorSwatches.More.Fill.Accessibility"
+            }
+        }
+
+        var noColourLabel: LocalizedStringKey {
+            switch self {
+            case .text: return "ColorSwatches.None.Text.Accessibility"
+            case .fill: return "ColorSwatches.None.Fill.Accessibility"
+            }
+        }
+
+        func swatchLabel(_ colorName: String) -> String {
+            switch self {
+            case .text:
+                return String(
+                    format: String(localized: "ColorSwatches.Swatch.Text.Accessibility"), colorName
+                )
+            case .fill:
+                return String(
+                    format: String(localized: "ColorSwatches.Swatch.Fill.Accessibility"), colorName
+                )
             }
         }
     }
@@ -96,12 +121,12 @@ struct SystemColorSwatches: View {
             HStack(spacing: 10) {
                 // The system palette is the escape hatch, not the first offer —
                 // but it stays reachable without scrolling.
-                ColorPicker("More Colours…", selection: $customColor, supportsOpacity: false)
+                ColorPicker("ColorSwatches.MoreColours", selection: $customColor, supportsOpacity: false)
                     .labelsHidden()
                     .frame(width: swatchSize, height: swatchSize)
                     .padding(3)
                     .accessibilityIdentifier("\(role.rawValue).more")
-                    .accessibilityLabel("More \(role.description)s")
+                    .accessibilityLabel(role.moreColoursLabel)
 
                 Divider().frame(height: swatchSize)
 
@@ -125,7 +150,7 @@ struct SystemColorSwatches: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("\(role.rawValue).\(swatch.id)")
-                    .accessibilityLabel("\(swatch.label) \(role.description)")
+                    .accessibilityLabel(role.swatchLabel(swatch.label))
                     .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
                 }
             }
@@ -163,7 +188,7 @@ struct SystemColorSwatches: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("\(role.rawValue).none")
-        .accessibilityLabel("No \(role.description)")
+        .accessibilityLabel(role.noColourLabel)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 }

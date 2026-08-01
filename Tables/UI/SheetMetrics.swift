@@ -2,14 +2,27 @@ import Foundation
 
 /// Precomputed row and column offsets for a sheet, so scrolling and hit-testing
 /// never walk the whole grid.
+///
+/// An axis whose lines are all the same size carries no offsets at all: a
+/// hundred-thousand-row sheet is the ordinary case, and a running-total array
+/// for it is close to a megabyte that pinch-zoom would rebuild on every frame.
+/// Arithmetic answers the same questions there, and in O(1) rather than by
+/// binary search. Offsets are only materialized once a sheet actually has
+/// custom sizes or hidden lines on that axis.
 struct SheetMetrics: Equatable {
-    private(set) var columnOffsets: [Double] = [0]
-    private(set) var rowOffsets: [Double] = [0]
+    /// Running offsets with a final entry equal to the total, or nil while the
+    /// axis is uniform.
+    private var columnOffsets: [Double]?
+    private var rowOffsets: [Double]?
+    /// The size every line on a uniform axis has, zoom already applied.
+    private var uniformColumnWidth: Double = 0
+    private var uniformRowHeight: Double = 0
+
     private(set) var columnCount = 0
     private(set) var rowCount = 0
 
-    var totalWidth: Double { columnOffsets.last ?? 0 }
-    var totalHeight: Double { rowOffsets.last ?? 0 }
+    var totalWidth: Double { columnOffsets?.last ?? Double(columnCount) * uniformColumnWidth }
+    var totalHeight: Double { rowOffsets?.last ?? Double(rowCount) * uniformRowHeight }
 
     /// The pinch-zoom factor already baked into these offsets.
     private(set) var zoom: Double = 1
@@ -20,25 +33,53 @@ struct SheetMetrics: Equatable {
         self.zoom = zoom
         columnCount = sheet.columnCount
         rowCount = sheet.rowCount
-        columnOffsets = sheet.columnOffsets.map { $0 * zoom }
-        rowOffsets = sheet.rowOffsets.map { $0 * zoom }
+
+        if sheet.hasUniformColumnWidths {
+            uniformColumnWidth = Worksheet.defaultColumnWidth * zoom
+        } else {
+            columnOffsets = Self.offsets(count: sheet.columnCount, zoom: zoom, size: sheet.width(ofColumn:))
+        }
+        if sheet.hasUniformRowHeights {
+            uniformRowHeight = Worksheet.defaultRowHeight * zoom
+        } else {
+            rowOffsets = Self.offsets(count: sheet.rowCount, zoom: zoom, size: sheet.height(ofRow:))
+        }
+    }
+
+    /// Running totals with the zoom folded in as they are built, rather than
+    /// mapped over a second array afterwards.
+    private static func offsets(count: Int, zoom: Double, size: (Int) -> Double) -> [Double] {
+        var offsets: [Double] = [0]
+        offsets.reserveCapacity(count + 1)
+        var running: Double = 0
+        for index in 0..<count {
+            running += size(index) * zoom
+            offsets.append(running)
+        }
+        return offsets
     }
 
     func x(ofColumn column: Int) -> Double {
-        columnOffsets[min(max(0, column), columnOffsets.count - 1)]
+        let index = min(max(0, column), columnCount)
+        guard let columnOffsets else { return Double(index) * uniformColumnWidth }
+        return columnOffsets[min(index, columnOffsets.count - 1)]
     }
 
     func y(ofRow row: Int) -> Double {
-        rowOffsets[min(max(0, row), rowOffsets.count - 1)]
+        let index = min(max(0, row), rowCount)
+        guard let rowOffsets else { return Double(index) * uniformRowHeight }
+        return rowOffsets[min(index, rowOffsets.count - 1)]
     }
 
     func width(ofColumn column: Int) -> Double {
-        guard column >= 0, column + 1 < columnOffsets.count else { return 0 }
+        guard column >= 0, column < columnCount else { return 0 }
+        guard let columnOffsets else { return uniformColumnWidth }
         return columnOffsets[column + 1] - columnOffsets[column]
     }
 
     func height(ofRow row: Int) -> Double {
-        guard row >= 0, row + 1 < rowOffsets.count else { return 0 }
+        guard row >= 0, row < rowCount else { return 0 }
+        guard let rowOffsets else { return uniformRowHeight }
         return rowOffsets[row + 1] - rowOffsets[row]
     }
 
@@ -60,25 +101,40 @@ struct SheetMetrics: Equatable {
     /// Columns intersecting a horizontal span, with a little overscan.
     func columns(in span: ClosedRange<Double>, overscan: Int = 2) -> Range<Int> {
         guard columnCount > 0 else { return 0..<0 }
-        let first = max(0, index(in: columnOffsets, at: span.lowerBound) - overscan)
-        let last = min(columnCount - 1, index(in: columnOffsets, at: span.upperBound) + overscan)
+        let first = max(0, columnIndex(at: span.lowerBound) - overscan)
+        let last = min(columnCount - 1, columnIndex(at: span.upperBound) + overscan)
         return first <= last ? first..<(last + 1) : 0..<0
     }
 
     /// Rows intersecting a vertical span, with a little overscan.
     func rows(in span: ClosedRange<Double>, overscan: Int = 2) -> Range<Int> {
         guard rowCount > 0 else { return 0..<0 }
-        let first = max(0, index(in: rowOffsets, at: span.lowerBound) - overscan)
-        let last = min(rowCount - 1, index(in: rowOffsets, at: span.upperBound) + overscan)
+        let first = max(0, rowIndex(at: span.lowerBound) - overscan)
+        let last = min(rowCount - 1, rowIndex(at: span.upperBound) + overscan)
         return first <= last ? first..<(last + 1) : 0..<0
     }
 
     func column(atX position: Double) -> Int {
-        min(max(0, index(in: columnOffsets, at: position)), max(0, columnCount - 1))
+        min(max(0, columnIndex(at: position)), max(0, columnCount - 1))
     }
 
     func row(atY position: Double) -> Int {
-        min(max(0, index(in: rowOffsets, at: position)), max(0, rowCount - 1))
+        min(max(0, rowIndex(at: position)), max(0, rowCount - 1))
+    }
+
+    private func columnIndex(at position: Double) -> Int {
+        guard let columnOffsets else { return uniformIndex(at: position, size: uniformColumnWidth) }
+        return index(in: columnOffsets, at: position)
+    }
+
+    private func rowIndex(at position: Double) -> Int {
+        guard let rowOffsets else { return uniformIndex(at: position, size: uniformRowHeight) }
+        return index(in: rowOffsets, at: position)
+    }
+
+    private func uniformIndex(at position: Double, size: Double) -> Int {
+        guard size > 0, position > 0 else { return 0 }
+        return Int(position / size)
     }
 
     /// Index of the last offset less than or equal to `position`.

@@ -33,10 +33,15 @@ final class CalculationEngine: FormulaContext {
         let engine = CalculationEngine(workbook: workbook)
         var result = workbook
         for (sheetIndex, sheet) in workbook.sheets.enumerated() {
+            engine.activeSheetIndex = sheetIndex
             for (address, cell) in sheet.cells where cell.formula != nil {
-                engine.activeSheetIndex = sheetIndex
+                let value = engine.value(at: address, sheetIndex: sheetIndex)
+                // Most of a recalculation lands on the value already there.
+                // Writing it back anyway would copy the sheet's whole cell
+                // dictionary for nothing and tell the view every cell moved.
+                guard value != cell.value else { continue }
                 var updated = cell
-                updated.value = engine.value(at: address, sheetIndex: sheetIndex)
+                updated.value = value
                 result.sheets[sheetIndex].cells[address] = updated
             }
         }

@@ -36,10 +36,10 @@ struct SheetTabBarView: View {
                 }
                 .buttonStyle(.plain)
                 .glassEffect(.regular.interactive(), in: .circle)
-                .help("Add a sheet")
+                .help("SheetTabBar.AddSheet")
                 // `help` is a tooltip, and tooltips do not exist on iOS — without
                 // this the control is an unlabelled glyph to VoiceOver.
-                .accessibilityLabel("Add a sheet")
+                .accessibilityLabel("SheetTabBar.AddSheet")
 
                 ScrollView(.horizontal) {
                     HStack(spacing: tabSpacing) {
@@ -79,9 +79,13 @@ struct SheetTabBarView: View {
         .menuIndicator(.hidden)
         .frame(width: 30, height: 30)
         .glassEffect(.regular.interactive(), in: .circle)
-        .help("Show a hidden sheet")
-        .accessibilityLabel("Show a hidden sheet")
-        .accessibilityLabel("Hidden sheets (\(hiddenSheets.count))")
+        .help("SheetTabBar.ShowHiddenSheet")
+        .accessibilityLabel(
+            String(
+                format: String(localized: "SheetTabBar.HiddenSheets.Accessibility"),
+                hiddenSheets.count
+            )
+        )
     }
 
     @ViewBuilder
@@ -90,7 +94,7 @@ struct SheetTabBarView: View {
 
         Group {
             if renamingSheetID == sheet.id {
-                TextField("Sheet name", text: $draftName)
+                TextField("SheetTabBar.RenameField.Placeholder", text: $draftName)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13, weight: .semibold))
                     .focused($isRenaming)
@@ -124,26 +128,35 @@ struct SheetTabBarView: View {
         .onTapGesture(count: 2) { menuTriggers[sheet.id, default: 0] += 1 }
         .onTapGesture { state.selectSheet(sheet.id, in: workbook) }
         .gesture(reorderGesture(for: sheet))
-        .background { NativeMenuPresenter(actions: menuActions(for: sheet), trigger: menuTriggers[sheet.id] ?? 0) }
+        .background {
+            NativeMenuPresenter(
+                actions: { menuActions(for: sheet) }, trigger: menuTriggers[sheet.id] ?? 0
+            )
+        }
     }
 
     // MARK: - Menu
 
     private func menuActions(for sheet: Worksheet) -> [HeaderMenuAction] {
         [
-            HeaderMenuAction(title: "Rename…", symbol: "pencil") { beginRename(sheet) },
-            HeaderMenuAction(title: "Duplicate", symbol: "plus.square.on.square") {
+            HeaderMenuAction(title: String(localized: "SheetTabBar.Menu.Rename"), symbol: "pencil") {
+                beginRename(sheet)
+            },
+            HeaderMenuAction(
+                title: String(localized: "SheetTabBar.Menu.Duplicate"), symbol: "plus.square.on.square"
+            ) {
                 state.selectSheet(sheet.id, in: workbook)
                 state.duplicateActiveSheet(in: &workbook)
             },
             HeaderMenuAction(
-                title: "Hide", symbol: "eye.slash", isEnabled: workbook.visibleSheets.count > 1
+                title: String(localized: "SheetTabBar.Menu.Hide"), symbol: "eye.slash",
+                isEnabled: workbook.visibleSheets.count > 1
             ) {
                 state.setSheet(sheet.id, hidden: true, in: &workbook)
             },
             .separator,
             HeaderMenuAction(
-                title: "Delete", symbol: "trash", kind: .destructive,
+                title: String(localized: "SheetTabBar.Menu.Delete"), symbol: "trash", kind: .destructive,
                 isEnabled: workbook.sheets.count > 1
             ) {
                 state.deleteSheet(sheet.id, in: &workbook)

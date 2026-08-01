@@ -73,8 +73,7 @@ final class WorkbookUITests: XCTestCase {
 
     /// Enters a small table and checks the SUM formula evaluates in the grid.
     func testEntersDataAndEvaluatesFormula() throws {
-        let app = XCUIApplication()
-        app.launch()
+        let app = XCUIApplication.launchedInEnglish()
         openEditor(app)
         capture(app, "01-empty-grid")
 
@@ -95,8 +94,7 @@ final class WorkbookUITests: XCTestCase {
 
     /// Adds a row and a column, then confirms the sheet's extent really grew.
     func testAddsRowsAndColumns() throws {
-        let app = XCUIApplication()
-        app.launch()
+        let app = XCUIApplication.launchedInEnglish()
         openEditor(app)
 
         // Structure lives in the header menus, opened by double-tapping a header.
@@ -132,8 +130,7 @@ final class WorkbookUITests: XCTestCase {
 
     /// Formatting the selection updates the grid without disturbing values.
     func testAppliesBoldFormatting() throws {
-        let app = XCUIApplication()
-        app.launch()
+        let app = XCUIApplication.launchedInEnglish()
         openEditor(app)
 
         type("Heading", into: "A1", app: app)

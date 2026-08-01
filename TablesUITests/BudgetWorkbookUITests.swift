@@ -15,8 +15,7 @@ final class BudgetWorkbookUITests: XCTestCase {
 
     override func setUp() {
         continueAfterFailure = false
-        app = XCUIApplication()
-        app.launch()
+        app = XCUIApplication.launchedInEnglish()
     }
 
     // MARK: - Building blocks

@@ -25,8 +25,10 @@ struct SheetGridView: View {
     /// The grid point the selection handle started from, in content coordinates.
     /// Non-nil only while the handle is being dragged.
     @State private var handleDragOrigin: CGPoint?
-    /// The last cell tapped and when, so a second tap on it can open the editor.
+    /// The last cell tapped and when, so a second tap on it can open the menu.
     @State private var lastTap: (address: CellAddress, time: Date)?
+    /// Bumped to raise the cell menu from a double tap.
+    @State private var cellMenuTrigger = 0
     @FocusState private var isCellEditorFocused: Bool
 
     /// Matches the platform's own double-tap window closely enough that a
@@ -151,45 +153,86 @@ struct SheetGridView: View {
     // MARK: - Content
 
     private var content: some View {
-        ZStack(alignment: .topLeading) {
+        // The sheet and the window are resolved once and handed down. Both are
+        // computed properties reaching through the workbook, and a few hundred
+        // cells asking for them apiece is work repeated on every scroll frame.
+        let sheet = activeSheet
+        let rows = visibleRows
+        let columns = visibleColumns
+        let merges = visibleMerges(in: sheet, rows: rows, columns: columns)
+        // Which of the built cells a merge already covers, worked out once for
+        // the window rather than by scanning the merge list per cell: a sheet
+        // with thousands of merges would otherwise pay that scan a few hundred
+        // times over on every scroll frame.
+        let covered = coveredAddresses(by: merges, rows: rows, columns: columns)
+
+        return ZStack(alignment: .topLeading) {
             Rectangle()
                 .fill(Color.sheetBackground)
                 .frame(width: metrics.totalWidth, height: metrics.totalHeight)
 
-            ForEach(visibleRows, id: \.self) { row in
-                if !activeSheet.hiddenRows.contains(row) {
-                    ForEach(visibleColumns, id: \.self) { column in
-                        if !activeSheet.hiddenColumns.contains(column),
-                           activeSheet.mergedRange(containing: CellAddress(row: row, column: column)) == nil {
-                            cell(row: row, column: column)
+            ForEach(rows, id: \.self) { row in
+                if !sheet.hiddenRows.contains(row) {
+                    ForEach(columns, id: \.self) { column in
+                        if !sheet.hiddenColumns.contains(column),
+                           !covered.contains(CellAddress(row: row, column: column)) {
+                            cell(row: row, column: column, in: sheet)
                         }
                     }
                 }
             }
-            ForEach(visibleMerges, id: \.self) { merge in
-                mergedCell(merge)
+            ForEach(merges, id: \.self) { merge in
+                mergedCell(merge, in: sheet)
             }
             selectionOverlay
             editorOverlay
+            cellMenuAnchor
         }
         .padding(.leading, rowHeaderWidth)
         .padding(.top, columnHeaderHeight)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private func cell(row: Int, column: Int) -> some View {
+    /// The addresses inside the built window that `merges` draws over, so the
+    /// per-cell pass can skip them with one hash lookup.
+    private func coveredAddresses(
+        by merges: [CellRange], rows: Range<Int>, columns: Range<Int>
+    ) -> Set<CellAddress> {
+        guard !merges.isEmpty, !rows.isEmpty, !columns.isEmpty else { return [] }
+        var result: Set<CellAddress> = []
+        for merge in merges {
+            let box = merge.normalized
+            // Clipped to the window: a merge can be far taller than the screen,
+            // and only the part being drawn over matters here.
+            let firstRow = max(box.start.row, rows.lowerBound)
+            let lastRow = min(box.end.row, rows.upperBound - 1)
+            let firstColumn = max(box.start.column, columns.lowerBound)
+            let lastColumn = min(box.end.column, columns.upperBound - 1)
+            guard firstRow <= lastRow, firstColumn <= lastColumn else { continue }
+            for row in firstRow...lastRow {
+                for column in firstColumn...lastColumn {
+                    result.insert(CellAddress(row: row, column: column))
+                }
+            }
+        }
+        return result
+    }
+
+    private func cell(row: Int, column: Int, in sheet: Worksheet) -> some View {
         let address = CellAddress(row: row, column: column)
         let frame = metrics.frame(for: address)
-        return GridCellView(cell: activeSheet[address], zoom: metrics.zoom)
+        let cell = sheet[address]
+        return GridCellView(cell: cell, zoom: metrics.zoom)
             .equatable()
             .frame(width: frame.width, height: frame.height)
             .offset(x: frame.minX, y: frame.minY)
             .onTapGesture { tap(address) }
+            .contextMenu { HeaderActionMenu(actions: cellActions(for: address)) }
             // One leaf element per cell, so VoiceOver reads "B4, 2180.5" as a unit
             // instead of losing the cell inside the scroll view's contents.
             .accessibilityElement(children: .ignore)
             .accessibilityIdentifier("cell.\(address.a1)")
-            .accessibilityLabel(accessibilityDescription(of: address))
+            .accessibilityLabel(accessibilityDescription(of: cell, at: address))
             .accessibilityAddTraits(.isButton)
             .accessibilityRespondsToUserInteraction(true)
     }
@@ -201,44 +244,54 @@ struct SheetGridView: View {
     /// built window while the rest of the region is on screen, and the region
     /// still has to draw. Testing the whole rectangle against the window — not
     /// just its origin — is what makes that case work.
-    private var visibleMerges: [CellRange] {
-        guard !activeSheet.mergedRanges.isEmpty else { return [] }
-        let rows = visibleRows
-        let columns = visibleColumns
-        guard !rows.isEmpty, !columns.isEmpty else { return [] }
+    private func visibleMerges(
+        in sheet: Worksheet, rows: Range<Int>, columns: Range<Int>
+    ) -> [CellRange] {
+        guard !sheet.mergedRanges.isEmpty, !rows.isEmpty, !columns.isEmpty else { return [] }
         let window = CellRange(
             start: CellAddress(row: rows.lowerBound, column: columns.lowerBound),
             end: CellAddress(row: rows.upperBound - 1, column: columns.upperBound - 1)
         )
-        return activeSheet.mergedRanges.filter { $0.intersects(window) }
+        return sheet.mergedRanges.filter { $0.intersects(window) }
     }
 
     /// One merged region: the top-left cell's content and style, drawn across
     /// the whole range.
-    private func mergedCell(_ range: CellRange) -> some View {
+    private func mergedCell(_ range: CellRange, in sheet: Worksheet) -> some View {
         let box = range.normalized
         let frame = metrics.frame(for: box)
-        return GridCellView(cell: activeSheet[box.start], zoom: metrics.zoom)
+        let cell = sheet[box.start]
+        return GridCellView(cell: cell, zoom: metrics.zoom)
             .equatable()
             .frame(width: frame.width, height: frame.height)
             .offset(x: frame.minX, y: frame.minY)
             .onTapGesture { tap(box.start) }
+            .contextMenu { HeaderActionMenu(actions: cellActions(for: box.start)) }
             .accessibilityElement(children: .ignore)
             .accessibilityIdentifier("cell.\(box.start.a1)")
-            .accessibilityLabel(accessibilityDescription(of: box.start))
+            .accessibilityLabel(accessibilityDescription(of: cell, at: box.start))
             .accessibilityAddTraits(.isButton)
             .accessibilityRespondsToUserInteraction(true)
     }
 
+    /// The two cell labels, looked up once rather than per cell: every visible
+    /// cell asks for one on every scroll frame, and a bundle lookup each time
+    /// is a few hundred of them a frame for a string that never changes.
+    private static let emptyCellLabelFormat = String(localized: "Grid.Cell.Accessibility.Empty")
+    private static let cellLabelFormat = String(localized: "Grid.Cell.Accessibility.Value")
+
     /// "B4, 2180.5" — the reference followed by whatever the cell shows.
-    private func accessibilityDescription(of address: CellAddress) -> String {
-        let text = CellFormatter.displayText(for: activeSheet[address])
-        return text.isEmpty ? "\(address.a1), empty" : "\(address.a1), \(text)"
+    private func accessibilityDescription(of cell: Cell, at address: CellAddress) -> String {
+        let text = CellFormatter.displayText(for: cell)
+        guard !text.isEmpty else {
+            return String(format: Self.emptyCellLabelFormat, address.a1)
+        }
+        return String(format: Self.cellLabelFormat, address.a1, text)
     }
 
     /// A tap either points at a cell for the formula being typed, moves the
     /// selection there, or — when it is the second tap on the same cell —
-    /// opens the editor.
+    /// opens the cell menu, which is the same menu a long press raises.
     ///
     /// The double tap is timed here rather than handed to a second
     /// `onTapGesture(count: 2)`, because SwiftUI makes the two counts mutually
@@ -254,7 +307,7 @@ struct SheetGridView: View {
         if let last = lastTap, last.address == address,
            Date.now.timeIntervalSince(last.time) < Self.doubleTapInterval {
             lastTap = nil
-            state.beginEditing(address, in: workbook)
+            cellMenuTrigger += 1
             return
         }
         lastTap = (address, .now)
@@ -264,6 +317,31 @@ struct SheetGridView: View {
         #else
         state.select(address, in: activeSheet)
         #endif
+    }
+
+    // MARK: - Cell menu
+
+    private func cellActions(for address: CellAddress) -> [HeaderMenuAction] {
+        CellMenuBuilder(address: address, workbook: $workbook, state: state).actions()
+    }
+
+    /// The double tap's menu hangs from here.
+    ///
+    /// One anchor sitting over the selected cell rather than a presenter inside
+    /// every cell: the grid rebuilds its cells on each scroll frame, and a
+    /// platform view per cell would be paid for on all of them. The double tap
+    /// has already moved the selection onto the cell it landed on by the time
+    /// the menu is raised, so the anchor is always in the right place.
+    private var cellMenuAnchor: some View {
+        let address = state.selectedAddress
+        let frame = metrics.frame(
+            for: activeSheet.mergedRange(containing: address) ?? CellRange(address)
+        )
+        return NativeMenuPresenter(
+            actions: { cellActions(for: address) }, trigger: cellMenuTrigger
+        )
+            .frame(width: frame.width, height: frame.height)
+            .offset(x: frame.minX, y: frame.minY)
     }
 
     // MARK: - Selection
@@ -298,11 +376,15 @@ struct SheetGridView: View {
                 .strokeBorder(tint, lineWidth: isEditing ? 2.5 : 2)
         }
         .frame(width: max(frame.width, 1), height: max(frame.height, 1))
+        // The fill and border are decoration drawn over the cells: they must
+        // let taps through, or a tap inside a selected range would land on the
+        // overlay and leave the range standing instead of collapsing it. Only
+        // the grip takes touches.
+        .allowsHitTesting(false)
         .overlay(alignment: .bottomTrailing) {
             if !isEditing { selectionHandle(from: box, tint: tint) }
         }
         .offset(x: frame.minX, y: frame.minY)
-        .allowsHitTesting(!isEditing)
         // Settling into a new range looks good for keyboard and tap selection,
         // but an in-flight drag already tracks the finger — animating it there
         // just lags the grip.
@@ -348,7 +430,7 @@ struct SheetGridView: View {
                     .onEnded { _ in handleDragOrigin = nil }
             )
             .accessibilityIdentifier("selectionGrip")
-            .accessibilityLabel("Extend selection")
+            .accessibilityLabel("Grid.ExtendSelection")
             .accessibilityAddTraits(.isButton)
     }
 
@@ -438,9 +520,11 @@ struct SheetGridView: View {
                             )
                         },
                         onFit: { state.fitColumn(column, in: &workbook) },
-                        actions: HeaderMenuBuilder(
-                            axis: .column, index: column, workbook: $workbook, state: state
-                        ).actions()
+                        actions: {
+                            HeaderMenuBuilder(
+                                axis: .column, index: column, workbook: $workbook, state: state
+                            ).actions()
+                        }
                     )
                     .offset(x: metrics.x(ofColumn: column) - state.scrollOffset.x)
                 }
@@ -468,9 +552,11 @@ struct SheetGridView: View {
                                 in: &workbook
                             )
                         },
-                        actions: HeaderMenuBuilder(
-                            axis: .row, index: row, workbook: $workbook, state: state
-                        ).actions()
+                        actions: {
+                            HeaderMenuBuilder(
+                                axis: .row, index: row, workbook: $workbook, state: state
+                            ).actions()
+                        }
                     )
                     .offset(y: metrics.y(ofRow: row) - state.scrollOffset.y)
                 }
@@ -494,7 +580,7 @@ struct SheetGridView: View {
             .overlay(alignment: .bottom) { Rectangle().fill(Color.gridLine).frame(height: 1) }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Select all cells")
+        .accessibilityLabel("Grid.SelectAll")
     }
 
     // MARK: - Scrolling

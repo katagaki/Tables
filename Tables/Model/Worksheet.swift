@@ -131,6 +131,24 @@ struct Worksheet: Identifiable, Hashable, Sendable {
             && address.column >= 0 && address.column < columnCount
     }
 
+    /// The addresses inside `range` the sheet actually holds a cell for.
+    ///
+    /// Anything an edit does to an address that is not in the dictionary — a
+    /// clear, a merge's discard — is by definition a no-op, so an edit that
+    /// only touches stored cells can ask for these instead of walking a range
+    /// that a whole-sheet selection makes millions of addresses wide.
+    func storedAddresses(in range: CellRange) -> [CellAddress] {
+        let box = range.normalized
+        // Below this the range is narrower than the sheet is full, and probing
+        // it directly beats a sweep of every cell the sheet holds.
+        if box.cellCount < cells.count {
+            var result: [CellAddress] = []
+            box.forEachAddress { if cells[$0] != nil { result.append($0) } }
+            return result
+        }
+        return cells.keys.filter { box.contains($0) }
+    }
+
     // MARK: - Merged regions
 
     /// The merge covering an address, if any.
@@ -188,23 +206,20 @@ struct Worksheet: Identifiable, Hashable, Sendable {
         hiddenRows.contains(row) ? 0 : (rowHeights[row] ?? Self.defaultRowHeight)
     }
 
-    var totalWidth: Double { (0..<columnCount).reduce(0) { $0 + width(ofColumn: $1) } }
-    var totalHeight: Double { (0..<rowCount).reduce(0) { $0 + height(ofRow: $1) } }
+    /// True while nothing on the axis departs from the default size, which lets
+    /// the grid's geometry be arithmetic rather than a running-total array as
+    /// long as a sheet's rows or columns are all alike.
+    var hasUniformColumnWidths: Bool { columnWidths.isEmpty && hiddenColumns.isEmpty }
+    var hasUniformRowHeights: Bool { rowHeights.isEmpty && hiddenRows.isEmpty }
 
-    /// Running x-offsets for every column, plus a final entry equal to `totalWidth`.
-    var columnOffsets: [Double] {
-        var offsets: [Double] = [0]
-        offsets.reserveCapacity(columnCount + 1)
-        for column in 0..<columnCount { offsets.append(offsets[column] + width(ofColumn: column)) }
-        return offsets
+    var totalWidth: Double {
+        guard !hasUniformColumnWidths else { return Double(columnCount) * Self.defaultColumnWidth }
+        return (0..<columnCount).reduce(0) { $0 + width(ofColumn: $1) }
     }
 
-    /// Running y-offsets for every row, plus a final entry equal to `totalHeight`.
-    var rowOffsets: [Double] {
-        var offsets: [Double] = [0]
-        offsets.reserveCapacity(rowCount + 1)
-        for row in 0..<rowCount { offsets.append(offsets[row] + height(ofRow: row)) }
-        return offsets
+    var totalHeight: Double {
+        guard !hasUniformRowHeights else { return Double(rowCount) * Self.defaultRowHeight }
+        return (0..<rowCount).reduce(0) { $0 + height(ofRow: $1) }
     }
 
     // MARK: - Structure editing

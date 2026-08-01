@@ -12,7 +12,11 @@ struct ColumnHeaderCell: View {
     let onSelect: () -> Void
     let onResize: (Double) -> Void
     let onFit: () -> Void
-    let actions: [HeaderMenuAction]
+    /// Built on demand rather than handed over ready-made: the grid rebuilds
+    /// every visible header on each scroll frame, and a menu's worth of
+    /// localized titles and closures per header is a cost paid for something
+    /// the user sees only when they open it.
+    let actions: () -> [HeaderMenuAction]
 
     @State private var menuTrigger = 0
 
@@ -25,7 +29,7 @@ struct ColumnHeaderCell: View {
             .contentShape(.rect)
             .onTapGesture(count: 2) { menuTrigger += 1 }
             .onTapGesture(perform: onSelect)
-            .contextMenu { HeaderActionMenu(actions: actions) }
+            .contextMenu { HeaderActionMenu(actions: actions()) }
             .background { NativeMenuPresenter(actions: actions, trigger: menuTrigger) }
             .overlay(alignment: .bottom) { Rectangle().fill(Color.gridLine).frame(height: 1) }
             .overlay(alignment: .trailing) { HiddenSeam(isVertical: true, isVisible: isHiddenNeighbor) }
@@ -46,7 +50,8 @@ struct RowHeaderCell: View {
     let isHiddenNeighbor: Bool
     let onSelect: () -> Void
     let onResize: (Double) -> Void
-    let actions: [HeaderMenuAction]
+    /// Built on demand, for the reason `ColumnHeaderCell.actions` gives.
+    let actions: () -> [HeaderMenuAction]
 
     @State private var menuTrigger = 0
 
@@ -59,16 +64,19 @@ struct RowHeaderCell: View {
             .contentShape(.rect)
             .onTapGesture(count: 2) { menuTrigger += 1 }
             .onTapGesture(perform: onSelect)
-            .contextMenu { HeaderActionMenu(actions: actions) }
+            .contextMenu { HeaderActionMenu(actions: actions()) }
             .background { NativeMenuPresenter(actions: actions, trigger: menuTrigger) }
             .overlay(alignment: .trailing) { Rectangle().fill(Color.gridLine).frame(width: 1) }
             .overlay(alignment: .bottom) { HiddenSeam(isVertical: false, isVisible: isHiddenNeighbor) }
             .overlay(alignment: .bottom) {
                 ResizeGrip(isVertical: false, extent: height, onResize: onResize)
             }
-            .accessibilityLabel("Row \(title)")
+            .accessibilityLabel(String(format: Self.labelFormat, title))
             .accessibilityAddTraits(.isButton)
     }
+
+    /// Looked up once: every visible row header asks for it on every frame.
+    private static let labelFormat = String(localized: "Grid.RowHeader.Accessibility")
 }
 
 /// A doubled hairline marking where hidden rows or columns were collapsed.

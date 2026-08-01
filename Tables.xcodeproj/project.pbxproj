@@ -24,9 +24,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		41B287FD78EA2B1E6246AFD6 /* Tables.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Tables.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		8BF97AF3DA5F4B947A8CD85C /* TablesTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = TablesTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		BE5271D8EB17CC946ACCACB0 /* TablesUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = TablesUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		41B287FD78EA2B1E6246AFD6 /* Tables.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Tables.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8BF97AF3DA5F4B947A8CD85C /* TablesTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TablesTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		BE5271D8EB17CC946ACCACB0 /* TablesUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TablesUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -157,15 +157,12 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					328BACD753D0BC4E6CF422ED = {
-						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 					B5E0D3A3CD0BA21B58F93682 = {
-						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 					FF6FE9DC9698D527F22B7894 = {
-						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 						TestTargetID = B5E0D3A3CD0BA21B58F93682;
 					};
@@ -177,6 +174,10 @@
 			knownRegions = (
 				Base,
 				en,
+				ja,
+				ko,
+				"zh-Hans",
+				"zh-Hant",
 			);
 			mainGroup = 545FEEC0D7D0B59887504B8D;
 			minimizedProjectReferenceProxies = 1;
@@ -244,6 +245,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				DEVELOPMENT_TEAM = YYM4Z6MU8F;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -332,6 +334,8 @@
 				CODE_SIGN_ENTITLEMENTS = Tables/Support/Tables.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = YYM4Z6MU8F;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Tables/Support/Info.plist;
@@ -426,6 +430,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				DEVELOPMENT_TEAM = YYM4Z6MU8F;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -451,6 +456,8 @@
 				CODE_SIGN_ENTITLEMENTS = Tables/Support/Tables.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = YYM4Z6MU8F;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Tables/Support/Info.plist;
@@ -475,6 +482,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				DEVELOPMENT_TEAM = YYM4Z6MU8F;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -499,6 +507,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				DEVELOPMENT_TEAM = YYM4Z6MU8F;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

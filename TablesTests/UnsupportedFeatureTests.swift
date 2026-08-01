@@ -407,14 +407,17 @@ struct UnsupportedFeatureTests {
         #expect(report.lost == [.pivotTables])
         #expect(!report.isEmpty)
 
+        // The notice is translated, so this asks after its shape rather than its
+        // English: every feature named, in whichever half it belongs to.
         let message = report.noticeMessage
-        #expect(message.contains("Sheet protection"))
-        #expect(message.contains("Comments"))
-        #expect(message.contains("PivotTables"))
+        let halves = message.components(separatedBy: "\n\n")
         // The two halves say different things, and the wording has to make the
         // difference plain rather than listing everything together.
-        #expect(message.contains("Kept exactly as they are"))
-        #expect(message.contains("Won’t survive saving"))
+        #expect(halves.count == 2)
+        #expect(halves.first?.contains(UnsupportedFeature.sheetProtection.label) == true)
+        #expect(halves.first?.contains(UnsupportedFeature.comments.label) == true)
+        #expect(halves.last?.contains(UnsupportedFeature.pivotTables.label) == true)
+        #expect(halves.first?.contains(UnsupportedFeature.pivotTables.label) == false)
     }
 
     @Test("A workbook with nothing unusual raises no notice")

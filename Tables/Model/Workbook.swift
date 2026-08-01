@@ -45,18 +45,18 @@ enum UnsupportedFeature: String, CaseIterable, Hashable, Sendable, Comparable {
 
     var label: String {
         switch self {
-        case .conditionalFormatting: return "Conditional formatting"
-        case .dataValidation: return "Data validation"
-        case .autoFilter: return "Filters"
-        case .frozenPanes: return "Frozen rows and columns"
-        case .sheetProtection: return "Sheet protection"
-        case .printSetup: return "Print setup"
-        case .comments: return "Comments"
-        case .hyperlinks: return "Links"
-        case .tables: return "Tables"
-        case .chartsAndImages: return "Charts and images"
-        case .pivotTables: return "PivotTables"
-        case .documentProperties: return "Document properties"
+        case .conditionalFormatting: return String(localized: "UnsupportedFeature.ConditionalFormatting")
+        case .dataValidation: return String(localized: "UnsupportedFeature.DataValidation")
+        case .autoFilter: return String(localized: "UnsupportedFeature.AutoFilter")
+        case .frozenPanes: return String(localized: "UnsupportedFeature.FrozenPanes")
+        case .sheetProtection: return String(localized: "UnsupportedFeature.SheetProtection")
+        case .printSetup: return String(localized: "UnsupportedFeature.PrintSetup")
+        case .comments: return String(localized: "UnsupportedFeature.Comments")
+        case .hyperlinks: return String(localized: "UnsupportedFeature.Hyperlinks")
+        case .tables: return String(localized: "UnsupportedFeature.Tables")
+        case .chartsAndImages: return String(localized: "UnsupportedFeature.ChartsAndImages")
+        case .pivotTables: return String(localized: "UnsupportedFeature.PivotTables")
+        case .documentProperties: return String(localized: "UnsupportedFeature.DocumentProperties")
         }
     }
 
@@ -94,18 +94,21 @@ struct UnsupportedFeatureReport: Hashable, Sendable {
 
     /// Plain wording for the notice shown when such a document opens.
     var noticeMessage: String {
+        // Languages that do not separate list items with a comma get their own
+        // separator, so a translated notice reads as a list in that language.
+        let separator = String(localized: "Common.ListSeparator")
         var lines: [String] = []
         if !preserved.isEmpty {
-            lines.append(
-                "Kept exactly as they are, but not editable here: "
-                + preserved.sorted().map(\.label).joined(separator: ", ") + "."
-            )
+            lines.append(String(
+                format: String(localized: "UnsupportedFeature.Notice.Preserved"),
+                preserved.sorted().map(\.label).joined(separator: separator)
+            ))
         }
         if !lost.isEmpty {
-            lines.append(
-                "Won’t survive saving: "
-                + lost.sorted().map(\.label).joined(separator: ", ") + "."
-            )
+            lines.append(String(
+                format: String(localized: "UnsupportedFeature.Notice.Lost"),
+                lost.sorted().map(\.label).joined(separator: separator)
+            ))
         }
         return lines.joined(separator: "\n\n")
     }
@@ -180,12 +183,17 @@ struct Workbook: Hashable, Sendable {
     var unsupportedFeatures = UnsupportedFeatureReport()
 
     init(sheets: [Worksheet], definedNames: [DefinedName] = []) {
-        self.sheets = sheets.isEmpty ? [Worksheet(name: "Sheet 1")] : sheets
+        self.sheets = sheets.isEmpty ? [Worksheet(name: Workbook.defaultSheetName(1))] : sheets
         self.definedNames = definedNames
     }
 
     init() {
-        self.init(sheets: [Worksheet(name: "Sheet 1")])
+        self.init(sheets: [Worksheet(name: Workbook.defaultSheetName(1))])
+    }
+
+    /// "Sheet 3" in the user's language, for sheets the app names itself.
+    static func defaultSheetName(_ position: Int) -> String {
+        String(format: String(localized: "Workbook.Sheet.DefaultName"), position)
     }
 
     /// The definition a formula living on `sheetID` sees for `name`.
@@ -234,6 +242,14 @@ struct Workbook: Hashable, Sendable {
         sheets.first { $0.name.compare(name, options: .caseInsensitive) == .orderedSame }
     }
 
+    /// The sheet at `index`, clamped. Delimited formats hold a single sheet, so
+    /// every export path has to choose one, and none of them can be sure the
+    /// index it remembered survived a sheet being deleted. A workbook always
+    /// keeps at least one sheet, so there is always something to return.
+    func sheet(at index: Int) -> Worksheet {
+        sheets[min(max(0, index), sheets.count - 1)]
+    }
+
     /// A sheet name Excel accepts that doesn't collide with any existing sheet.
     func uniqueSheetName(basedOn candidate: String) -> String {
         let base = Worksheet.sanitizedName(candidate)
@@ -253,7 +269,7 @@ struct Workbook: Hashable, Sendable {
     }
 
     mutating func addSheet(named name: String? = nil, at index: Int? = nil) -> Worksheet.ID {
-        let resolved = uniqueSheetName(basedOn: name ?? "Sheet \(sheets.count + 1)")
+        let resolved = uniqueSheetName(basedOn: name ?? Workbook.defaultSheetName(sheets.count + 1))
         let sheet = Worksheet(name: resolved)
         sheets.insert(sheet, at: min(max(0, index ?? sheets.count), sheets.count))
         return sheet.id

@@ -49,28 +49,127 @@ enum CSVCodec {
     // MARK: - Decoding
 
     private static func decodeText(_ data: Data) -> String {
-        if let utf8 = String(data: data, encoding: .utf8) { return stripByteOrderMark(utf8) }
+        if let (encoding, markLength) = byteOrderMark(in: data),
+           let text = String(data: data.dropFirst(markLength), encoding: encoding) {
+            return text
+        }
+        // Must precede the UTF-8 attempt: a zero byte is valid UTF-8, so
+        // UTF-16 text full of them decodes "successfully" into mojibake.
+        if let wide = decodeUTF16WithoutMark(data) { return wide }
+        if let utf8 = String(data: data, encoding: .utf8) { return utf8 }
         if let latin = String(data: data, encoding: .isoLatin1) { return latin }
         return String(decoding: data, as: UTF8.self)
     }
 
-    private static func stripByteOrderMark(_ text: String) -> String {
-        text.hasPrefix("\u{FEFF}") ? String(text.dropFirst()) : text
+    /// Longest marks first, so UTF-32's leading `FF FE` is not read as UTF-16.
+    private static let byteOrderMarks: [([UInt8], String.Encoding)] = [
+        ([0xFF, 0xFE, 0x00, 0x00], .utf32LittleEndian),
+        ([0x00, 0x00, 0xFE, 0xFF], .utf32BigEndian),
+        ([0xEF, 0xBB, 0xBF], .utf8),
+        ([0xFF, 0xFE], .utf16LittleEndian),
+        ([0xFE, 0xFF], .utf16BigEndian)
+    ]
+
+    private static func byteOrderMark(in data: Data) -> (String.Encoding, Int)? {
+        for (bytes, encoding) in byteOrderMarks where data.starts(with: bytes) {
+            return (encoding, bytes.count)
+        }
+        return nil
     }
 
+    /// Excel's "UTF-16 Unicode Text" export omits the byte order mark on some
+    /// platforms. Latin text in UTF-16 leaves every other byte zero, which is
+    /// the giveaway: well-formed UTF-8 spreadsheet text contains no zero bytes.
+    private static func decodeUTF16WithoutMark(_ data: Data) -> String? {
+        guard data.count >= 4, data.count.isMultiple(of: 2) else { return nil }
+        let sample = data.prefix(1024)
+        var evenZeros = 0
+        var oddZeros = 0
+        for (offset, byte) in sample.enumerated() where byte == 0 {
+            if offset.isMultiple(of: 2) { evenZeros += 1 } else { oddZeros += 1 }
+        }
+        let units = sample.count / 2
+        if evenZeros == 0, oddZeros * 2 > units {
+            return String(data: data, encoding: .utf16LittleEndian)
+        }
+        if oddZeros == 0, evenZeros * 2 > units {
+            return String(data: data, encoding: .utf16BigEndian)
+        }
+        return nil
+    }
+
+    private static let delimiterCandidates: [Character] = [",", ";", "\t", "|"]
+
+    /// Picks the separator that behaves like one: present on every record, and
+    /// the same number of times on each. Counting raw characters instead would
+    /// let the decimal commas in a European `"1,5";"2,5"` file outvote the
+    /// semicolons that actually separate its fields.
     private static func sniffDelimiter(in text: String) -> Character {
-        let sample = text.prefix(4096)
-        let candidates: [Character] = [",", ";", "\t", "|"]
+        let counts = delimiterCounts(in: sample(of: text))
         var best: Character = ","
-        var bestCount = 0
-        for candidate in candidates {
-            let count = sample.filter { $0 == candidate }.count
-            if count > bestCount {
-                bestCount = count
+        // Ranked on: appears in every record, appears the same number of times
+        // in each, how many per record, how many overall.
+        var bestScore = (0, 0, 0, 0)
+        for candidate in delimiterCandidates {
+            guard let perRecord = counts[candidate], let minimum = perRecord.min() else { continue }
+            let total = perRecord.reduce(0, +)
+            guard total > 0 else { continue }
+            let consistent = minimum > 0 && perRecord.allSatisfy { $0 == minimum }
+            let score = (minimum > 0 ? 1 : 0, consistent ? 1 : 0, minimum, total)
+            if score > bestScore {
+                bestScore = score
                 best = candidate
             }
         }
         return best
+    }
+
+    /// Trims the sample back to a record boundary so a half-read final line
+    /// cannot skew the counts.
+    private static func sample(of text: String) -> Substring {
+        let prefix = text.prefix(4096)
+        guard prefix.endIndex != text.endIndex,
+              let lastNewline = prefix.lastIndex(where: \.isNewline) else { return prefix }
+        return prefix[..<lastNewline]
+    }
+
+    /// How often each candidate appears outside quotes, per non-empty record.
+    private static func delimiterCounts(in sample: Substring) -> [Character: [Int]] {
+        var counts: [Character: [Int]] = [:]
+        var record: [Character: Int] = [:]
+        for candidate in delimiterCandidates {
+            counts[candidate] = []
+            record[candidate] = 0
+        }
+        var inQuotes = false
+        var recordHasContent = false
+
+        func endRecord() {
+            guard recordHasContent else { return }
+            for candidate in delimiterCandidates {
+                counts[candidate]?.append(record[candidate] ?? 0)
+                record[candidate] = 0
+            }
+            recordHasContent = false
+        }
+
+        for character in sample {
+            // A doubled quote toggles twice and so nets out correctly.
+            if character == "\"" {
+                inQuotes.toggle()
+                recordHasContent = true
+                continue
+            }
+            if inQuotes { continue }
+            if character.isNewline {
+                endRecord()
+                continue
+            }
+            recordHasContent = true
+            if record[character] != nil { record[character]! += 1 }
+        }
+        endRecord()
+        return counts
     }
 
     private static func parse(_ text: String, delimiter: Character) -> [[String]] {

@@ -54,12 +54,17 @@ struct HeaderMenuBuilder {
 
         if hiddenCount > 0 {
             actions.append(.separator)
-            actions.append(HeaderMenuAction(title: "Show All Hidden (\(hiddenCount))", symbol: "eye") {
+            let title = String(
+                format: String(localized: "RowsColumns.ShowAllHidden"), hiddenCount
+            )
+            actions.append(HeaderMenuAction(title: title, symbol: "eye") {
                 state.unhideEverything(in: &workbook.wrappedValue)
             })
         }
         actions.append(.separator)
-        actions.append(HeaderMenuAction(title: "Rows & Columns…", symbol: "tablecells") {
+        actions.append(HeaderMenuAction(
+            title: String(localized: "HeaderMenu.RowsAndColumns"), symbol: "tablecells"
+        ) {
             state.presentedPanel = .rowsAndColumns
         })
         return actions
@@ -67,32 +72,39 @@ struct HeaderMenuBuilder {
 
     private func rowActions() -> [HeaderMenuAction] {
         var actions: [HeaderMenuAction] = [
-            HeaderMenuAction(title: "Insert Row Above", symbol: "arrow.up.to.line") {
+            HeaderMenuAction(
+                title: String(localized: "HeaderMenu.Row.InsertAbove"), symbol: "arrow.up.to.line"
+            ) {
                 target()
                 state.insertRows(above: true, in: &workbook.wrappedValue)
             },
-            HeaderMenuAction(title: "Insert Row Below", symbol: "arrow.down.to.line") {
+            HeaderMenuAction(
+                title: String(localized: "HeaderMenu.Row.InsertBelow"), symbol: "arrow.down.to.line"
+            ) {
                 target()
                 state.insertRows(above: false, in: &workbook.wrappedValue)
             },
-            HeaderMenuAction(title: "Add Row at End", symbol: "plus.rectangle") {
+            HeaderMenuAction(
+                title: String(localized: "HeaderMenu.Row.AddAtEnd"), symbol: "plus.rectangle"
+            ) {
                 state.addRows(in: &workbook.wrappedValue)
             },
             .separator,
-            HeaderMenuAction(title: "Hide Row", symbol: "eye.slash") {
+            HeaderMenuAction(title: String(localized: "HeaderMenu.Row.Hide"), symbol: "eye.slash") {
                 target()
                 state.setSelectedRows(hidden: true, in: &workbook.wrappedValue)
             },
         ]
         if isHidden {
-            actions.append(HeaderMenuAction(title: "Show Row", symbol: "eye") {
+            actions.append(HeaderMenuAction(title: String(localized: "HeaderMenu.Row.Show"), symbol: "eye") {
                 target()
                 state.setSelectedRows(hidden: false, in: &workbook.wrappedValue)
             })
         }
         actions.append(.separator)
         actions.append(HeaderMenuAction(
-            title: "Delete Row", symbol: "trash", kind: .destructive, isEnabled: canDelete
+            title: String(localized: "HeaderMenu.Row.Delete"), symbol: "trash", kind: .destructive,
+            isEnabled: canDelete
         ) {
             target()
             state.deleteSelectedRows(in: &workbook.wrappedValue)
@@ -102,37 +114,46 @@ struct HeaderMenuBuilder {
 
     private func columnActions() -> [HeaderMenuAction] {
         var actions: [HeaderMenuAction] = [
-            HeaderMenuAction(title: "Insert Column Before", symbol: "arrow.left.to.line") {
+            HeaderMenuAction(
+                title: String(localized: "HeaderMenu.Column.InsertBefore"), symbol: "arrow.left.to.line"
+            ) {
                 target()
                 state.insertColumns(before: true, in: &workbook.wrappedValue)
             },
-            HeaderMenuAction(title: "Insert Column After", symbol: "arrow.right.to.line") {
+            HeaderMenuAction(
+                title: String(localized: "HeaderMenu.Column.InsertAfter"), symbol: "arrow.right.to.line"
+            ) {
                 target()
                 state.insertColumns(before: false, in: &workbook.wrappedValue)
             },
-            HeaderMenuAction(title: "Add Column at End", symbol: "plus.rectangle.portrait") {
+            HeaderMenuAction(
+                title: String(localized: "HeaderMenu.Column.AddAtEnd"), symbol: "plus.rectangle.portrait"
+            ) {
                 state.addColumns(in: &workbook.wrappedValue)
             },
             .separator,
-            HeaderMenuAction(title: "Hide Column", symbol: "eye.slash") {
+            HeaderMenuAction(title: String(localized: "HeaderMenu.Column.Hide"), symbol: "eye.slash") {
                 target()
                 state.setSelectedColumns(hidden: true, in: &workbook.wrappedValue)
             },
         ]
         if isHidden {
-            actions.append(HeaderMenuAction(title: "Show Column", symbol: "eye") {
+            actions.append(HeaderMenuAction(title: String(localized: "HeaderMenu.Column.Show"), symbol: "eye") {
                 target()
                 state.setSelectedColumns(hidden: false, in: &workbook.wrappedValue)
             })
         }
         actions.append(contentsOf: [
             .separator,
-            HeaderMenuAction(title: "Fit to Contents", symbol: "arrow.left.and.right") {
+            HeaderMenuAction(
+                title: String(localized: "HeaderMenu.Column.FitToContents"), symbol: "arrow.left.and.right"
+            ) {
                 state.fitColumn(index, in: &workbook.wrappedValue)
             },
             .separator,
             HeaderMenuAction(
-                title: "Delete Column", symbol: "trash", kind: .destructive, isEnabled: canDelete
+                title: String(localized: "HeaderMenu.Column.Delete"), symbol: "trash",
+                kind: .destructive, isEnabled: canDelete
             ) {
                 target()
                 state.deleteSelectedColumns(in: &workbook.wrappedValue)

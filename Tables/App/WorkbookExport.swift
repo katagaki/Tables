@@ -7,25 +7,37 @@ import UniformTypeIdentifiers
 struct WorkbookExport: Transferable, Sendable {
     var workbook: Workbook
     var name: String
+    /// Delimited formats hold one sheet, so sharing as CSV or TSV writes the
+    /// sheet the user is looking at — the same one saving as those types picks.
+    var sheetIndex = 0
 
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(exportedContentType: .openXMLWorkbook) { export in
-            SentTransferredFile(try export.write(extension: "xlsx") { workbook in
-                try XLSXWriter.data(from: workbook)
+            SentTransferredFile(try export.write(extension: "xlsx") {
+                try XLSXWriter.data(from: export.workbook)
             })
         }
         .suggestedFileName { $0.name + ".xlsx" }
 
         FileRepresentation(exportedContentType: .commaSeparatedText) { export in
-            SentTransferredFile(try export.write(extension: "csv") { workbook in
-                CSVCodec.data(from: workbook.sheets[0])
+            SentTransferredFile(try export.write(extension: "csv") {
+                CSVCodec.data(from: export.exportSheet)
             })
         }
         .suggestedFileName { $0.name + ".csv" }
+
+        FileRepresentation(exportedContentType: .tabSeparatedText) { export in
+            SentTransferredFile(try export.write(extension: "tsv") {
+                CSVCodec.data(from: export.exportSheet, delimiter: "\t")
+            })
+        }
+        .suggestedFileName { $0.name + ".tsv" }
     }
 
+    var exportSheet: Worksheet { workbook.sheet(at: sheetIndex) }
+
     private func write(
-        extension pathExtension: String, encode: (Workbook) throws -> Data
+        extension pathExtension: String, encode: () throws -> Data
     ) throws -> URL {
         // A per-export directory keeps concurrent shares from colliding on name.
         let directory = FileManager.default.temporaryDirectory
@@ -33,7 +45,7 @@ struct WorkbookExport: Transferable, Sendable {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         let url = directory.appending(path: "\(sanitizedName).\(pathExtension)")
-        try encode(workbook).write(to: url, options: .atomic)
+        try encode().write(to: url, options: .atomic)
         return url
     }
 

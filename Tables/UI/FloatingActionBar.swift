@@ -26,24 +26,24 @@ struct FloatingActionBar: View {
         GlassEffectContainer(spacing: 10) {
             HStack(spacing: 10) {
                 group {
-                    action("bold", isOn: style.isBold, label: "Bold") {
+                    action("bold", isOn: style.isBold, label: "Toolbar.Bold") {
                         state.toggleBold(in: &workbook)
                     }
-                    action("italic", isOn: style.isItalic, label: "Italic") {
+                    action("italic", isOn: style.isItalic, label: "Toolbar.Italic") {
                         state.toggleItalic(in: &workbook)
                     }
-                    action(alignmentSymbol, isOn: false, label: "Alignment") {
+                    action(alignmentSymbol, isOn: false, label: "ActionBar.Alignment") {
                         cycleAlignment()
                     }
-                    panelAction("paintpalette", label: "Format", panel: .format)
-                    panelAction("number", label: "Number format", panel: .numberFormat)
+                    panelAction("paintpalette", label: "ActionBar.Format", panel: .format)
+                    panelAction("number", label: "Toolbar.NumberFormat", panel: .numberFormat)
                 }
 
                 group {
-                    action("sum", isOn: false, label: "Sum") {
+                    action("sum", isOn: false, label: "ActionBar.Sum") {
                         state.insertAggregate("SUM", in: &workbook)
                     }
-                    panelAction("function", label: "Functions", panel: .functions)
+                    panelAction("function", label: "Panel.Functions.Title", panel: .functions)
                 }
 
                 // Rows and columns are structure, not formatting: they live in
@@ -61,7 +61,7 @@ struct FloatingActionBar: View {
     }
 
     private func action(
-        _ symbol: String, isOn: Bool, label: String, perform: @escaping () -> Void
+        _ symbol: String, isOn: Bool, label: LocalizedStringKey, perform: @escaping () -> Void
     ) -> some View {
         Button(action: perform) {
             Image(systemName: symbol)
@@ -76,7 +76,7 @@ struct FloatingActionBar: View {
     }
 
     /// A button that opens a panel and acts as that panel's zoom source.
-    private func panelAction(_ symbol: String, label: String, panel: EditorPanel) -> some View {
+    private func panelAction(_ symbol: String, label: LocalizedStringKey, panel: EditorPanel) -> some View {
         action(symbol, isOn: state.presentedPanel == panel, label: label) {
             state.presentedPanel = panel
         }

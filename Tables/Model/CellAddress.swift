@@ -91,14 +91,29 @@ struct CellRange: Hashable, Sendable {
             && address.column >= box.start.column && address.column <= box.end.column
     }
 
-    var addresses: [CellAddress] {
+    /// How many cells the range covers. `Int` overflow is not a worry: a sheet
+    /// is capped well below what the product could reach.
+    var cellCount: Int { rowRange.count * columnRange.count }
+
+    /// Visits every address in the range without building an array of them.
+    ///
+    /// A whole-sheet selection is routine — the corner button makes one — and
+    /// on an imported sheet that is millions of addresses. Materializing them
+    /// costs more memory than the sheet's actual contents do, so callers that
+    /// only need to walk the range walk it here instead.
+    func forEachAddress(_ body: (CellAddress) -> Void) {
         let box = normalized
-        var result: [CellAddress] = []
         for row in box.rowRange {
             for column in box.columnRange {
-                result.append(CellAddress(row: row, column: column))
+                body(CellAddress(row: row, column: column))
             }
         }
+    }
+
+    var addresses: [CellAddress] {
+        var result: [CellAddress] = []
+        result.reserveCapacity(cellCount)
+        forEachAddress { result.append($0) }
         return result
     }
 
