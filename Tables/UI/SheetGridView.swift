@@ -3,12 +3,14 @@ import SwiftUI
 /// The scrollable spreadsheet canvas.
 ///
 /// The content is laid out absolutely inside one two-axis `ScrollView`, and only
-/// the cells intersecting the viewport are built. Headers live in an overlay
+/// the tiles intersecting the viewport are built. Headers live in an overlay
 /// that counter-translates with the scroll offset, which keeps them pinned in
 /// both axes without nesting scroll views.
 ///
-/// Nothing about the selection reaches the cell views — it is drawn as a single
-/// overlay — so moving between cells never rebuilds the grid.
+/// The cells themselves are drawn rather than built: a tile is a single
+/// `Canvas`, and everything that moves independently of them — the selection,
+/// the in-cell editor, the menu anchor — is a sibling overlay, so none of it
+/// reaches the drawing and none of it makes the grid redraw.
 struct SheetGridView: View {
     @Binding var workbook: Workbook
     @Bindable var state: EditorState
@@ -27,9 +29,22 @@ struct SheetGridView: View {
     @State private var handleDragOrigin: CGPoint?
     /// The last cell tapped and when, so a second tap on it can open the menu.
     @State private var lastTap: (address: CellAddress, time: Date)?
-    /// Bumped to raise the cell menu from a double tap.
+    /// Bumped to raise the cell menu from a double tap or a long press.
     @State private var cellMenuTrigger = 0
     @FocusState private var isCellEditorFocused: Bool
+    @Environment(\.colorScheme) private var colorScheme
+    #if os(macOS)
+    /// Where the pointer last was, for the right-click menu to read.
+    ///
+    /// A reference rather than view state on purpose: the pointer moves
+    /// continuously, and invalidating the grid on every mouse move to store a
+    /// point nothing draws from would undo the work of not rebuilding it.
+    @State private var pointer = PointerLocation()
+
+    private final class PointerLocation {
+        var location: CGPoint = .zero
+    }
+    #endif
 
     /// Matches the platform's own double-tap window closely enough that a
     /// deliberate double tap always lands and a slow retap never does.
@@ -153,37 +168,12 @@ struct SheetGridView: View {
     // MARK: - Content
 
     private var content: some View {
-        // The sheet and the window are resolved once and handed down. Both are
-        // computed properties reaching through the workbook, and a few hundred
-        // cells asking for them apiece is work repeated on every scroll frame.
-        let sheet = activeSheet
-        let rows = visibleRows
-        let columns = visibleColumns
-        let merges = visibleMerges(in: sheet, rows: rows, columns: columns)
-        // Which of the built cells a merge already covers, worked out once for
-        // the window rather than by scanning the merge list per cell: a sheet
-        // with thousands of merges would otherwise pay that scan a few hundred
-        // times over on every scroll frame.
-        let covered = coveredAddresses(by: merges, rows: rows, columns: columns)
-
-        return ZStack(alignment: .topLeading) {
+        ZStack(alignment: .topLeading) {
             Rectangle()
                 .fill(Color.sheetBackground)
                 .frame(width: metrics.totalWidth, height: metrics.totalHeight)
 
-            ForEach(rows, id: \.self) { row in
-                if !sheet.hiddenRows.contains(row) {
-                    ForEach(columns, id: \.self) { column in
-                        if !sheet.hiddenColumns.contains(column),
-                           !covered.contains(CellAddress(row: row, column: column)) {
-                            cell(row: row, column: column, in: sheet)
-                        }
-                    }
-                }
-            }
-            ForEach(merges, id: \.self) { merge in
-                mergedCell(merge, in: sheet)
-            }
+            tiles
             selectionOverlay
             editorOverlay
             cellMenuAnchor
@@ -193,100 +183,186 @@ struct SheetGridView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    /// The addresses inside the built window that `merges` draws over, so the
-    /// per-cell pass can skip them with one hash lookup.
-    private func coveredAddresses(
-        by merges: [CellRange], rows: Range<Int>, columns: Range<Int>
-    ) -> Set<CellAddress> {
-        guard !merges.isEmpty, !rows.isEmpty, !columns.isEmpty else { return [] }
-        var result: Set<CellAddress> = []
-        for merge in merges {
+    /// The drawn grid, plus the one tap and one long press that serve all of it.
+    ///
+    /// Both gestures live here rather than on the cells so that the sheet can be
+    /// drawn instead of built. They read the cell out of the touch point, which
+    /// the metrics already answer in constant time.
+    private var tiles: some View {
+        // The sheet and the window are resolved once and handed down. Both are
+        // computed properties reaching through the workbook, and a tile asking
+        // for them apiece is work repeated on every scroll frame.
+        let sheet = activeSheet
+        let plans = tilePlans(rows: visibleRows, columns: visibleColumns)
+        // Measured against the tiles rather than the viewport, so that what a
+        // tile holds depends only on which tile it is. A merge found only once
+        // the window had scrolled onto it would leave the tile's cached drawing
+        // showing the cells underneath instead of the merge.
+        let merges = visibleMerges(in: sheet, coveredBy: plans)
+
+        return ZStack(alignment: .topLeading) {
+            ForEach(plans) { plan in
+                let frame = metrics.frame(for: plan.range)
+                GridTileView(
+                    rows: plan.rows,
+                    columns: plan.columns,
+                    origin: frame.origin,
+                    size: frame.size,
+                    hiddenRows: sheet.hiddenRows,
+                    hiddenColumns: sheet.hiddenColumns,
+                    contents: contents(of: plan, in: sheet, merges: merges),
+                    metrics: metrics,
+                    scheme: colorScheme
+                )
+                .equatable()
+            }
+        }
+        .frame(width: metrics.totalWidth, height: metrics.totalHeight, alignment: .topLeading)
+        .contentShape(.rect)
+        .onTapGesture(coordinateSpace: .local) { point in tap(address(at: point)) }
+        #if canImport(UIKit)
+        // A long press raises the same menu the double tap does. It comes from
+        // UIKit rather than from a SwiftUI gesture because only UIKit's
+        // recognizer says *where* the press landed, which is the whole question
+        // once the cells are drawn instead of built.
+        .overlay { LongPressLocator { point in raiseCellMenu(at: point) } }
+        #endif
+        #if os(macOS)
+        .onContinuousHover(coordinateSpace: .local) { phase in
+            if case .active(let point) = phase { pointer.location = point }
+        }
+        .contextMenu { HeaderActionMenu(actions: cellActions(for: address(at: pointer.location))) }
+        #endif
+    }
+
+    // MARK: - Tiles
+
+    /// One tile's place in the grid.
+    private struct TilePlan: Identifiable {
+        let id: Int
+        let rows: Range<Int>
+        let columns: Range<Int>
+
+        var range: CellRange {
+            CellRange(
+                start: CellAddress(row: rows.lowerBound, column: columns.lowerBound),
+                end: CellAddress(row: rows.upperBound - 1, column: columns.upperBound - 1)
+            )
+        }
+    }
+
+    /// Roughly how big a tile should be, before it is rounded to whole lines.
+    /// Small enough that a tile scrolling into view is cheap to draw, large
+    /// enough that a screenful is a dozen or so of them rather than a hundred.
+    private static let tileExtent: Double = 400
+
+    /// The tiles covering a window.
+    ///
+    /// Bands are cut from the sheet's own line numbering, never from the window:
+    /// bands measured from the viewport would shift under every frame and no
+    /// tile would ever be reused.
+    private func tilePlans(rows: Range<Int>, columns: Range<Int>) -> [TilePlan] {
+        guard !rows.isEmpty, !columns.isEmpty else { return [] }
+        let rowSpan = tileSpan(extent: metrics.totalHeight, lines: metrics.rowCount)
+        let columnSpan = tileSpan(extent: metrics.totalWidth, lines: metrics.columnCount)
+
+        var plans: [TilePlan] = []
+        for rowBand in (rows.lowerBound / rowSpan)...((rows.upperBound - 1) / rowSpan) {
+            let bandRows = (rowBand * rowSpan)..<min(metrics.rowCount, (rowBand + 1) * rowSpan)
+            guard !bandRows.isEmpty else { continue }
+            for columnBand in (columns.lowerBound / columnSpan)...((columns.upperBound - 1) / columnSpan) {
+                let bandColumns =
+                    (columnBand * columnSpan)..<min(metrics.columnCount, (columnBand + 1) * columnSpan)
+                guard !bandColumns.isEmpty else { continue }
+                plans.append(TilePlan(
+                    id: rowBand << 20 | columnBand, rows: bandRows, columns: bandColumns
+                ))
+            }
+        }
+        return plans
+    }
+
+    /// How many lines make up a band, from the average line size so that zoom
+    /// and unusually tall rows both land on a sensible tile.
+    private func tileSpan(extent: Double, lines: Int) -> Int {
+        guard lines > 0, extent > 0 else { return 16 }
+        let average = extent / Double(lines)
+        return max(2, min(64, Int((Self.tileExtent / average).rounded())))
+    }
+
+    /// Everything inside a tile that has something to draw.
+    ///
+    /// Blank cells are left out: they need only their separators, which the tile
+    /// derives from its line ranges. On a sheet that is mostly empty — which is
+    /// most sheets — that is the difference between a handful of entries per
+    /// tile and a hundred.
+    private func contents(
+        of plan: TilePlan, in sheet: Worksheet, merges: [CellRange]
+    ) -> TileContents {
+        var painted = TileContents()
+        var covered: Set<CellAddress> = []
+
+        let window = plan.range
+        for merge in merges where merge.intersects(window) {
             let box = merge.normalized
-            // Clipped to the window: a merge can be far taller than the screen,
-            // and only the part being drawn over matters here.
-            let firstRow = max(box.start.row, rows.lowerBound)
-            let lastRow = min(box.end.row, rows.upperBound - 1)
-            let firstColumn = max(box.start.column, columns.lowerBound)
-            let lastColumn = min(box.end.column, columns.upperBound - 1)
+            painted.merges.append(PaintedMerge(
+                range: box,
+                frame: metrics.frame(for: box),
+                cell: sheet[box.start],
+                ownsElement: plan.rows.contains(box.start.row)
+                    && plan.columns.contains(box.start.column)
+            ))
+            let firstRow = max(box.start.row, plan.rows.lowerBound)
+            let lastRow = min(box.end.row, plan.rows.upperBound - 1)
+            let firstColumn = max(box.start.column, plan.columns.lowerBound)
+            let lastColumn = min(box.end.column, plan.columns.upperBound - 1)
             guard firstRow <= lastRow, firstColumn <= lastColumn else { continue }
             for row in firstRow...lastRow {
                 for column in firstColumn...lastColumn {
-                    result.insert(CellAddress(row: row, column: column))
+                    covered.insert(CellAddress(row: row, column: column))
                 }
             }
         }
-        return result
+
+        for row in plan.rows where !sheet.hiddenRows.contains(row) {
+            for column in plan.columns where !sheet.hiddenColumns.contains(column) {
+                let address = CellAddress(row: row, column: column)
+                guard !covered.contains(address),
+                      let cell = sheet.cells[address], !cell.isEmptyEntirely else { continue }
+                painted.cells.append(PaintedCell(
+                    address: address, frame: metrics.frame(for: address), cell: cell
+                ))
+            }
+        }
+        return painted
     }
 
-    private func cell(row: Int, column: Int, in sheet: Worksheet) -> some View {
-        let address = CellAddress(row: row, column: column)
-        let frame = metrics.frame(for: address)
-        let cell = sheet[address]
-        return GridCellView(cell: cell, zoom: metrics.zoom)
-            .equatable()
-            .frame(width: frame.width, height: frame.height)
-            .offset(x: frame.minX, y: frame.minY)
-            .onTapGesture { tap(address) }
-            .contextMenu { HeaderActionMenu(actions: cellActions(for: address)) }
-            // One leaf element per cell, so VoiceOver reads "B4, 2180.5" as a unit
-            // instead of losing the cell inside the scroll view's contents.
-            .accessibilityElement(children: .ignore)
-            .accessibilityIdentifier("cell.\(address.a1)")
-            .accessibilityLabel(accessibilityDescription(of: cell, at: address))
-            .accessibilityAddTraits(.isButton)
-            .accessibilityRespondsToUserInteraction(true)
-    }
-
-    /// Merged regions intersecting the viewport.
+    /// Merged regions intersecting the tiles being built.
     ///
     /// Merges get a pass of their own rather than being drawn by the cell at
-    /// their top-left corner: that corner is frequently scrolled outside the
-    /// built window while the rest of the region is on screen, and the region
-    /// still has to draw. Testing the whole rectangle against the window — not
-    /// just its origin — is what makes that case work.
-    private func visibleMerges(
-        in sheet: Worksheet, rows: Range<Int>, columns: Range<Int>
-    ) -> [CellRange] {
-        guard !sheet.mergedRanges.isEmpty, !rows.isEmpty, !columns.isEmpty else { return [] }
+    /// their top-left corner: that corner is frequently outside the tile the
+    /// rest of the region falls in, and the region still has to draw. Testing
+    /// the whole rectangle against the window — not just its origin — is what
+    /// makes that case work.
+    private func visibleMerges(in sheet: Worksheet, coveredBy plans: [TilePlan]) -> [CellRange] {
+        // The bands run row-major, so the first and last plans are opposite
+        // corners of everything they cover between them.
+        guard !sheet.mergedRanges.isEmpty,
+              let first = plans.first, let last = plans.last else { return [] }
         let window = CellRange(
-            start: CellAddress(row: rows.lowerBound, column: columns.lowerBound),
-            end: CellAddress(row: rows.upperBound - 1, column: columns.upperBound - 1)
+            start: CellAddress(row: first.rows.lowerBound, column: first.columns.lowerBound),
+            end: CellAddress(row: last.rows.upperBound - 1, column: last.columns.upperBound - 1)
         )
         return sheet.mergedRanges.filter { $0.intersects(window) }
     }
 
-    /// One merged region: the top-left cell's content and style, drawn across
-    /// the whole range.
-    private func mergedCell(_ range: CellRange, in sheet: Worksheet) -> some View {
-        let box = range.normalized
-        let frame = metrics.frame(for: box)
-        let cell = sheet[box.start]
-        return GridCellView(cell: cell, zoom: metrics.zoom)
-            .equatable()
-            .frame(width: frame.width, height: frame.height)
-            .offset(x: frame.minX, y: frame.minY)
-            .onTapGesture { tap(box.start) }
-            .contextMenu { HeaderActionMenu(actions: cellActions(for: box.start)) }
-            .accessibilityElement(children: .ignore)
-            .accessibilityIdentifier("cell.\(box.start.a1)")
-            .accessibilityLabel(accessibilityDescription(of: cell, at: box.start))
-            .accessibilityAddTraits(.isButton)
-            .accessibilityRespondsToUserInteraction(true)
-    }
-
-    /// The two cell labels, looked up once rather than per cell: every visible
-    /// cell asks for one on every scroll frame, and a bundle lookup each time
-    /// is a few hundred of them a frame for a string that never changes.
-    private static let emptyCellLabelFormat = String(localized: "Grid.Cell.Accessibility.Empty")
-    private static let cellLabelFormat = String(localized: "Grid.Cell.Accessibility.Value")
-
-    /// "B4, 2180.5" — the reference followed by whatever the cell shows.
-    private func accessibilityDescription(of cell: Cell, at address: CellAddress) -> String {
-        let text = CellFormatter.displayText(for: cell)
-        guard !text.isEmpty else {
-            return String(format: Self.emptyCellLabelFormat, address.a1)
-        }
-        return String(format: Self.cellLabelFormat, address.a1, text)
+    /// The cell under a point in the grid's own coordinates.
+    private func address(at point: CGPoint) -> CellAddress {
+        let address = CellAddress(
+            row: metrics.row(atY: point.y), column: metrics.column(atX: point.x)
+        )
+        // A tap anywhere in a merge is a tap on the merge.
+        return activeSheet.mergedRange(containing: address)?.normalized.start ?? address
     }
 
     /// A tap either points at a cell for the formula being typed, moves the
@@ -325,13 +401,22 @@ struct SheetGridView: View {
         CellMenuBuilder(address: address, workbook: $workbook, state: state).actions()
     }
 
-    /// The double tap's menu hangs from here.
+    /// Moves the selection onto the pressed cell, then raises its menu. The
+    /// anchor follows the selection, so the order matters.
+    private func raiseCellMenu(at point: CGPoint) {
+        let address = address(at: point)
+        if state.editingAddress != nil { state.commitEditing(in: &workbook, then: nil) }
+        state.select(address, in: activeSheet)
+        cellMenuTrigger += 1
+    }
+
+    /// The menu hangs from here.
     ///
     /// One anchor sitting over the selected cell rather than a presenter inside
-    /// every cell: the grid rebuilds its cells on each scroll frame, and a
-    /// platform view per cell would be paid for on all of them. The double tap
-    /// has already moved the selection onto the cell it landed on by the time
-    /// the menu is raised, so the anchor is always in the right place.
+    /// every cell: a platform view per cell would be paid for on every scroll
+    /// frame. Both the double tap and the long press have already moved the
+    /// selection onto the cell they landed on by the time the menu is raised, so
+    /// the anchor is always in the right place.
     private var cellMenuAnchor: some View {
         let address = state.selectedAddress
         let frame = metrics.frame(
@@ -459,8 +544,12 @@ struct SheetGridView: View {
                 .font(state.editingText.hasPrefix("=")
                       ? .system(size: 14 * metrics.zoom, design: .monospaced)
                       : activeSheet[address].style.font(zoom: metrics.zoom))
-                .padding(.horizontal, 5)
-                .frame(width: max(frame.width, 140), height: frame.height, alignment: .leading)
+                // Exactly the cell, padded exactly as the cell paints its text,
+                // so opening the editor neither grows the box nor shifts the
+                // glyphs. A field too narrow to hold what is being typed scrolls
+                // its own contents, which is what a spreadsheet does anyway.
+                .padding(.horizontal, 6 * metrics.zoom)
+                .frame(width: frame.width, height: frame.height, alignment: .leading)
                 .background(Color.sheetBackground)
                 .overlay(RoundedRectangle(cornerRadius: 2).strokeBorder(Color.accentColor, lineWidth: 2.5))
                 .focused($isCellEditorFocused)
