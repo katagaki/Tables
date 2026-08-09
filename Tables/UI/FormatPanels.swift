@@ -5,6 +5,10 @@ struct FormatPanel: View {
     @Binding var workbook: Workbook
     @Bindable var state: EditorState
 
+    /// Which sides the border line style and colour are aimed at.
+    @State private var borderScope: BorderScope = .all
+    @Environment(\.colorScheme) private var colorScheme
+
     private var style: CellStyle { state.representativeStyle(in: workbook) }
 
     var body: some View {
@@ -149,58 +153,69 @@ struct FormatPanel: View {
             }
 
             Section("Format.Section.Borders") {
-                HStack(spacing: 8) {
-                    borderButton("square", edges: .all, label: "Format.Border.AllEdges")
-                    borderButton("square.tophalf.filled", edges: .top, label: "Format.Border.Top")
-                    borderButton("square.bottomhalf.filled", edges: .bottom, label: "Format.Border.Bottom")
-                    borderButton("square.lefthalf.filled", edges: .leading, label: "Format.Border.Left")
-                    borderButton("square.righthalf.filled", edges: .trailing, label: "Format.Border.Right")
-                }
+                BorderBoxPicker(style: style) { target in toggle(target) }
+                    .frame(maxWidth: .infinity)
 
-                Picker("Format.Border.LineStyle", selection: Binding(
-                    // Dictionary order is arbitrary, so pick a fixed edge order:
-                    // a mixed selection has to show one style, not a random one.
-                    get: {
-                        BorderEdge.allCases.compactMap { style.borderSides[$0]?.lineStyle }.first
-                            ?? style.diagonalBorder?.lineStyle ?? .thin
-                    },
-                    set: { value in
-                        state.applyStyle(in: &workbook) { current in
-                            for edge in current.borderSides.keys {
-                                current.borderSides[edge]?.lineStyle = value
-                            }
-                            current.diagonalBorder?.lineStyle = value
-                        }
-                    }
-                )) {
-                    ForEach(BorderLineStyle.allCases, id: \.self) { option in
-                        Text(option.label).tag(option)
+                Button("Format.Border.AllEdges") {
+                    state.applyStyle(in: &workbook) { current in
+                        // Not a toggle: the box picker is where sides come and
+                        // go, and a cell already fully boxed should stay boxed.
+                        if !current.borders.isSuperset(of: .all) { current.toggleBorder(.all) }
                     }
                 }
-
-                Toggle("Format.Border.DiagonalUp", isOn: Binding(
-                    get: { style.diagonalBorder?.goesUp ?? false },
-                    set: { value in
-                        state.applyStyle(in: &workbook) { current in
-                            current.setDiagonal(up: value, down: current.diagonalBorder?.goesDown ?? false)
-                        }
-                    }
-                ))
-                Toggle("Format.Border.DiagonalDown", isOn: Binding(
-                    get: { style.diagonalBorder?.goesDown ?? false },
-                    set: { value in
-                        state.applyStyle(in: &workbook) { current in
-                            current.setDiagonal(up: current.diagonalBorder?.goesUp ?? false, down: value)
-                        }
-                    }
-                ))
-
                 Button("Format.Border.Remove") {
                     state.applyStyle(in: &workbook) {
                         $0.borders = []
                         $0.diagonalBorder = nil
                     }
                 }
+                .disabled(!style.hasBorder(in: .all))
+            }
+
+            Section("Format.Section.BorderStyle") {
+                VStack(alignment: .leading, spacing: 0) {
+                    CarouselCaption(key: "Format.Border.ApplyTo")
+                    BorderScopePicker(scope: $borderScope)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                }
+                .listRowInsets(EdgeInsets())
+
+                VStack(alignment: .leading, spacing: 0) {
+                    CarouselCaption(key: "Format.Border.LineStyle")
+                    BorderLineStylePicker(
+                        selection: style.lineStyle(in: borderScope),
+                        color: style.borderColor(in: borderScope, for: colorScheme)
+                    ) { value in
+                        state.applyStyle(in: &workbook) { $0.setLineStyle(value, in: borderScope) }
+                    }
+                }
+                .listRowInsets(EdgeInsets())
+
+                VStack(alignment: .leading, spacing: 0) {
+                    CarouselCaption(key: "Format.Border.Color")
+                    SystemColorSwatches(
+                        role: .border,
+                        selectedHex: style.colorHex(in: borderScope),
+                        customColor: Binding(
+                            get: { Color(argbHex: style.colorHex(in: borderScope)) ?? .primary },
+                            set: { newValue in
+                                state.applyStyle(in: &workbook) {
+                                    $0.setColorHex(newValue.argbHex, in: borderScope)
+                                }
+                            }
+                        ),
+                        onSelect: { swatch in
+                            state.applyStyle(in: &workbook) {
+                                $0.setColorHex(swatch.argbHex, in: borderScope)
+                            }
+                        },
+                        onClear: {
+                            state.applyStyle(in: &workbook) { $0.setColorHex(nil, in: borderScope) }
+                        }
+                    )
+                }
+                .listRowInsets(EdgeInsets())
             }
 
             Section("Format.Section.Merge") {
@@ -233,23 +248,19 @@ struct FormatPanel: View {
         .accessibilityLabel(label)
     }
 
-    private func borderButton(_ symbol: String, edges: BorderEdges, label: LocalizedStringKey) -> some View {
-        Button {
-            state.applyStyle(in: &workbook) { current in
-                if current.borders.isSuperset(of: edges) {
-                    current.borders.subtract(edges)
-                } else {
-                    current.borders.formUnion(edges)
-                }
+    /// Draws or clears whichever part of the box was touched in the diagram.
+    private func toggle(_ target: BorderTarget) {
+        state.applyStyle(in: &workbook) { current in
+            let diagonal = current.diagonalBorder
+            switch target {
+            case .edge(let edge):
+                current.toggleBorder(edge.edges)
+            case .diagonalUp:
+                current.setDiagonal(up: !(diagonal?.goesUp ?? false), down: diagonal?.goesDown ?? false)
+            case .diagonalDown:
+                current.setDiagonal(up: diagonal?.goesUp ?? false, down: !(diagonal?.goesDown ?? false))
             }
-        } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 19))
-                .frame(width: 46, height: 46)
         }
-        .buttonStyle(.plain)
-        .help(label)
-        .accessibilityLabel(label)
     }
 }
 

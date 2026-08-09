@@ -145,6 +145,47 @@ enum BorderLineStyle: String, Hashable, Sendable, CaseIterable {
     }
 }
 
+/// Which part of a cell's border box a formatting change addresses.
+///
+/// OOXML gives every side its own style and colour, so "the border colour" is
+/// not a single value — this is how the formatting UI says which sides it means.
+enum BorderScope: String, Hashable, Identifiable, CaseIterable, Sendable {
+    case all, top, leading, bottom, trailing, diagonal
+
+    var id: String { rawValue }
+
+    init(_ edge: BorderEdge) {
+        switch edge {
+        case .top: self = .top
+        case .leading: self = .leading
+        case .bottom: self = .bottom
+        case .trailing: self = .trailing
+        }
+    }
+
+    /// The box edge this scope names, or nil for `all` and `diagonal`.
+    var edge: BorderEdge? {
+        switch self {
+        case .top: return .top
+        case .leading: return .leading
+        case .bottom: return .bottom
+        case .trailing: return .trailing
+        case .all, .diagonal: return nil
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .all: return String(localized: "Format.Border.Scope.All")
+        case .top: return String(localized: "Format.Border.Top")
+        case .leading: return String(localized: "Format.Border.Left")
+        case .bottom: return String(localized: "Format.Border.Bottom")
+        case .trailing: return String(localized: "Format.Border.Right")
+        case .diagonal: return String(localized: "Format.Border.Scope.Diagonal")
+        }
+    }
+}
+
 /// One drawn border stroke: how it looks and what colour it is.
 struct BorderSide: Hashable, Sendable {
     var lineStyle: BorderLineStyle = .thin
@@ -241,6 +282,99 @@ struct CellStyle: Hashable, Sendable {
         }
     }
 
+    // MARK: - Scoped border editing
+
+    /// The line style in force for a scope.
+    ///
+    /// `all` answers from a fixed edge order rather than from the dictionary's,
+    /// so a cell whose sides disagree reports the same one every time it is
+    /// asked instead of flickering between them.
+    func lineStyle(in scope: BorderScope) -> BorderLineStyle? {
+        switch scope {
+        case .diagonal: return diagonalBorder?.lineStyle
+        case .all:
+            return BorderEdge.allCases.compactMap { borderSides[$0]?.lineStyle }.first
+                ?? diagonalBorder?.lineStyle
+        default: return scope.edge.flatMap { borderSides[$0]?.lineStyle }
+        }
+    }
+
+    func colorHex(in scope: BorderScope) -> String? {
+        switch scope {
+        case .diagonal: return diagonalBorder?.colorHex
+        case .all: return borderColorHex
+        default: return scope.edge.flatMap { borderSides[$0]?.colorHex }
+        }
+    }
+
+    /// Whether a scope has anything drawn at all.
+    func hasBorder(in scope: BorderScope) -> Bool {
+        switch scope {
+        case .diagonal: return diagonalBorder?.isVisible ?? false
+        case .all: return !borderSides.isEmpty || (diagonalBorder?.isVisible ?? false)
+        default: return scope.edge.map { borderSides[$0] != nil } ?? false
+        }
+    }
+
+    /// Draws or clears a set of edges, together.
+    ///
+    /// New sides inherit whatever style and colour the cell's other borders
+    /// already carry, so adding an edge to a thick red box gets a thick red edge
+    /// rather than a stray thin black one. Existing sides keep their own detail.
+    mutating func toggleBorder(_ edges: BorderEdges) {
+        let isTurningOff = borders.isSuperset(of: edges)
+        let inherited = BorderSide(lineStyle: lineStyle(in: .all) ?? .thin, colorHex: borderColorHex)
+        for edge in BorderEdge.allCases where edges.contains(edge.edges) {
+            borderSides[edge] = isTurningOff ? nil : (borderSides[edge] ?? inherited)
+        }
+    }
+
+    /// Sets the line style for a scope, raising the rule where there was none:
+    /// choosing how a side should look is asking for that side. `all` is the
+    /// exception — it restyles what is already drawn rather than boxing the cell.
+    mutating func setLineStyle(_ value: BorderLineStyle, in scope: BorderScope) {
+        switch scope {
+        case .all:
+            for edge in BorderEdge.allCases where borderSides[edge] != nil {
+                borderSides[edge]?.lineStyle = value
+            }
+            diagonalBorder?.lineStyle = value
+        case .diagonal:
+            if diagonalBorder?.isVisible == true {
+                diagonalBorder?.lineStyle = value
+            } else {
+                diagonalBorder = DiagonalBorder(
+                    lineStyle: value, colorHex: borderColorHex, goesDown: true
+                )
+            }
+        default:
+            guard let edge = scope.edge else { return }
+            var side = borderSides[edge] ?? BorderSide(colorHex: borderColorHex)
+            side.lineStyle = value
+            borderSides[edge] = side
+        }
+    }
+
+    /// Sets — or, with nil, clears — the colour for a scope. Clearing never
+    /// raises a rule that was not already there.
+    mutating func setColorHex(_ value: String?, in scope: BorderScope) {
+        switch scope {
+        case .all:
+            borderColorHex = value
+        case .diagonal:
+            diagonalBorder?.colorHex = value
+        default:
+            guard let edge = scope.edge else { return }
+            if borderSides[edge] != nil {
+                borderSides[edge]?.colorHex = value
+            } else if value != nil {
+                borderSides[edge] = BorderSide(
+                    lineStyle: lineStyle(in: .all) ?? .thin, colorHex: value
+                )
+            }
+        }
+    }
+
     /// Turns the diagonal rule on or off, keeping whatever style it already had
     /// and clearing it outright once neither direction is wanted.
     mutating func setDiagonal(up: Bool, down: Bool) {
@@ -257,6 +391,12 @@ struct CellStyle: Hashable, Sendable {
     var textColor: Color? { Color(argbHex: textColorHex) }
     var fillColor: Color? { Color(argbHex: fillColorHex) }
     var borderColor: Color { Color(argbHex: borderColorHex) ?? .secondary }
+
+    /// A scope's colour as the grid would paint it — including the fallback the
+    /// painter uses when the file left the colour to the reader.
+    func borderColor(in scope: BorderScope, for scheme: ColorScheme) -> Color {
+        AdaptiveColor.resolve(hex: colorHex(in: scope), for: scheme, isText: true) ?? .secondary
+    }
 
     /// Leading padding the indent steps add, in points at 100% zoom. OOXML
     /// defines a step as about three characters, so it tracks the font size.

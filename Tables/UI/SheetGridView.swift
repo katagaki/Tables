@@ -23,7 +23,8 @@ struct SheetGridView: View {
     private let selectionHandleDiameter: Double = 18
 
     @State private var scrollPosition = ScrollPosition()
-    @State private var zoomAtGestureStart: Double?
+    /// Where the pinch in progress began. Nil when no pinch is running.
+    @State private var zoomAnchor: ZoomAnchor?
     /// The grid point the selection handle started from, in content coordinates.
     /// Non-nil only while the handle is being dragged.
     @State private var handleDragOrigin: CGPoint?
@@ -140,15 +141,33 @@ struct SheetGridView: View {
     private var zoomGesture: some Gesture {
         MagnifyGesture(minimumScaleDelta: 0.01)
             .onChanged { value in
-                let base = zoomAtGestureStart ?? state.zoom
-                zoomAtGestureStart = base
-                let target = (base * value.magnification)
+                let anchor = zoomAnchor ?? ZoomAnchor(
+                    zoom: state.zoom,
+                    scrollOffset: state.scrollOffset,
+                    location: value.startLocation,
+                    headers: CGSize(width: rowHeaderWidth, height: columnHeaderHeight),
+                    viewport: state.viewportSize
+                )
+                zoomAnchor = anchor
+                let target = (anchor.zoom * value.magnification)
                     .clamped(to: EditorState.zoomRange)
                 guard abs(target - state.zoom) > 0.001 else { return }
                 state.zoom = target
                 state.refreshMetrics(in: workbook)
+                // The metrics have already grown, so the content box the new
+                // offset is clamped against is the one being scrolled.
+                let offset = anchor.scrollOffset(at: target, contentSize: CGSize(
+                    width: rowHeaderWidth + metrics.totalWidth + trailingPadding,
+                    height: columnHeaderHeight + metrics.totalHeight + bottomPadding
+                ))
+                // Back into the raw offsets `ScrollPosition` works in, and
+                // without an animation: the pinch is already the animation.
+                scrollPosition.scrollTo(point: CGPoint(
+                    x: offset.x - state.scrollInsets.width,
+                    y: offset.y - state.scrollInsets.height
+                ))
             }
-            .onEnded { _ in zoomAtGestureStart = nil }
+            .onEnded { _ in zoomAnchor = nil }
     }
 
     // MARK: - Visible window
@@ -721,6 +740,47 @@ extension Color {
         return Color(nsColor: .underPageBackgroundColor)
         #endif
     }()
+}
+
+/// A pinch in progress, and the sums that keep the sheet under the fingers.
+///
+/// Everything here is captured once, when the gesture starts, rather than read
+/// live: the gesture writes the scroll offset, so measuring each frame against
+/// the current one would feed its own output back into its input and the sheet
+/// would crawl away from the fingers over the course of a pinch.
+struct ZoomAnchor: Equatable {
+    let zoom: Double
+    let scrollOffset: CGPoint
+    /// The pinch's midpoint, in viewport coordinates.
+    let location: CGPoint
+    /// The pinned header strips: the row gutter's width and the column
+    /// header's height. They do not scale, so they stay out of the sums.
+    let headers: CGSize
+    let viewport: CGSize
+
+    /// Where to scroll so that whatever was under the fingers when the pinch
+    /// began is still under them at `zoom`.
+    ///
+    /// The grid is measured in points that already have the zoom folded in, so
+    /// the content only ever grows away from its top-left corner. Scaling the
+    /// distance from that corner to the pinch's midpoint by the same ratio, and
+    /// scrolling there, is what turns growth from the corner into growth from
+    /// the fingers.
+    func scrollOffset(at zoom: Double, contentSize: CGSize) -> CGPoint {
+        let scale = zoom / self.zoom
+        // The point under the fingers, relative to the grid's own corner.
+        let grid = CGPoint(
+            x: scrollOffset.x + location.x - headers.width,
+            y: scrollOffset.y + location.y - headers.height
+        )
+        // A sheet smaller than the viewport still fills it, and cannot scroll.
+        let scrollableWidth = max(0, max(viewport.width, contentSize.width) - viewport.width)
+        let scrollableHeight = max(0, max(viewport.height, contentSize.height) - viewport.height)
+        return CGPoint(
+            x: (grid.x * scale + headers.width - location.x).clamped(to: 0...scrollableWidth),
+            y: (grid.y * scale + headers.height - location.y).clamped(to: 0...scrollableHeight)
+        )
+    }
 }
 
 /// Scroll position plus the insets it was measured against, captured together

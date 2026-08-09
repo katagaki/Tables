@@ -71,6 +71,7 @@ struct SystemColorSwatches: View {
     enum Role: String {
         case text = "textColor"
         case fill = "fillColor"
+        case border = "borderColor"
 
         /// Accessibility wording is built per role rather than by pasting a role
         /// noun onto a phrase: the two halves do not compose in every language.
@@ -78,6 +79,7 @@ struct SystemColorSwatches: View {
             switch self {
             case .text: return "ColorSwatches.More.Text.Accessibility"
             case .fill: return "ColorSwatches.More.Fill.Accessibility"
+            case .border: return "ColorSwatches.More.Border.Accessibility"
             }
         }
 
@@ -85,6 +87,7 @@ struct SystemColorSwatches: View {
             switch self {
             case .text: return "ColorSwatches.None.Text.Accessibility"
             case .fill: return "ColorSwatches.None.Fill.Accessibility"
+            case .border: return "ColorSwatches.None.Border.Accessibility"
             }
         }
 
@@ -97,6 +100,10 @@ struct SystemColorSwatches: View {
             case .fill:
                 return String(
                     format: String(localized: "ColorSwatches.Swatch.Fill.Accessibility"), colorName
+                )
+            case .border:
+                return String(
+                    format: String(localized: "ColorSwatches.Swatch.Border.Accessibility"), colorName
                 )
             }
         }
