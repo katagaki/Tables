@@ -162,7 +162,7 @@ struct FormulaEvaluator {
         case (.text(let a), .text(let b)):
             ordering = a.compare(b, options: .caseInsensitive)
         case (.text, _) where !rhs.isEmpty:
-            ordering = .orderedDescending  // text sorts after numbers
+            ordering = .orderedDescending  // Text sorts after numbers.
         case (_, .text) where !lhs.isEmpty:
             ordering = .orderedAscending
         default:

@@ -142,7 +142,10 @@ private struct ResizeGrip: View {
             .frame(width: isVertical ? thickness : nil, height: isVertical ? nil : thickness)
             .contentShape(.rect)
             .gesture(
-                DragGesture(minimumDistance: 1)
+                // Global space: the grip itself moves as the line resizes, so a
+                // local-space translation would jump by the amount the view just
+                // moved and the delta feedback loop would oscillate.
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
                     .onChanged { value in
                         let total = isVertical ? value.translation.width : value.translation.height
                         onResize(total - lastTranslation)

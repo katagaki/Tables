@@ -176,8 +176,8 @@ struct SheetTabBarView: View {
             .sequenced(before: DragGesture(minimumDistance: 0))
             .onChanged { value in
                 switch value {
-                // `.first(false)` is the touch that has not yet been held long
-                // enough — picking the tab up there would fire on every tap.
+                // `.first(true)` is the long press completing; the tab is picked
+                // up here rather than on the earlier, not-yet-held touch.
                 case .first(true):
                     beginDragging(sheet)
                 case .second(true, let drag):
