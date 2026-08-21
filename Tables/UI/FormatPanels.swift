@@ -170,9 +170,7 @@ struct FormatPanel: View {
                     }
                 }
                 .disabled(!style.hasBorder(in: .all))
-            }
 
-            Section("Format.Section.BorderStyle") {
                 VStack(alignment: .leading, spacing: 0) {
                     CarouselCaption(key: "Format.Border.ApplyTo")
                     BorderScopePicker(scope: $borderScope)
