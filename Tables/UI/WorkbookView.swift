@@ -35,9 +35,6 @@ struct WorkbookView: View {
             if state.activeSheetID == nil {
                 state.activeSheetID = document.workbook.sheets.first?.id
                 state.refreshMetrics(in: document.workbook)
-                // Saying this on open, once, is what gives the user a chance to
-                // decide before they have changed anything.
-                state.isShowingUnsupportedFeatureNotice = !document.unsupportedFeatures.isEmpty
             }
         }
         .onChange(of: state.activeSheetID) { _, _ in
@@ -82,14 +79,6 @@ struct WorkbookView: View {
         } message: {
             Text(state.errorMessage ?? "")
         }
-        .alert(
-            "Alert.UnsupportedFeatures.Title",
-            isPresented: $state.isShowingUnsupportedFeatureNotice
-        ) {
-            Button("Common.Continue", role: .cancel) { state.isShowingUnsupportedFeatureNotice = false }
-        } message: {
-            Text(document.unsupportedFeatures.noticeMessage)
-        }
     }
 
     // MARK: - Panels
@@ -116,6 +105,21 @@ struct WorkbookView: View {
 
     @ToolbarContentBuilder
     private var sharingToolbar: some ToolbarContent {
+        // Declared before the share button so it sits beside it on the inside.
+        if !document.unsupportedFeatures.isEmpty {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    state.isShowingUnsupportedFeatureNotice = true
+                } label: {
+                    Image(systemName: "exclamationmark.triangle")
+                }
+                .accessibilityIdentifier("unsupportedFeatures")
+                .accessibilityLabel("Toolbar.UnsupportedFeatures.Label")
+                .popover(isPresented: $state.isShowingUnsupportedFeatureNotice) {
+                    UnsupportedFeatureNotice(report: document.unsupportedFeatures)
+                }
+            }
+        }
         ToolbarItem(placement: .primaryAction) {
             ShareLink(item: export, preview: SharePreview(export.name, image: Image(systemName: "tablecells")))
                 .accessibilityLabel("Toolbar.Share.Label")
@@ -268,5 +272,37 @@ struct WorkbookView: View {
         }
         state.beginEditing(state.selectedAddress, in: document.workbook, replacingWith: press.characters)
         return .handled
+    }
+}
+
+/// What the toolbar's warning button says: which parts of the file Tables can
+/// only carry, and which it will drop.
+///
+/// A popover rather than the alert this used to be. Nothing here needs deciding
+/// — the file is already open and the answer is the same either way — so it has
+/// no business stopping the user before they have seen their spreadsheet. As a
+/// toolbar button it stays available for as long as the document is, which an
+/// alert dismissed on open never was.
+private struct UnsupportedFeatureNotice: View {
+    var report: UnsupportedFeatureReport
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Notice.UnsupportedFeatures.Title", systemImage: "exclamationmark.triangle")
+                .font(.headline)
+                .labelStyle(.titleAndIcon)
+            Text(report.noticeMessage)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                // A popover sizes itself to its content, and without this the
+                // message is laid out on one unbroken line.
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .multilineTextAlignment(.leading)
+        .padding(20)
+        .frame(idealWidth: 300, maxWidth: 340, alignment: .leading)
+        // iPhone turns a popover into a sheet unless it is told not to, and a
+        // sheet is the interruption this stopped being.
+        .presentationCompactAdaptation(.popover)
     }
 }
