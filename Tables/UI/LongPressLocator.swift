@@ -10,19 +10,17 @@ import UIKit
 /// that has not moved — which is exactly the finger a long press ends with.
 /// UIKit's recognizer carries the location, so this takes it from there.
 ///
-/// The recognizer hangs off the enclosing scroll view rather than off a view of
-/// its own: a view large enough to catch every press would also swallow the
-/// taps the grid below it needs, and one that lets them through cannot be
-/// pressed. This view is only a coordinate frame — it never takes a touch.
+/// The recognizer hangs off the enclosing scroll view, and presses are measured
+/// against a `GridTouchFrame` sitting over the grid.
 struct LongPressLocator: UIViewRepresentable {
     var minimumDuration: TimeInterval = 0.45
     var onPress: (CGPoint) -> Void
 
-    func makeUIView(context: Context) -> FrameView {
+    func makeUIView(context: Context) -> GridTouchFrame {
         context.coordinator.view
     }
 
-    func updateUIView(_ view: FrameView, context: Context) {
+    func updateUIView(_ view: GridTouchFrame, context: Context) {
         context.coordinator.onPress = onPress
         context.coordinator.press.minimumPressDuration = minimumDuration
         // Also tried here because the scroll view is not always an ancestor yet
@@ -30,7 +28,7 @@ struct LongPressLocator: UIViewRepresentable {
         context.coordinator.attach()
     }
 
-    static func dismantleUIView(_ view: FrameView, coordinator: Coordinator) {
+    static func dismantleUIView(_ view: GridTouchFrame, coordinator: Coordinator) {
         coordinator.detach()
     }
 
@@ -38,7 +36,7 @@ struct LongPressLocator: UIViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
-        let view = FrameView()
+        let view = GridTouchFrame()
         let press = UILongPressGestureRecognizer()
         var onPress: (CGPoint) -> Void
 
@@ -86,28 +84,6 @@ struct LongPressLocator: UIViewRepresentable {
                 }
                 return true
             }
-        }
-    }
-
-    /// A frame to measure presses against, and nothing else.
-    final class FrameView: UIView {
-        var onEnterWindow: (() -> Void)?
-
-        /// Never takes a touch: everything under it stays reachable.
-        override func point(inside point: CGPoint, with event: UIEvent?) -> Bool { false }
-
-        override func didMoveToWindow() {
-            super.didMoveToWindow()
-            if window != nil { onEnterWindow?() }
-        }
-
-        var enclosingScrollView: UIScrollView? {
-            var candidate = superview
-            while let view = candidate {
-                if let scrollView = view as? UIScrollView { return scrollView }
-                candidate = view.superview
-            }
-            return nil
         }
     }
 }

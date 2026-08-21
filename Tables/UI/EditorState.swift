@@ -26,6 +26,10 @@ enum EditorPanel: String, Identifiable, Hashable {
 final class EditorState {
     var activeSheetID: Worksheet.ID?
     var selection = CellRange(CellAddress(row: 0, column: 0))
+    /// Ranges selected alongside `selection`, oldest first, from holding one
+    /// finger on the sheet and picking further ranges with another. `selection`
+    /// is always the newest of them, and the one edits and movement work from.
+    var additionalSelections: [CellRange] = []
     /// The cell keyboard entry extends from when the selection is grown.
     var anchor = CellAddress(row: 0, column: 0)
     var editingAddress: CellAddress?
@@ -73,6 +77,7 @@ final class EditorState {
         activeSheetID = id
         editingAddress = nil
         selection = CellRange(CellAddress(row: 0, column: 0))
+        additionalSelections = []
         anchor = CellAddress(row: 0, column: 0)
         scrollOffset = .zero
         refreshMetrics(in: workbook)
@@ -97,6 +102,9 @@ final class EditorState {
             )
         }
         selection = sheet.expandedToMerges(CellRange(start: clamp(selection.start), end: clamp(selection.end)))
+        additionalSelections = additionalSelections.map {
+            sheet.expandedToMerges(CellRange(start: clamp($0.start), end: clamp($0.end)))
+        }
         anchor = clamp(anchor)
         if let editingAddress, !sheet.contains(editingAddress) { self.editingAddress = nil }
     }
@@ -105,12 +113,23 @@ final class EditorState {
 
     var selectedAddress: CellAddress { selection.normalized.start }
 
+    /// Every selected range, oldest first, with `selection` last. Usually just
+    /// the one; more once the multi-range gesture has been used.
+    var selectedRanges: [CellRange] { additionalSelections + [selection] }
+
+    var hasMultipleSelections: Bool { !additionalSelections.isEmpty }
+
+    func isSelected(_ address: CellAddress) -> Bool {
+        selectedRanges.contains { $0.contains(address) }
+    }
+
     func select(_ address: CellAddress, extending: Bool = false) {
         if extending {
             selection = CellRange(start: anchor, end: address)
         } else {
             anchor = address
             selection = CellRange(address)
+            additionalSelections = []
         }
     }
 
@@ -127,10 +146,26 @@ final class EditorState {
             let merge = sheet.mergedRange(containing: address)
             anchor = merge?.normalized.start ?? address
             selection = merge ?? CellRange(address)
+            additionalSelections = []
         }
     }
 
+    /// Starts another range beside the ones already selected, and makes it the
+    /// active one — the multi-range gesture's way in. Everything already
+    /// selected stays selected.
+    func addRange(startingAt address: CellAddress, in sheet: Worksheet) {
+        // Normalized on the way in: the direction a range was dragged in only
+        // matters while it is the active one, and two ranges covering the same
+        // cells would draw over each other and be edited twice.
+        let completed = selection.normalized
+        if !additionalSelections.contains(completed) { additionalSelections.append(completed) }
+        let merge = sheet.mergedRange(containing: address)
+        anchor = merge?.normalized.start ?? address
+        selection = merge ?? CellRange(address)
+    }
+
     func selectEntireRows(_ range: ClosedRange<Int>, in sheet: Worksheet) {
+        additionalSelections = []
         anchor = CellAddress(row: range.lowerBound, column: 0)
         selection = CellRange(
             start: anchor,
@@ -139,6 +174,7 @@ final class EditorState {
     }
 
     func selectEntireColumns(_ range: ClosedRange<Int>, in sheet: Worksheet) {
+        additionalSelections = []
         anchor = CellAddress(row: 0, column: range.lowerBound)
         selection = CellRange(
             start: anchor,
@@ -147,6 +183,7 @@ final class EditorState {
     }
 
     func selectAll(in sheet: Worksheet) {
+        additionalSelections = []
         anchor = CellAddress(row: 0, column: 0)
         selection = CellRange(
             start: anchor,

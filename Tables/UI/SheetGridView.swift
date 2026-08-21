@@ -245,6 +245,19 @@ struct SheetGridView: View {
         // recognizer says *where* the press landed, which is the whole question
         // once the cells are drawn instead of built.
         .overlay { LongPressLocator { point in raiseCellMenu(at: point) } }
+        // Hold the selection with one finger and pick further ranges with
+        // another. Landing that second finger before the press above fires is
+        // what tells the two apart, and doing so cancels it.
+        .overlay {
+            MultiRangeSelector(
+                isHoldable: { point in canHoldSelection(at: point) },
+                onBeginRange: { point in state.addRange(startingAt: address(at: point), in: activeSheet) },
+                onExtendRange: { point in
+                    state.select(address(at: point), extending: true, in: activeSheet)
+                },
+                onFinish: {}
+            )
+        }
         #endif
         #if os(macOS)
         .onContinuousHover(coordinateSpace: .local) { phase in
@@ -414,6 +427,14 @@ struct SheetGridView: View {
         #endif
     }
 
+    /// Whether a finger resting here is holding the selection, which is what
+    /// starts a multi-range gesture. Typing owns its own pointing and dragging,
+    /// so it is left alone.
+    private func canHoldSelection(at point: CGPoint) -> Bool {
+        guard state.editingAddress == nil else { return false }
+        return state.isSelected(address(at: point))
+    }
+
     // MARK: - Cell menu
 
     private func cellActions(for address: CellAddress) -> [HeaderMenuAction] {
@@ -450,9 +471,39 @@ struct SheetGridView: View {
 
     // MARK: - Selection
 
-    /// The selection, its fill and its drag handle — one overlay for the whole
-    /// range rather than state threaded through every cell.
+    /// Everything selected: the active range with its fill and drag handle, and
+    /// behind it any further ranges picked up by the multi-range gesture.
+    @ViewBuilder
     private var selectionOverlay: some View {
+        // A plain `ZStack` of siblings rather than one path over the lot: each
+        // range is positioned by its own offset, which is what lets the active
+        // one keep the grip and the anchor hole the others do not have.
+        ZStack(alignment: .topLeading) {
+            if !state.isEnteringFormula {
+                ForEach(state.additionalSelections, id: \.self) { range in
+                    additionalSelectionBox(range)
+                }
+            }
+            activeSelectionOverlay
+        }
+    }
+
+    /// One of the ranges held alongside the active one: the same wash, and a
+    /// quieter border, since it is not what the next edit reads its style from.
+    private func additionalSelectionBox(_ range: CellRange) -> some View {
+        let frame = metrics.frame(for: range)
+        return RoundedRectangle(cornerRadius: 2, style: .continuous)
+            .fill(Color.accentColor.opacity(0.14))
+            .overlay {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .strokeBorder(Color.accentColor.opacity(0.55), lineWidth: 1.5)
+            }
+            .frame(width: max(frame.width, 1), height: max(frame.height, 1))
+            .allowsHitTesting(false)
+            .offset(x: frame.minX, y: frame.minY)
+    }
+
+    private var activeSelectionOverlay: some View {
         let box = state.isEnteringFormula
             ? (state.pendingReferenceRange ?? state.selection).normalized
             : state.selection.normalized
@@ -617,7 +668,7 @@ struct SheetGridView: View {
                         title: CellAddress.columnName(column),
                         width: metrics.width(ofColumn: column),
                         height: columnHeaderHeight,
-                        isSelected: state.selection.normalized.columnRange.contains(column),
+                        isSelected: state.selectedRanges.contains { $0.columnRange.contains(column) },
                         isHiddenNeighbor: activeSheet.hiddenColumns.contains(column + 1),
                         onSelect: { state.selectEntireColumns(column...column, in: activeSheet) },
                         onResize: { delta in
@@ -650,7 +701,7 @@ struct SheetGridView: View {
                         title: String(row + 1),
                         width: rowHeaderWidth,
                         height: metrics.height(ofRow: row),
-                        isSelected: state.selection.normalized.rowRange.contains(row),
+                        isSelected: state.selectedRanges.contains { $0.rowRange.contains(row) },
                         isHiddenNeighbor: activeSheet.hiddenRows.contains(row + 1),
                         onSelect: { state.selectEntireRows(row...row, in: activeSheet) },
                         onResize: { delta in

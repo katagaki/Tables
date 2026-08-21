@@ -85,7 +85,7 @@ extension EditorState {
     /// Replaces the contents of every selected cell, keeping formatting.
     func clearContents(in workbook: inout Workbook) {
         let index = activeIndex(in: workbook)
-        let targets = workbook.sheets[index].storedAddresses(in: selection)
+        let targets = selectedStoredAddresses(in: workbook.sheets[index])
         guard !targets.isEmpty else { return }
         for address in targets {
             var cell = workbook.sheets[index][address]
@@ -98,11 +98,46 @@ extension EditorState {
 
     func clearFormatting(in workbook: inout Workbook) {
         let index = activeIndex(in: workbook)
-        for address in workbook.sheets[index].storedAddresses(in: selection) {
+        for address in selectedStoredAddresses(in: workbook.sheets[index]) {
             var cell = workbook.sheets[index][address]
             cell.style = .default
             workbook.sheets[index][address] = cell
         }
+    }
+
+    // MARK: - Walking the selection
+
+    /// Visits every selected address once, across all of the selected ranges.
+    ///
+    /// Ranges are allowed to overlap — two fingers can easily draw crossing
+    /// boxes — and an address in an overlap must still be visited only once:
+    /// half the edits here read the cell they are about to write, so a second
+    /// visit would decrement a font size twice. Overlaps are tested against the
+    /// earlier ranges rather than collected into a set, because a selection can
+    /// be the whole sheet and that set would be larger than the sheet's own
+    /// contents.
+    func forEachSelectedAddress(_ body: (CellAddress) -> Void) {
+        let ranges = selectedRanges
+        for (index, range) in ranges.enumerated() {
+            range.forEachAddress { address in
+                guard !ranges[..<index].contains(where: { $0.contains(address) }) else { return }
+                body(address)
+            }
+        }
+    }
+
+    /// The selected addresses the sheet actually holds a cell for, once each.
+    func selectedStoredAddresses(in sheet: Worksheet) -> [CellAddress] {
+        let ranges = selectedRanges
+        guard ranges.count > 1 else { return sheet.storedAddresses(in: selection) }
+        var result: [CellAddress] = []
+        for (index, range) in ranges.enumerated() {
+            for address in sheet.storedAddresses(in: range)
+            where !ranges[..<index].contains(where: { $0.contains(address) }) {
+                result.append(address)
+            }
+        }
+        return result
     }
 
     // MARK: - Formatting
@@ -122,7 +157,7 @@ extension EditorState {
         var probe = CellStyle.default
         transform(&probe)
         guard !probe.isDefault else {
-            for address in workbook.sheets[index].storedAddresses(in: selection) {
+            for address in selectedStoredAddresses(in: workbook.sheets[index]) {
                 var cell = workbook.sheets[index][address]
                 transform(&cell.style)
                 workbook.sheets[index][address] = cell
@@ -130,7 +165,7 @@ extension EditorState {
             return
         }
 
-        selection.forEachAddress { address in
+        forEachSelectedAddress { address in
             guard workbook.sheets[index].contains(address) else { return }
             var cell = workbook.sheets[index][address]
             transform(&cell.style)
@@ -302,6 +337,7 @@ extension EditorState {
         workbook.recalculate()
         anchor = box.start
         selection = box
+        additionalSelections = []
     }
 
     /// Splits every merged region the selection touches back into single cells.
@@ -367,6 +403,7 @@ extension EditorState {
         workbook.recalculate()
         anchor = origin
         selection = CellRange(start: origin, end: CellAddress(row: lastRow, column: lastColumn))
+        additionalSelections = []
     }
 
     private func plainText(for range: CellRange, in sheet: Worksheet) -> String {
