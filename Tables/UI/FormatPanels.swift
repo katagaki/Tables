@@ -156,21 +156,6 @@ struct FormatPanel: View {
                 BorderBoxPicker(style: style) { target in toggle(target) }
                     .frame(maxWidth: .infinity)
 
-                Button("Format.Border.AllEdges") {
-                    state.applyStyle(in: &workbook) { current in
-                        // Not a toggle: the box picker is where sides come and
-                        // go, and a cell already fully boxed should stay boxed.
-                        if !current.borders.isSuperset(of: .all) { current.toggleBorder(.all) }
-                    }
-                }
-                Button("Format.Border.Remove") {
-                    state.applyStyle(in: &workbook) {
-                        $0.borders = []
-                        $0.diagonalBorder = nil
-                    }
-                }
-                .disabled(!style.hasBorder(in: .all))
-
                 VStack(alignment: .leading, spacing: 0) {
                     CarouselCaption(key: "Format.Border.ApplyTo")
                     BorderScopePicker(scope: $borderScope)

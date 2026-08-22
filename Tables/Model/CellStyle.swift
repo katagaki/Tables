@@ -307,15 +307,6 @@ struct CellStyle: Hashable, Sendable {
         }
     }
 
-    /// Whether a scope has anything drawn at all.
-    func hasBorder(in scope: BorderScope) -> Bool {
-        switch scope {
-        case .diagonal: return diagonalBorder?.isVisible ?? false
-        case .all: return !borderSides.isEmpty || (diagonalBorder?.isVisible ?? false)
-        default: return scope.edge.map { borderSides[$0] != nil } ?? false
-        }
-    }
-
     /// Draws or clears a set of edges, together.
     ///
     /// New sides inherit whatever style and colour the cell's other borders
