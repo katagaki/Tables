@@ -260,9 +260,6 @@ private struct BorderScopeGlyph: View {
 /// each one. Showing the stroke asks nothing.
 struct BorderLineStylePicker: View {
     let selection: BorderLineStyle?
-    /// The colour the scope's rules are drawn in, so a swatch previews what
-    /// picking it would actually put on the sheet.
-    let color: Color
     let onSelect: (BorderLineStyle) -> Void
 
     var body: some View {
@@ -271,20 +268,25 @@ struct BorderLineStylePicker: View {
                 ForEach(BorderLineStyle.allCases, id: \.self) { option in
                     let isSelected = option == selection
                     Button { onSelect(option) } label: {
-                        Rule(lineStyle: option, color: color)
-                            .padding(.horizontal, 8)
-                            .frame(width: 62, height: 30)
+                        // Black on white and white on black, whatever colour the
+                        // border itself is set to. A swatch drawn in the chosen
+                        // colour previews the sheet honestly but tells you
+                        // nothing when that colour is pale — and what is being
+                        // picked here is the dash and the weight, which only a
+                        // rule at full contrast actually shows.
+                        Rule(lineStyle: option, color: .primary)
+                            .padding(.horizontal, 12)
+                            .frame(width: 70, height: 32)
                             .background(
                                 isSelected ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.05),
-                                in: .rect(cornerRadius: 8, style: .continuous)
+                                in: .capsule
                             )
                             .overlay {
                                 if isSelected {
-                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .strokeBorder(Color.accentColor, lineWidth: 2)
+                                    Capsule().strokeBorder(Color.accentColor, lineWidth: 2)
                                 }
                             }
-                            .contentShape(.rect)
+                            .contentShape(.capsule)
                     }
                     .buttonStyle(.plain)
                     .help(option.label)

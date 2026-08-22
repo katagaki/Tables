@@ -383,12 +383,6 @@ struct CellStyle: Hashable, Sendable {
     var fillColor: Color? { Color(argbHex: fillColorHex) }
     var borderColor: Color { Color(argbHex: borderColorHex) ?? .secondary }
 
-    /// A scope's colour as the grid would paint it — including the fallback the
-    /// painter uses when the file left the colour to the reader.
-    func borderColor(in scope: BorderScope, for scheme: ColorScheme) -> Color {
-        AdaptiveColor.resolve(hex: colorHex(in: scope), for: scheme, isText: true) ?? .secondary
-    }
-
     /// Leading padding the indent steps add, in points at 100% zoom. OOXML
     /// defines a step as about three characters, so it tracks the font size.
     var indentPoints: Double { Double(indent) * fontSize * 1.5 }

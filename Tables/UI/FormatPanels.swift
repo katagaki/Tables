@@ -7,7 +7,6 @@ struct FormatPanel: View {
 
     /// Which sides the border line style and colour are aimed at.
     @State private var borderScope: BorderScope = .all
-    @Environment(\.colorScheme) private var colorScheme
 
     private var style: CellStyle { state.representativeStyle(in: workbook) }
 
@@ -165,18 +164,14 @@ struct FormatPanel: View {
                 .listRowInsets(EdgeInsets())
 
                 VStack(alignment: .leading, spacing: 0) {
-                    CarouselCaption(key: "Format.Border.LineStyle")
-                    BorderLineStylePicker(
-                        selection: style.lineStyle(in: borderScope),
-                        color: style.borderColor(in: borderScope, for: colorScheme)
-                    ) { value in
+                    BorderLineStylePicker(selection: style.lineStyle(in: borderScope)) { value in
                         state.applyStyle(in: &workbook) { $0.setLineStyle(value, in: borderScope) }
                     }
+                    .padding(.top, 8)
                 }
                 .listRowInsets(EdgeInsets())
 
                 VStack(alignment: .leading, spacing: 0) {
-                    CarouselCaption(key: "Format.Border.Color")
                     SystemColorSwatches(
                         role: .border,
                         selectedHex: style.colorHex(in: borderScope),
