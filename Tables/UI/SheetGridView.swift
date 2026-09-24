@@ -332,7 +332,6 @@ struct SheetGridView: View {
         of plan: TilePlan, in sheet: Worksheet, merges: [CellRange]
     ) -> TileContents {
         var painted = TileContents()
-        var covered: Set<CellAddress> = []
 
         let window = plan.range
         for merge in merges where merge.intersects(window) {
@@ -351,7 +350,7 @@ struct SheetGridView: View {
             guard firstRow <= lastRow, firstColumn <= lastColumn else { continue }
             for row in firstRow...lastRow {
                 for column in firstColumn...lastColumn {
-                    covered.insert(CellAddress(row: row, column: column))
+                    painted.covered.insert(CellAddress(row: row, column: column))
                 }
             }
         }
@@ -359,7 +358,7 @@ struct SheetGridView: View {
         for row in plan.rows where !sheet.hiddenRows.contains(row) {
             for column in plan.columns where !sheet.hiddenColumns.contains(column) {
                 let address = CellAddress(row: row, column: column)
-                guard !covered.contains(address),
+                guard !painted.covered.contains(address),
                       let cell = sheet.cells[address], !cell.isEmptyEntirely else { continue }
                 painted.cells.append(PaintedCell(
                     address: address, frame: metrics.frame(for: address), cell: cell

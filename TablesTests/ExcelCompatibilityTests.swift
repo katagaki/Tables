@@ -56,6 +56,19 @@ struct ExcelCompatibilityTests {
         #expect(xml.contains("fullCalcOnLoad=\"1\""))
     }
 
+    @Test("Shared string count includes repeated cell references")
+    func sharedStringCounts() throws {
+        var sheet = Worksheet(name: "S")
+        for column in 0..<3 {
+            sheet[CellAddress(row: 0, column: column)] = Cell(value: .text("repeat"))
+        }
+        let entries = try ZipArchive.entries(in: XLSXWriter.data(from: Workbook(sheets: [sheet])))
+        let root = try XMLLite.parse(#require(entries["xl/sharedStrings.xml"]))
+        #expect(root.attribute("count") == "3")
+        #expect(root.attribute("uniqueCount") == "1")
+        #expect(root.children(named: "si").count == 1)
+    }
+
     // MARK: - Shared formulas
 
     /// Builds a minimal but valid package around one sheet's XML.

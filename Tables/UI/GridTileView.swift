@@ -26,6 +26,7 @@ struct PaintedMerge: Equatable, Sendable {
 struct TileContents: Equatable, Sendable {
     var cells: [PaintedCell] = []
     var merges: [PaintedMerge] = []
+    var covered: Set<CellAddress> = []
 }
 
 /// A rectangular block of the grid, drawn as a single `Canvas`.
@@ -63,7 +64,7 @@ struct GridTileView: View, Equatable {
     var body: some View {
         // Worked out once and shared by the drawing and the accessibility pass,
         // both of which have to leave out the cells a merge draws over.
-        let covered = coveredAddresses
+        let covered = contents.covered
 
         return ZStack(alignment: .topLeading) {
             Canvas(rendersAsynchronously: false) { context, _ in
@@ -82,26 +83,6 @@ struct GridTileView: View, Equatable {
         }
         .frame(width: size.width, height: size.height, alignment: .topLeading)
         .offset(x: origin.x, y: origin.y)
-    }
-
-    /// The addresses inside this tile that a merge draws over.
-    private var coveredAddresses: Set<CellAddress> {
-        guard !contents.merges.isEmpty else { return [] }
-        var result: Set<CellAddress> = []
-        for merge in contents.merges {
-            let box = merge.range
-            let firstRow = max(box.start.row, rows.lowerBound)
-            let lastRow = min(box.end.row, rows.upperBound - 1)
-            let firstColumn = max(box.start.column, columns.lowerBound)
-            let lastColumn = min(box.end.column, columns.upperBound - 1)
-            guard firstRow <= lastRow, firstColumn <= lastColumn else { continue }
-            for row in firstRow...lastRow {
-                for column in firstColumn...lastColumn {
-                    result.insert(CellAddress(row: row, column: column))
-                }
-            }
-        }
-        return result
     }
 
     // MARK: - Accessibility

@@ -329,11 +329,14 @@ enum XLSXWriter {
     final class SharedStringTable {
         private(set) var strings: [String] = []
         private var lookup: [String: Int] = [:]
+        private var referenceCount = 0
 
         init(workbook: Workbook) {
             for sheet in workbook.sheets {
-                for cell in sheet.cells.values {
+                for (address, cell) in sheet.cells
+                where address.row < sheet.rowCount && address.column < sheet.columnCount {
                     guard cell.formula == nil, case .text(let text) = cell.value else { continue }
+                    referenceCount += 1
                     _ = index(for: text)
                 }
             }
@@ -350,7 +353,7 @@ enum XLSXWriter {
 
         var xml: String {
             var xml = XLSXWriter.declaration
-            xml += "<sst xmlns=\"\(XLSXWriter.mainNamespace)\" count=\"\(strings.count)\" uniqueCount=\"\(strings.count)\">"
+            xml += "<sst xmlns=\"\(XLSXWriter.mainNamespace)\" count=\"\(referenceCount)\" uniqueCount=\"\(strings.count)\">"
             for text in strings {
                 xml += "<si><t xml:space=\"preserve\">\(XMLLite.escape(text))</t></si>"
             }

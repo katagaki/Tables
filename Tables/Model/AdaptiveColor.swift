@@ -20,6 +20,32 @@ enum AdaptiveColor {
         return Color(adjust(components, for: scheme, isText: isText))
     }
 
+    /// Keep an authored text colour where it remains readable. A white label on
+    /// a blue fill, for example, should not turn black just because white text
+    /// on an unfilled dark sheet normally needs inverting.
+    static func resolveText(hex: String?, on fillHex: String?, for scheme: ColorScheme) -> Color? {
+        guard let text = HSL(argbHex: hex) else { return nil }
+        let adapted = adjust(text, for: scheme, isText: true)
+        guard scheme == .dark, let fill = HSL(argbHex: fillHex) else { return Color(adapted) }
+        let background = adjust(fill, for: scheme, isText: false)
+        if contrast(adapted, background) >= 4.5 { return Color(adapted) }
+
+        var alternative = adapted
+        if text.saturation < achromaticThreshold {
+            alternative.lightness = text.lightness
+        } else {
+            alternative.lightness = background.lightness < 0.5 ? 0.85 : 0.15
+        }
+        return Color(contrast(alternative, background) > contrast(adapted, background)
+            ? alternative : adapted)
+    }
+
+    private static func contrast(_ first: HSL, _ second: HSL) -> Double {
+        let bright = max(first.luminance, second.luminance)
+        let dark = min(first.luminance, second.luminance)
+        return (bright + 0.05) / (dark + 0.05)
+    }
+
     private static func adjust(_ color: HSL, for scheme: ColorScheme, isText: Bool) -> HSL {
         guard scheme == .dark else { return color }
         var result = color
@@ -48,6 +74,14 @@ private struct HSL {
     var saturation: Double
     var lightness: Double
     var alpha: Double
+
+    var luminance: Double {
+        let (red, green, blue) = Color.rgb(from: self)
+        func linear(_ value: Double) -> Double {
+            value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
+    }
 
     init?(argbHex hex: String?) {
         guard var text = hex?.trimmingCharacters(in: .whitespaces), !text.isEmpty else { return nil }
@@ -112,7 +146,7 @@ private extension Color {
 
 extension CellStyle {
     func textColor(for scheme: ColorScheme) -> Color? {
-        AdaptiveColor.resolve(hex: textColorHex, for: scheme, isText: true)
+        AdaptiveColor.resolveText(hex: textColorHex, on: fillColorHex, for: scheme)
     }
 
     func fillColor(for scheme: ColorScheme) -> Color? {
