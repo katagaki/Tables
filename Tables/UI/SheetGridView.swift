@@ -104,6 +104,10 @@ struct SheetGridView: View {
         }
             .scrollPosition($scrollPosition)
             .scrollBounceBehavior(.basedOnSize)
+            // The pinned headers are drawn over the scroll view, so keep the
+            // indicators clear of them rather than sliding underneath.
+            .contentMargins(.top, columnHeaderHeight, for: .scrollIndicators)
+            .contentMargins(.leading, rowHeaderWidth, for: .scrollIndicators)
             // Canvas, not paper: the sheet paints its own extent, so anything
             // past the last row and column reads as the space around the sheet
             // rather than as grid that failed to draw.
