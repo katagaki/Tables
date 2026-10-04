@@ -3,8 +3,8 @@ import Testing
 @testable import Tables
 
 /// Guards the places where our files have to satisfy Excel's rules rather than
-/// just our own reader, and where real-world workbooks use constructs we once
-/// dropped on the floor.
+/// just our own reader, and the constructs real-world workbooks use that are
+/// easy to drop on the floor.
 @Suite("Excel compatibility")
 struct ExcelCompatibilityTests {
 

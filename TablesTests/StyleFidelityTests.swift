@@ -2,10 +2,9 @@ import Foundation
 import Testing
 @testable import Tables
 
-/// Covers the style detail an audit against real Excel files found we were
-/// flattening: per-edge border weights, diagonals, alignment indent and
-/// rotation, and row and column geometry that has to mean the same number in
-/// both applications.
+/// Covers style detail real Excel files carry that is easy to flatten:
+/// per-edge border weights, diagonals, alignment indent and rotation, and row
+/// and column geometry that has to mean the same number in both applications.
 @Suite("Style fidelity")
 struct StyleFidelityTests {
 

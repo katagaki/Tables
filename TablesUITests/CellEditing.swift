@@ -20,12 +20,10 @@ extension XCTestCase {
 
     /// Types one cell's contents and commits with Return.
     ///
-    /// The typing is checked rather than assumed. A field can exist, and the
-    /// keyboard can be up, a moment before the field is actually taking input —
-    /// and text typed into that gap goes nowhere at all, which surfaces much
-    /// later as a cell nobody ever filled in. Watching the grid for the value to
-    /// appear turns that into a retry instead of a puzzling failure three
-    /// assertions downstream.
+    /// The typing is checked rather than assumed: a field can be up a moment
+    /// before it is taking input, for the same reason `settle()` exists.
+    /// Watching the grid for the value turns that into a retry instead of a
+    /// puzzling failure three assertions downstream.
     ///
     /// Assumes the cell starts empty, which is how these tests build a workbook:
     /// each cell is written once.
@@ -49,13 +47,11 @@ extension XCTestCase {
     /// Opens a cell's in-place editor, and hands back the field ready to type
     /// into.
     ///
-    /// The editor no longer opens on a double tap: the way in is the cell
-    /// menu's Edit entry. The menu is raised here by long press rather than by
-    /// double tap, even though both work, because the double tap is timed
-    /// against the app's own window and a synthesized pair does not reliably
-    /// land inside it once the grid has content to redraw. That the double tap
-    /// raises the menu is worth testing — `testDoubleTapRaisesCellMenu` does —
-    /// but it should not be what every cell of every test hangs on.
+    /// The way in is the cell menu's Edit entry. The menu is raised here by
+    /// long press rather than by double tap, even though both work, because the
+    /// double tap is timed against the app's own window and a synthesized pair
+    /// does not reliably land inside it once the grid has content to redraw.
+    /// `testDoubleTapRaisesCellMenu` covers the double tap on its own.
     @discardableResult
     func openCellEditor(
         on reference: String, in app: XCUIApplication,

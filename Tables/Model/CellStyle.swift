@@ -207,7 +207,7 @@ struct DiagonalBorder: Hashable, Sendable {
     var isVisible: Bool { goesUp || goesDown }
 }
 
-/// Visual formatting for a single cell. Colors are stored as OOXML "AARRGGBB" hex.
+/// Visual formatting for a single cell. Colours are stored as OOXML "AARRGGBB" hex.
 struct CellStyle: Hashable, Sendable {
     var isBold = false
     var isItalic = false
@@ -454,7 +454,7 @@ enum NumberFormatPreset: String, CaseIterable, Identifiable, Sendable {
 }
 
 extension Color {
-    /// Builds a color from an OOXML "AARRGGBB" (or "RRGGBB") hex string.
+    /// Builds a colour from an OOXML "AARRGGBB" (or "RRGGBB") hex string.
     init?(argbHex hex: String?) {
         guard var text = hex?.trimmingCharacters(in: .whitespaces), !text.isEmpty else { return nil }
         if text.hasPrefix("#") { text.removeFirst() }

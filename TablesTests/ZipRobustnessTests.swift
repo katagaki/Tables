@@ -329,7 +329,7 @@ struct ZipRobustnessTests {
         }
     }
 
-    // MARK: - Existing behaviour
+    // MARK: - Round trips
 
     @Test("Classic archives written by the app still read back unchanged")
     func classicRoundTripStillWorks() throws {

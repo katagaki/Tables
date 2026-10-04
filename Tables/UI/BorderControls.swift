@@ -58,10 +58,8 @@ private struct Rule: View {
 
 /// The cell drawn as a diagram, with a tap target on each of its sides.
 ///
-/// A row of `square.lefthalf.filled` symbols asks which half of each glyph is
-/// meant to be the border and which is the cell; a square whose sides you touch
-/// is the thing itself — and it can show the weight, dash and colour each side
-/// is actually carrying, which no fixed symbol can.
+/// Drawn rather than built from SF Symbols so that each side can show the
+/// weight, dash and colour it is actually carrying.
 struct BorderBoxPicker: View {
     let style: CellStyle
     let onToggle: (BorderTarget) -> Void
@@ -268,12 +266,9 @@ struct BorderLineStylePicker: View {
                 ForEach(BorderLineStyle.allCases, id: \.self) { option in
                     let isSelected = option == selection
                     Button { onSelect(option) } label: {
-                        // Black on white and white on black, whatever colour the
-                        // border itself is set to. A swatch drawn in the chosen
-                        // colour previews the sheet honestly but tells you
-                        // nothing when that colour is pale — and what is being
-                        // picked here is the dash and the weight, which only a
-                        // rule at full contrast actually shows.
+                        // Full contrast whatever colour the border is set to:
+                        // what is picked here is the dash and the weight, and a
+                        // pale swatch would hide both.
                         Rule(lineStyle: option, color: .primary)
                             .padding(.horizontal, 12)
                             .frame(width: 70, height: 32)

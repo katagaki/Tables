@@ -56,10 +56,7 @@ final class EditorState {
     var presentedPanel: EditorPanel?
     var errorMessage: String?
     var clipboard: [[Cell]]?
-    /// Whether the popover about parts of the file we cannot edit is up. It is
-    /// only ever raised by the toolbar's warning button, which stands there for
-    /// as long as the document is open: what the file contains does not change
-    /// while it is open, so there is never a moment this has to interrupt.
+    /// Whether the toolbar's popover about parts of the file we cannot edit is up.
     var isShowingUnsupportedFeatureNotice = false
 
     // MARK: - Sheet resolution

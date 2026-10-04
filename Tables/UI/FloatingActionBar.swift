@@ -45,9 +45,6 @@ struct FloatingActionBar: View {
                     }
                     panelAction("function", label: "Panel.Functions.Title", panel: .functions)
                 }
-
-                // Rows and columns are structure, not formatting: they live in
-                // the row and column header menus.
             }
         }
     }

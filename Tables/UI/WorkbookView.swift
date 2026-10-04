@@ -278,11 +278,8 @@ struct WorkbookView: View {
 /// What the toolbar's warning button says: which parts of the file Tables can
 /// only carry, and which it will drop.
 ///
-/// A popover rather than the alert this used to be. Nothing here needs deciding
-/// — the file is already open and the answer is the same either way — so it has
-/// no business stopping the user before they have seen their spreadsheet. As a
-/// toolbar button it stays available for as long as the document is, which an
-/// alert dismissed on open never was.
+/// A popover rather than an alert: nothing here needs deciding, so it has no
+/// business stopping the user before they have seen their spreadsheet.
 private struct UnsupportedFeatureNotice: View {
     var report: UnsupportedFeatureReport
 
@@ -301,8 +298,7 @@ private struct UnsupportedFeatureNotice: View {
         .multilineTextAlignment(.leading)
         .padding(20)
         .frame(idealWidth: 300, maxWidth: 340, alignment: .leading)
-        // iPhone turns a popover into a sheet unless it is told not to, and a
-        // sheet is the interruption this stopped being.
+        // iPhone turns a popover into a sheet unless it is told not to.
         .presentationCompactAdaptation(.popover)
     }
 }

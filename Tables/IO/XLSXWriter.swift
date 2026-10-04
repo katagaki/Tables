@@ -131,9 +131,6 @@ enum XLSXWriter {
             xml += " r:id=\"rId\(index + 1)\"/>"
         }
         xml += "</sheets>"
-        // Element order inside `<workbook>` is schema-enforced: `<definedNames>`
-        // sits between `<sheets>` and `<calcPr>`, and Excel rejects the part if
-        // it appears anywhere else.
         // A name scoped to a sheet that is gone is dropped rather than written
         // unscoped: promoting it to workbook scope would let it answer formulas
         // it never applied to.
@@ -142,6 +139,9 @@ enum XLSXWriter {
             guard let position = workbook.index(of: scope) else { return nil }
             return (name, position)
         }
+        // Element order inside `<workbook>` is schema-enforced: `<definedNames>`
+        // sits between `<sheets>` and `<calcPr>`, and Excel rejects the part if
+        // it appears anywhere else.
         if !names.isEmpty {
             xml += "<definedNames>"
             for (name, position) in names {

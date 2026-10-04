@@ -38,13 +38,11 @@ private extension NativeMenuPresenter {
         func makeUIView(context: Context) -> UIButton {
             let button = UIButton(type: .custom)
             // The menu becomes the button's primary action so it can be raised
-            // with `performPrimaryAction()`; the button never handles touches
-            // itself, since the header owns single-tap selection.
+            // with `performPrimaryAction()`. The button stays enabled, since a
+            // disabled one ignores that call; `allowsHitTesting(false)` on the
+            // SwiftUI wrapper keeps touches away so the header owns single-tap
+            // selection.
             button.showsMenuAsPrimaryAction = true
-            // The button stays enabled — a disabled one ignores
-            // `performPrimaryAction()`. Touches are kept away from it by
-            // `allowsHitTesting(false)` on the SwiftUI wrapper instead, so the
-            // header keeps owning single-tap selection.
             button.isAccessibilityElement = false
             button.accessibilityElementsHidden = true
             return button

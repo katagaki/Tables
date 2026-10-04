@@ -25,8 +25,8 @@ struct CellMenuBuilder {
 
     func actions() -> [HeaderMenuAction] {
         [
-            // The way into the in-cell editor by touch, now that the double tap
-            // raises this menu instead of opening it.
+            // The way into the in-cell editor by touch, since the double tap
+            // raises this menu.
             HeaderMenuAction(title: String(localized: "CellMenu.Edit"), symbol: "pencil") {
                 target()
                 state.beginEditing(address, in: workbook.wrappedValue)
