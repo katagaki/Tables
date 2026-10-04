@@ -1,6 +1,6 @@
 import Foundation
 
-/// A tiny read-only XML tree, built on `XMLParser`. Namespace prefixes are
+/// A tiny XML tree, built on `XMLParser`. Namespace prefixes are
 /// dropped so `<x:sheetData>` and `<sheetData>` look the same to callers.
 ///
 /// The qualified spellings are kept alongside the stripped ones so a subtree
@@ -54,6 +54,53 @@ final class XMLElement {
 
     fileprivate func appendText(_ value: String) {
         text += value
+    }
+
+    // MARK: - Editing
+
+    /// Sets or, with `nil`, removes an attribute by its local name — the
+    /// spelling it already has in the file if it has one, unprefixed if not.
+    func setAttribute(_ name: String, _ value: String?) {
+        let existing = qualifiedAttributes.keys.first { key in
+            key == name || (key.hasSuffix(":" + name) && !key.hasPrefix("xmlns"))
+        }
+        let key = existing ?? name
+        attributes[name] = value
+        qualifiedAttributes[key] = value
+    }
+
+    /// Declares namespace bindings on this element itself, so it carries them
+    /// wherever it is moved.
+    func declareNamespaces(_ bindings: [String: String]) {
+        for (prefix, uri) in bindings {
+            qualifiedAttributes[prefix.isEmpty ? "xmlns" : "xmlns:\(prefix)"] = uri
+        }
+    }
+
+    func insertChild(_ child: XMLElement, at index: Int) {
+        child.parent = self
+        children.insert(child, at: min(max(index, 0), children.count))
+    }
+
+    func removeChild(_ child: XMLElement) {
+        children.removeAll { $0 === child }
+    }
+
+    func replaceChild(_ old: XMLElement, with new: XMLElement) {
+        guard let index = children.firstIndex(where: { $0 === old }) else { return }
+        new.parent = self
+        children[index] = new
+    }
+
+    func setText(_ value: String) {
+        text = value
+    }
+
+    /// Puts `children` in this order, keeping only those already here.
+    func reorderChildren(_ ordered: [XMLElement]) {
+        let kept = ordered.filter { candidate in children.contains { $0 === candidate } }
+        let rest = children.filter { child in !kept.contains { $0 === child } }
+        children = kept + rest
     }
 
     // MARK: - Namespaces
@@ -168,6 +215,19 @@ enum XMLLite {
         func parser(_ parser: XMLParser, parseErrorOccurred parseError: any Error) {
             failure = parseError.localizedDescription
         }
+    }
+
+    /// Parses a fragment that uses prefixes bound in `namespaces`, returning
+    /// its root with those bindings declared on it so it can be grafted into
+    /// another tree whatever that tree calls the same namespaces.
+    static func fragment(_ xml: String, namespaces: [String: String]) -> XMLElement? {
+        let declarations = namespaces.sorted { $0.key < $1.key }
+            .map { " xmlns:\($0.key)=\"\(escape($0.value))\"" }.joined()
+        guard let wrapper = try? parse(Data("<fragment\(declarations)>\(xml)</fragment>".utf8)),
+              let root = wrapper.children.first else { return nil }
+        root.parent = nil
+        root.declareNamespaces(namespaces)
+        return root
     }
 
     /// Writes an element and its subtree back out as XML text.

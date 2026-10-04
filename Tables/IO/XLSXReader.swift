@@ -16,7 +16,8 @@ enum XLSXReader {
         let workbookXML = try XMLLite.parse(workbookEntry)
         let relationships = parseRelationships(entries["xl/_rels/workbook.xml.rels"])
         let sharedStrings = parseSharedStrings(entries["xl/sharedStrings.xml"])
-        let styles = parseStyles(entries["xl/styles.xml"], theme: parseTheme(entries))
+        let theme = parseTheme(entries)
+        let styles = parseStyles(entries["xl/styles.xml"], theme: theme)
         let styleSheetElements = preservedStyleSheetElements(entries["xl/styles.xml"])
         let hasDifferentialFormats = styleSheetElements.contains { $0.name == "dxfs" }
 
@@ -31,6 +32,8 @@ enum XLSXReader {
         /// found on. Whether each one survives is only known once the package as
         /// a whole has been worked out, so reporting waits until then.
         var sheetFindings: [[(feature: UnsupportedFeature, elementName: String)]] = []
+        /// The relationship id each sheet's `<drawing>` names, if it has one.
+        var drawingIDs: [String?] = []
         let sheetElements = workbookXML.firstChild(named: "sheets")?.children(named: "sheet") ?? []
 
         for (position, element) in sheetElements.enumerated() {
@@ -49,13 +52,26 @@ enum XLSXReader {
                 sheets.append(placeholder)
                 sheetPaths.append(path)
                 sheetFindings.append([])
+                drawingIDs.append(nil)
                 continue
             }
             let sheetXML = try XMLLite.parse(payload)
-            var sheet = parseSheet(
-                sheetXML, name: name, sharedStrings: sharedStrings, styles: styles,
-                usesMacEpoch: usesMacEpoch, hasDifferentialFormats: hasDifferentialFormats
-            )
+            var sheet: Worksheet
+            if sheetXML.name == "chartsheet" {
+                sheet = Worksheet(name: name)
+                sheet.kind = .chart
+                sheet.preservedElements = preservedChildren(of: sheetXML, hasDifferentialFormats: false)
+                    .filter { ChartWriter.chartSheetChildOrder.contains($0.name) }
+            } else {
+                sheet = parseSheet(
+                    sheetXML, name: name, sharedStrings: sharedStrings, styles: styles,
+                    usesMacEpoch: usesMacEpoch, hasDifferentialFormats: hasDifferentialFormats
+                )
+            }
+            // The drawing is regenerated from the model on every save, so the
+            // element naming it is too.
+            drawingIDs.append(sheetXML.firstChild(named: "drawing")?.attribute("id"))
+            sheet.preservedElements.removeAll { $0.name == "drawing" }
             sheet.name = name
             sheet.isHidden = isHidden
             sheets.append(sheet)
@@ -68,12 +84,81 @@ enum XLSXReader {
         // one visible — and honouring it would leave the tab strip empty.
         if sheets.allSatisfy(\.isHidden) { sheets[0].isHidden = false }
         var workbook = Workbook(sheets: sheets, definedNames: parseDefinedNames(workbookXML, sheets: sheets))
+        workbook.themeAccentColors = theme.accentColors
+
+        // Drawings are read into the model — charts as charts, everything
+        // else as anchors kept verbatim — and written afresh on save.
+        let context = ChartReader.Context(workbook: workbook, theme: theme)
+        var drawingPaths: Set<String> = []
+        var consumedParts: Set<String> = []
+        var drawingLost = false
+        for index in workbook.sheets.indices {
+            guard let id = drawingIDs[index] else { continue }
+            let sheetPath = sheetPaths[index]
+            let entry = PackagePreservation.relationships(
+                in: entries[PackagePreservation.relationshipsPath(for: sheetPath)]
+            ).first { $0.id == id }
+            guard let entry, let path = PackagePreservation.packagePath(
+                of: entry, relativeTo: PackagePreservation.directory(of: sheetPath)
+            ) else {
+                drawingLost = true
+                continue
+            }
+            drawingPaths.insert(path)
+            let result = DrawingReader.read(
+                drawingPath: path, entries: entries, sheet: workbook.sheets[index], context: context
+            )
+            workbook.sheets[index].charts = result.charts
+            workbook.sheets[index].preservedDrawingAnchors = result.anchors
+            // The grid has to reach the far corner of everything drawn on it.
+            let corners = result.charts.map(\.placement.to) + result.anchors.compactMap(\.placement?.to)
+            if !workbook.sheets[index].isChartSheet, !corners.isEmpty {
+                let sheet = workbook.sheets[index]
+                workbook.sheets[index].rowCount = min(
+                    Worksheet.maximumRowCount, max(sheet.rowCount, (corners.map(\.row).max() ?? 0) + 2)
+                )
+                workbook.sheets[index].columnCount = min(
+                    Worksheet.maximumColumnCount, max(sheet.columnCount, (corners.map(\.column).max() ?? 0) + 2)
+                )
+            }
+            consumedParts.formUnion(result.consumedParts)
+            drawingLost = drawingLost || result.lostSomething
+        }
+        // Every name the drawing could reach, by relationship; a target that
+        // does not survive planning is something the drawing lost.
+        let drawingTargets = drawingPaths.flatMap { path in
+            PackagePreservation.relationships(in: entries[PackagePreservation.relationshipsPath(for: path)])
+                .compactMap { PackagePreservation.packagePath(of: $0, relativeTo: PackagePreservation.directory(of: path)) }
+        }
+        let anchorTargets = workbook.sheets.flatMap(\.preservedDrawingAnchors).flatMap(\.relationships)
+            .filter { !$0.isExternal }.map(\.target)
 
         var report = UnsupportedFeatureReport()
         var preserved = PackagePreservation.plan(
-            entries: entries, sheets: workbook.sheets, sheetPaths: sheetPaths, report: &report
+            entries: entries, sheets: workbook.sheets, sheetPaths: sheetPaths,
+            takenOver: drawingPaths.union(consumedParts), extraRoots: anchorTargets, report: &report
         )
         preserved.styleSheetElements = styleSheetElements
+
+        // An anchor whose picture or chart part did not survive goes too.
+        var keptAnchor = false
+        for index in workbook.sheets.indices {
+            let anchors = workbook.sheets[index].preservedDrawingAnchors
+            let survivors = anchors.filter { anchor in
+                anchor.relationships.allSatisfy { $0.isExternal || preserved.parts[$0.target] != nil }
+            }
+            if survivors.count < anchors.count { drawingLost = true }
+            keptAnchor = keptAnchor || !survivors.isEmpty
+            workbook.sheets[index].preservedDrawingAnchors = survivors
+        }
+        if drawingTargets.contains(where: { preserved.parts[$0] == nil && !consumedParts.contains($0) }) {
+            drawingLost = true
+        }
+        if drawingLost {
+            report.record(.chartsAndImages, isPreserved: false)
+        } else if keptAnchor {
+            report.record(.chartsAndImages, isPreserved: true)
+        }
         for index in workbook.sheets.indices {
             // A sheet child naming a relationship id is only re-emittable while
             // the part that resolves those ids comes with it.
@@ -108,7 +193,6 @@ enum XLSXReader {
             case "sheetProtection": feature = .sheetProtection
             case "hyperlinks": feature = .hyperlinks
             case "tableParts": feature = .tables
-            case "drawing": feature = .chartsAndImages
             case "printOptions", "pageSetup": feature = .printSetup
             case "sheetViews":
                 // Without a pane split this is only where the cursor was left,
@@ -494,8 +578,13 @@ enum XLSXReader {
         /// tables pointing at a cache the workbook no longer declares.
         static let pivotPathPrefixes = ["xl/pivotCache", "xl/pivotTables"]
 
+        /// `takenOver` names parts the model now holds — drawings and the
+        /// charts read out of them — which count as generated, so whatever
+        /// points at them stays valid. `extraRoots` are parts that something
+        /// in the model names directly, such as a picture a kept anchor shows.
         static func plan(
             entries: [String: Data], sheets: [Worksheet], sheetPaths: [String],
+            takenOver: Set<String> = [], extraRoots: [String] = [],
             report: inout UnsupportedFeatureReport
         ) -> PreservedPackage {
             let types = contentTypes(entries["[Content_Types].xml"])
@@ -505,11 +594,13 @@ enum XLSXReader {
                 "xl/_rels/workbook.xml.rels", "xl/styles.xml", "xl/sharedStrings.xml",
             ]
             for index in sheets.indices { generated.insert("xl/worksheets/sheet\(index + 1).xml") }
+            generated.formUnion(takenOver)
 
             // Candidates have to be typeable before dependencies are weighed:
             // an untypeable part is already lost, and pretending otherwise
             // would let something else be kept on the strength of it.
             let candidates = entries.keys.filter { path in
+                guard !takenOver.contains(path) else { return false }
                 guard preservablePathPrefixes.contains(where: path.hasPrefix) else { return false }
                 guard !isRelationshipsPart(path) else { return false }
                 return types.declaresType(for: path)
@@ -545,7 +636,7 @@ enum XLSXReader {
 
             let rootEntries = relationships(in: entries["_rels/.rels"])
             let workbookEntries = relationships(in: entries["xl/_rels/workbook.xml.rels"])
-            var roots: [String] = []
+            var roots: [String] = extraRoots
             roots += rootEntries.compactMap { packagePath(of: $0, relativeTo: "") }
             roots += workbookEntries.compactMap { packagePath(of: $0, relativeTo: "xl") }
             for (index, sheet) in sheets.enumerated() where sheetRelationshipParts[sheet.id] != nil {
@@ -572,7 +663,7 @@ enum XLSXReader {
                 .filter { packagePath(of: $0, relativeTo: "xl").map(retained.contains) == true }
                 .map(\.preserved)
 
-            recordPackageFeatures(entries: entries, retained: retained, report: &report)
+            recordPackageFeatures(entries: entries, retained: retained, takenOver: takenOver, report: &report)
             return package
         }
 
@@ -580,10 +671,13 @@ enum XLSXReader {
         /// as preserved only when every one of its parts survived: a workbook
         /// with two comment parts and one kept is not one whose comments are safe.
         private static func recordPackageFeatures(
-            entries: [String: Data], retained: Set<String>, report: inout UnsupportedFeatureReport
+            entries: [String: Data], retained: Set<String>, takenOver: Set<String>,
+            report: inout UnsupportedFeatureReport
         ) {
             func note(_ feature: UnsupportedFeature, matching predicate: (String) -> Bool) {
-                let found = entries.keys.filter { !isRelationshipsPart($0) && predicate($0) }
+                let found = entries.keys.filter {
+                    !isRelationshipsPart($0) && !takenOver.contains($0) && predicate($0)
+                }
                 guard !found.isEmpty else { return }
                 report.record(feature, isPreserved: found.allSatisfy(retained.contains))
             }
@@ -618,6 +712,7 @@ enum XLSXReader {
         /// One `<Relationship>` as the file wrote it, id included: ids matter
         /// inside a sheet's own `_rels`, which we re-emit unchanged.
         struct RelationshipEntry {
+            var id: String?
             var type: String
             var target: String
             var targetMode: String?
@@ -633,7 +728,8 @@ enum XLSXReader {
                 guard let type = element.attribute("Type"),
                       let target = element.attribute("Target") else { return nil }
                 return RelationshipEntry(
-                    type: type, target: target, targetMode: element.attribute("TargetMode")
+                    id: element.attribute("Id"), type: type, target: target,
+                    targetMode: element.attribute("TargetMode")
                 )
             }
         }

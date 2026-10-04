@@ -15,7 +15,16 @@ struct FloatingActionBar: View {
         // The full set of groups is wider than an iPhone, so the bar scrolls
         // sideways rather than clipping its end groups.
         ScrollView(.horizontal) {
-            barContent.padding(.horizontal, 12)
+            Group {
+                if state.activeSheet(in: workbook).isChartSheet {
+                    // Cell formatting has nothing to act on here.
+                    GlassEffectContainer(spacing: 10) { chartGroup }
+                } else {
+                    barContent
+                }
+            }
+            .padding(.horizontal, 12)
+            .animation(.snappy(duration: 0.2), value: state.selectedChartID)
         }
         .scrollIndicators(.hidden)
         .scrollBounceBehavior(.basedOnSize)
@@ -44,9 +53,42 @@ struct FloatingActionBar: View {
                         state.insertAggregate("SUM", in: &workbook)
                     }
                     panelAction("function", label: "Panel.Functions.Title", panel: .functions)
+                    insertChartMenu
+                }
+
+                if state.selectedChartID != nil {
+                    chartGroup
                 }
             }
         }
+    }
+
+    /// Picks the chart type, then charts the selection.
+    private var insertChartMenu: some View {
+        Menu {
+            InsertChartMenuItems(workbook: $workbook, state: state)
+        } label: {
+            Image(systemName: "chart.bar.xaxis")
+                .font(.system(size: 15, weight: .medium))
+                .frame(width: 40, height: 40)
+                .foregroundStyle(Color.primary)
+                .contentShape(.circle)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("insertChart")
+        .accessibilityLabel("Toolbar.InsertChart")
+    }
+
+    /// What can be done to the chart that is picked out.
+    private var chartGroup: some View {
+        group {
+            panelAction("slider.horizontal.3", label: "Toolbar.EditChart", panel: .chart)
+            action("trash", isOn: false, label: "Chart.Menu.Delete") {
+                state.deleteSelectedChart(in: &workbook)
+            }
+        }
+        .transition(.scale.combined(with: .opacity))
     }
 
     private func group<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {

@@ -100,6 +100,11 @@ struct SheetTabBarView: View {
                     .focused($isRenaming)
                     .frame(minWidth: 80)
                     .onSubmit { commitRename(for: sheet) }
+            } else if sheet.isChartSheet {
+                Label(sheet.name, systemImage: "chart.bar.xaxis")
+                    .labelStyle(.titleAndIcon)
+                    .font(.system(size: 13, weight: isActive ? .semibold : .regular))
+                    .lineLimit(1)
             } else {
                 Text(sheet.name)
                     .font(.system(size: 13, weight: isActive ? .semibold : .regular))

@@ -6,33 +6,108 @@ enum XLSXWriter {
         let strings = SharedStringTable(workbook: workbook)
         let styles = StyleTable(workbook: workbook)
         let preserved = workbook.preservedPackage
+        let drawings = DrawingPlan(workbook: workbook)
 
         var parts: [(path: String, data: Data)] = [
             (
                 "[Content_Types].xml",
-                contentTypes(sheetCount: workbook.sheets.count, preserved: preserved).utf8Data
+                contentTypes(workbook: workbook, drawings: drawings, preserved: preserved).utf8Data
             ),
             ("_rels/.rels", rootRelationships(preserved: preserved).utf8Data),
             ("xl/workbook.xml", workbookPart(workbook).utf8Data),
             (
                 "xl/_rels/workbook.xml.rels",
-                workbookRelationships(sheetCount: workbook.sheets.count, preserved: preserved).utf8Data
+                workbookRelationships(workbook: workbook, drawings: drawings, preserved: preserved).utf8Data
             ),
             ("xl/styles.xml", styles.xml.utf8Data),
             ("xl/sharedStrings.xml", strings.xml.utf8Data),
         ]
         for (index, sheet) in workbook.sheets.enumerated() {
-            let relationships = preserved.sheetRelationshipParts[sheet.id]
+            let preservedRelationships = preserved.sheetRelationshipParts[sheet.id]
+            let sheetDrawing = drawings.sheets[sheet.id]
+            let path = drawings.sheetPath(at: index, of: sheet)
+
+            // A sheet's `_rels` follows it to its new position: the file names
+            // change when sheets are reordered, the contents do not. Its old
+            // drawing relationship is dropped for the one we now write.
+            var relationships = XLSXReader.PackagePreservation.relationships(in: preservedRelationships)
+                .filter { $0.type != ChartWriter.drawingRelationshipType }
+            var drawingID: String?
+            if let sheetDrawing {
+                let id = Self.freshRelationshipID(avoiding: Set(relationships.compactMap(\.id)))
+                drawingID = id
+                relationships.append(.init(
+                    id: id, type: ChartWriter.drawingRelationshipType,
+                    target: relativePath(from: path, to: sheetDrawing.path), targetMode: nil
+                ))
+            }
+
+            let body: String
+            if drawings.isChartSheet(sheet) {
+                body = ChartWriter.chartSheet(
+                    drawingRelationshipID: drawingID, preserved: sheet.preservedElements,
+                    mainNamespace: mainNamespace
+                )
+            } else {
+                body = sheetPart(
+                    sheet, strings: strings, styles: styles,
+                    hasRelationshipsPart: preservedRelationships != nil, drawingRelationshipID: drawingID
+                )
+            }
+            parts.append((path, body.utf8Data))
+            if !relationships.isEmpty {
+                parts.append((
+                    XLSXReader.PackagePreservation.relationshipsPath(for: path),
+                    relationshipsPart(relationships).utf8Data
+                ))
+            }
+
+            guard let sheetDrawing else { continue }
             parts.append((
-                "xl/worksheets/sheet\(index + 1).xml",
-                sheetPart(
-                    sheet, strings: strings, styles: styles, hasRelationshipsPart: relationships != nil
+                sheetDrawing.path,
+                ChartWriter.drawing(
+                    charts: sheetDrawing.charts.map { ($0.chart, $0.relationshipID) },
+                    preserved: sheetDrawing.anchors,
+                    isChartSheet: drawings.isChartSheet(sheet)
                 ).utf8Data
             ))
-            // A sheet's `_rels` follows it to its new position: the file names
-            // change when sheets are reordered, the contents do not.
-            if let relationships {
-                parts.append(("xl/worksheets/_rels/sheet\(index + 1).xml.rels", relationships))
+            var drawingRelationships: [XLSXReader.PackagePreservation.RelationshipEntry] = []
+            for anchor in sheetDrawing.anchors {
+                for relationship in anchor.relationships
+                where !drawingRelationships.contains(where: { $0.id == relationship.id }) {
+                    drawingRelationships.append(.init(
+                        id: relationship.id, type: relationship.type,
+                        target: relationship.isExternal
+                            ? relationship.target : relativePath(from: sheetDrawing.path, to: relationship.target),
+                        targetMode: relationship.isExternal ? "External" : nil
+                    ))
+                }
+            }
+            for entry in sheetDrawing.charts {
+                drawingRelationships.append(.init(
+                    id: entry.relationshipID, type: ChartWriter.chartRelationshipType,
+                    target: relativePath(from: sheetDrawing.path, to: entry.path), targetMode: nil
+                ))
+                parts.append((entry.path, ChartWriter.chartSpace(entry.chart, workbook: workbook).utf8Data))
+                guard !entry.companions.isEmpty else { continue }
+                var chartRelationships: [XLSXReader.PackagePreservation.RelationshipEntry] = []
+                for (index, companion) in entry.companions.enumerated() {
+                    parts.append((companion.path, companion.companion.data))
+                    chartRelationships.append(.init(
+                        id: "rId\(index + 1)", type: companion.companion.relationshipType,
+                        target: relativePath(from: entry.path, to: companion.path), targetMode: nil
+                    ))
+                }
+                parts.append((
+                    XLSXReader.PackagePreservation.relationshipsPath(for: entry.path),
+                    relationshipsPart(chartRelationships).utf8Data
+                ))
+            }
+            if !drawingRelationships.isEmpty {
+                parts.append((
+                    XLSXReader.PackagePreservation.relationshipsPath(for: sheetDrawing.path),
+                    relationshipsPart(drawingRelationships).utf8Data
+                ))
             }
         }
         for path in preserved.parts.keys.sorted() {
@@ -41,13 +116,120 @@ enum XLSXWriter {
         return try ZipArchive.archive(entries: parts)
     }
 
+    // MARK: - Drawings
+
+    /// Where every sheet's drawing and charts go in the package, worked out
+    /// before anything is written because the content types, the workbook's
+    /// relationships and the sheets themselves all have to agree on it.
+    struct DrawingPlan {
+        struct ChartEntry {
+            var chart: Chart
+            var path: String
+            var relationshipID: String
+            /// The style and colour parts carried over with a chart from a file.
+            var companions: [(companion: ChartCompanion, path: String)] = []
+        }
+
+        struct SheetDrawing {
+            var path: String
+            var charts: [ChartEntry]
+            var anchors: [PreservedDrawingAnchor]
+        }
+
+        var sheets: [Worksheet.ID: SheetDrawing] = [:]
+        /// Chart sheets with something to show. One emptied of its chart is
+        /// written as a blank worksheet instead: the schema requires a chart
+        /// sheet to have a drawing.
+        private var chartSheets: Set<Worksheet.ID> = []
+
+        init(workbook: Workbook) {
+            // Part names are numbered clear of anything carried over: a chart
+            // we could not model may well be sitting at `chart1.xml` already.
+            var taken = Set(workbook.preservedPackage.parts.keys)
+            func allocate(_ stem: String) -> String {
+                var number = 1
+                while taken.contains("\(stem)\(number).xml") { number += 1 }
+                let path = "\(stem)\(number).xml"
+                taken.insert(path)
+                return path
+            }
+
+            for sheet in workbook.sheets {
+                let charts = sheet.isChartSheet ? Array(sheet.charts.prefix(1)) : sheet.charts
+                guard !charts.isEmpty || !sheet.preservedDrawingAnchors.isEmpty else { continue }
+                if sheet.isChartSheet { chartSheets.insert(sheet.id) }
+
+                let reserved = Set(sheet.preservedDrawingAnchors.flatMap(\.relationships).map(\.id))
+                var used = reserved
+                let entries = charts.map { chart in
+                    let id = XLSXWriter.freshRelationshipID(avoiding: used)
+                    used.insert(id)
+                    let companions = (chart.original?.companions ?? []).map { companion in
+                        (companion: companion, path: allocate("xl/charts/\(companion.stem)"))
+                    }
+                    return ChartEntry(
+                        chart: chart, path: allocate("xl/charts/chart"), relationshipID: id, companions: companions
+                    )
+                }
+                sheets[sheet.id] = SheetDrawing(
+                    path: allocate("xl/drawings/drawing"), charts: entries,
+                    anchors: sheet.preservedDrawingAnchors
+                )
+            }
+        }
+
+        func isChartSheet(_ sheet: Worksheet) -> Bool { chartSheets.contains(sheet.id) }
+
+        func sheetPath(at index: Int, of sheet: Worksheet) -> String {
+            isChartSheet(sheet)
+                ? "xl/chartsheets/sheet\(index + 1).xml"
+                : "xl/worksheets/sheet\(index + 1).xml"
+        }
+    }
+
+    /// The first `rIdN` not already in use in a part's relationships.
+    static func freshRelationshipID(avoiding used: Set<String>) -> String {
+        var number = 1
+        while used.contains("rId\(number)") { number += 1 }
+        return "rId\(number)"
+    }
+
+    /// A relationship target relative to the part that holds it, which is how
+    /// Excel writes them and how every reader resolves them.
+    static func relativePath(from source: String, to target: String) -> String {
+        let sourceDirectory = XLSXReader.PackagePreservation.directory(of: source)
+            .split(separator: "/").map(String.init)
+        let targetComponents = target.split(separator: "/").map(String.init)
+        var shared = 0
+        while shared < sourceDirectory.count, shared < targetComponents.count - 1,
+              sourceDirectory[shared] == targetComponents[shared] {
+            shared += 1
+        }
+        let ups = Array(repeating: "..", count: sourceDirectory.count - shared)
+        return (ups + targetComponents[shared...]).joined(separator: "/")
+    }
+
+    private static func relationshipsPart(_ entries: [XLSXReader.PackagePreservation.RelationshipEntry]) -> String {
+        var xml = declaration
+        xml += "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+        for entry in entries {
+            xml += "<Relationship Id=\"\(XMLLite.escape(entry.id ?? ""))\""
+            xml += " Type=\"\(XMLLite.escape(entry.type))\""
+            xml += " Target=\"\(XMLLite.escape(entry.target))\""
+            if let mode = entry.targetMode { xml += " TargetMode=\"\(XMLLite.escape(mode))\"" }
+            xml += "/>"
+        }
+        xml += "</Relationships>"
+        return xml
+    }
+
     private static let declaration = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
     private static let mainNamespace = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
     private static let relationshipNamespace = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 
     // MARK: - Package parts
 
-    private static func contentTypes(sheetCount: Int, preserved: PreservedPackage) -> String {
+    private static func contentTypes(workbook: Workbook, drawings: DrawingPlan, preserved: PreservedPackage) -> String {
         var xml = declaration
         xml += "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
         xml += "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>"
@@ -59,8 +241,20 @@ enum XLSXWriter {
             xml += "<Default Extension=\"\(XMLLite.escape(ext))\" ContentType=\"\(XMLLite.escape(type))\"/>"
         }
         xml += "<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>"
-        for index in 1...max(1, sheetCount) {
-            xml += "<Override PartName=\"/xl/worksheets/sheet\(index).xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>"
+        for (index, sheet) in workbook.sheets.enumerated() {
+            let type = drawings.isChartSheet(sheet)
+                ? ChartWriter.chartSheetContentType
+                : "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"
+            xml += "<Override PartName=\"/\(drawings.sheetPath(at: index, of: sheet))\" ContentType=\"\(type)\"/>"
+        }
+        for drawing in drawings.sheets.values.sorted(by: { $0.path < $1.path }) {
+            xml += "<Override PartName=\"/\(drawing.path)\" ContentType=\"\(ChartWriter.drawingContentType)\"/>"
+            for chart in drawing.charts {
+                xml += "<Override PartName=\"/\(chart.path)\" ContentType=\"\(ChartWriter.chartContentType)\"/>"
+                for companion in chart.companions {
+                    xml += "<Override PartName=\"/\(companion.path)\" ContentType=\"\(companion.companion.contentType)\"/>"
+                }
+            }
         }
         xml += "<Override PartName=\"/xl/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml\"/>"
         xml += "<Override PartName=\"/xl/sharedStrings.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml\"/>"
@@ -87,11 +281,16 @@ enum XLSXWriter {
         return xml
     }
 
-    private static func workbookRelationships(sheetCount: Int, preserved: PreservedPackage) -> String {
+    private static func workbookRelationships(
+        workbook: Workbook, drawings: DrawingPlan, preserved: PreservedPackage
+    ) -> String {
+        let sheetCount = workbook.sheets.count
         var xml = declaration
         xml += "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
-        for index in 1...max(1, sheetCount) {
-            xml += "<Relationship Id=\"rId\(index)\" Type=\"\(relationshipNamespace)/worksheet\" Target=\"worksheets/sheet\(index).xml\"/>"
+        for (index, sheet) in workbook.sheets.enumerated() {
+            let type = drawings.isChartSheet(sheet) ? "chartsheet" : "worksheet"
+            let target = String(drawings.sheetPath(at: index, of: sheet).dropFirst("xl/".count))
+            xml += "<Relationship Id=\"rId\(index + 1)\" Type=\"\(relationshipNamespace)/\(type)\" Target=\"\(target)\"/>"
         }
         xml += "<Relationship Id=\"rId\(sheetCount + 1)\" Type=\"\(relationshipNamespace)/styles\" Target=\"styles.xml\"/>"
         xml += "<Relationship Id=\"rId\(sheetCount + 2)\" Type=\"\(relationshipNamespace)/sharedStrings\" Target=\"sharedStrings.xml\"/>"
@@ -177,7 +376,7 @@ enum XLSXWriter {
 
     private static func sheetPart(
         _ sheet: Worksheet, strings: SharedStringTable, styles: StyleTable,
-        hasRelationshipsPart: Bool
+        hasRelationshipsPart: Bool, drawingRelationshipID: String? = nil
     ) -> String {
         /// Fragments paired with their schema position, plus the order they
         /// were added in so repeatable children — several `<conditionalFormatting>`
@@ -272,12 +471,14 @@ enum XLSXWriter {
             add(element.name, element.xml)
         }
 
+        if let drawingRelationshipID { add("drawing", "<drawing r:id=\"\(drawingRelationshipID)\"/>") }
+
         // Sorting rather than appending in place is what keeps the carried-over
         // fragments in their schema slots instead of wherever we happened to
         // reach them.
         fragments.sort { $0.order == $1.order ? $0.sequence < $1.sequence : $0.order < $1.order }
         return declaration
-            + "<worksheet xmlns=\"\(mainNamespace)\">"
+            + "<worksheet xmlns=\"\(mainNamespace)\" xmlns:r=\"\(relationshipNamespace)\">"
             + fragments.map(\.xml).joined()
             + "</worksheet>"
     }

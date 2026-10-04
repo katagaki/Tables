@@ -181,6 +181,9 @@ struct Workbook: Hashable, Sendable {
     var preservedPackage = PreservedPackage()
     /// What that file used that we cannot edit, for the notice shown on open.
     var unsupportedFeatures = UnsupportedFeatureReport()
+    /// The theme's six accent colours, as six-digit RGB. Chart series without
+    /// a colour of their own take these in turn, exactly as Excel draws them.
+    var themeAccentColors = ThemeColorScheme.office.accentColors
 
     init(sheets: [Worksheet], definedNames: [DefinedName] = []) {
         self.sheets = sheets.isEmpty ? [Worksheet(name: Workbook.defaultSheetName(1))] : sheets
@@ -280,6 +283,13 @@ struct Workbook: Hashable, Sendable {
         var copy = sheets[index]
         copy.id = UUID()
         copy.name = uniqueSheetName(basedOn: sheets[index].name + " Copy")
+        // Excel points a copied sheet's charts at the copy's own cells.
+        for chart in copy.charts.indices {
+            copy.charts[chart].id = UUID()
+            // Series keep their ids: they only need to be unique within a
+            // chart, and they are how a save matches them to the file's XML.
+            copy.charts[chart].retarget(from: sheetID, to: copy.id)
+        }
         sheets.insert(copy, at: index + 1)
         return copy.id
     }
@@ -288,6 +298,24 @@ struct Workbook: Hashable, Sendable {
     @discardableResult
     mutating func removeSheet(_ sheetID: Worksheet.ID) -> Bool {
         guard sheets.count > 1, let index = index(of: sheetID) else { return false }
+        // Charts elsewhere that read from the sheet keep the values they were
+        // showing, as Excel's do once their source is gone.
+        let snapshot = self
+        for sheet in sheets.indices where sheet != index {
+            for chart in sheets[sheet].charts.indices {
+                for series in sheets[sheet].charts[chart].series.indices {
+                    let visibleOnly = sheets[sheet].charts[chart].plotsVisibleCellsOnly
+                    func detach(_ source: inout ChartSource) {
+                        guard source.reference?.sheetID == sheetID else { return }
+                        source.cache = source.cells(in: snapshot, visibleOnly: visibleOnly).map(\.value)
+                        source.reference = nil
+                    }
+                    detach(&sheets[sheet].charts[chart].series[series].name)
+                    detach(&sheets[sheet].charts[chart].series[series].categories)
+                    detach(&sheets[sheet].charts[chart].series[series].values)
+                }
+            }
+        }
         sheets.remove(at: index)
         // Deleting the only visible sheet would leave the strip empty.
         if visibleSheets.isEmpty { sheets[0].isHidden = false }

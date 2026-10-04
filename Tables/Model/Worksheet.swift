@@ -109,6 +109,23 @@ struct Worksheet: Identifiable, Hashable, Sendable {
     /// Worksheet children we do not understand, in the order the file had them.
     var preservedElements: [PreservedElement] = []
 
+    /// A chart sheet holds one chart and no cells — Excel's "Move Chart to New
+    /// Sheet". It is still a sheet: it takes a tab and a position, and
+    /// workbook-level indices like a defined name's scope count it.
+    enum Kind: Hashable, Sendable {
+        case worksheet
+        case chart
+    }
+
+    var kind: Kind = .worksheet
+    /// Charts floating over the grid; a chart sheet's single chart is the first.
+    var charts: [Chart] = []
+    /// Everything else the sheet's drawing held — pictures, shapes, charts we
+    /// cannot model — carried through untouched.
+    var preservedDrawingAnchors: [PreservedDrawingAnchor] = []
+
+    var isChartSheet: Bool { kind == .chart }
+
     init(name: String) {
         self.name = Self.sanitizedName(name)
     }
@@ -240,6 +257,7 @@ struct Worksheet: Identifiable, Hashable, Sendable {
         rowHeights = Self.shift(rowHeights, from: index, by: count)
         hiddenRows = Self.shift(hiddenRows, from: index, by: count)
         remapMerges(along: \.row) { Self.span($0, insertingAt: index, count: count) }
+        moveCharts(.insert(index: index, count: count), axis: .row)
         rowCount += count
     }
 
@@ -251,6 +269,7 @@ struct Worksheet: Identifiable, Hashable, Sendable {
         columnWidths = Self.shift(columnWidths, from: index, by: count)
         hiddenColumns = Self.shift(hiddenColumns, from: index, by: count)
         remapMerges(along: \.column) { Self.span($0, insertingAt: index, count: count) }
+        moveCharts(.insert(index: index, count: count), axis: .column)
         columnCount += count
     }
 
@@ -263,6 +282,7 @@ struct Worksheet: Identifiable, Hashable, Sendable {
         rowHeights = Self.shift(rowHeights.filter { !range.contains($0.key) }, from: range.upperBound + 1, by: -count)
         hiddenRows = Self.shift(hiddenRows.filter { !range.contains($0) }, from: range.upperBound + 1, by: -count)
         remapMerges(along: \.row) { Self.span($0, removing: range) }
+        moveCharts(.remove(range: range), axis: .row)
         rowCount -= count
     }
 
@@ -275,6 +295,7 @@ struct Worksheet: Identifiable, Hashable, Sendable {
         columnWidths = Self.shift(columnWidths.filter { !range.contains($0.key) }, from: range.upperBound + 1, by: -count)
         hiddenColumns = Self.shift(hiddenColumns.filter { !range.contains($0) }, from: range.upperBound + 1, by: -count)
         remapMerges(along: \.column) { Self.span($0, removing: range) }
+        moveCharts(.remove(range: range), axis: .column)
         columnCount -= count
     }
 
@@ -336,9 +357,21 @@ struct Worksheet: Identifiable, Hashable, Sendable {
         }
     }
 
+    /// Carries the charts floating over the sheet with the cells beneath them.
+    /// What they read from is the workbook's business, since a chart can
+    /// read from any sheet.
+    private mutating func moveCharts(
+        _ operation: FormulaReferenceShifter.Operation, axis: FormulaReferenceShifter.Axis
+    ) {
+        guard !isChartSheet else { return }
+        for index in charts.indices {
+            charts[index].placement = charts[index].placement.shifted(operation, axis: axis)
+        }
+    }
+
     /// Where a span lands when lines are inserted. Inserting inside a merge
     /// stretches it, the way Excel widens a merged heading you insert into.
-    private static func span(
+    static func span(
         _ span: ClosedRange<Int>, insertingAt index: Int, count: Int
     ) -> ClosedRange<Int> {
         if span.lowerBound >= index { return (span.lowerBound + count)...(span.upperBound + count) }
@@ -348,7 +381,7 @@ struct Worksheet: Identifiable, Hashable, Sendable {
 
     /// Where a span lands once `removed` disappears, or nil when the removal
     /// takes every line the span covered.
-    private static func span(
+    static func span(
         _ span: ClosedRange<Int>, removing removed: ClosedRange<Int>
     ) -> ClosedRange<Int>? {
         let count = removed.count

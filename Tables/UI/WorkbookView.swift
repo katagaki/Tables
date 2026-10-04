@@ -11,7 +11,7 @@ struct WorkbookView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SheetGridView(workbook: workbook, state: state)
+            sheetContent
                 // Keyboard navigation belongs to the grid, and only while no
                 // text field is up — otherwise it holds focus away from them.
                 .focusable(state.editingAddress == nil && !state.isFormulaBarActive)
@@ -25,8 +25,11 @@ struct WorkbookView: View {
                 }
 
             Divider()
-            FormulaBarView(workbook: workbook, state: state)
-            Divider()
+            // A chart sheet has no cells to show a formula for.
+            if !activeSheet.isChartSheet {
+                FormulaBarView(workbook: workbook, state: state)
+                Divider()
+            }
             SheetTabBarView(workbook: workbook, state: state)
                 .background(.bar)
         }
@@ -81,6 +84,17 @@ struct WorkbookView: View {
         }
     }
 
+    private var activeSheet: Worksheet { state.activeSheet(in: document.workbook) }
+
+    @ViewBuilder
+    private var sheetContent: some View {
+        if activeSheet.isChartSheet {
+            ChartSheetView(workbook: workbook, state: state, sheet: activeSheet)
+        } else {
+            SheetGridView(workbook: workbook, state: state)
+        }
+    }
+
     // MARK: - Panels
 
     @ViewBuilder
@@ -90,6 +104,7 @@ struct WorkbookView: View {
         case .numberFormat: NumberFormatPanel(workbook: workbook, state: state)
         case .rowsAndColumns: RowsColumnsPanel(workbook: workbook, state: state)
         case .functions: FunctionsPanel(workbook: workbook, state: state)
+        case .chart: ChartPanel(workbook: workbook, state: state)
         }
     }
 
@@ -183,6 +198,27 @@ struct WorkbookView: View {
                 state.presentedPanel = .rowsAndColumns
             }
         }
+
+        ToolbarItemGroup {
+            Menu {
+                InsertChartMenuItems(workbook: $document.workbook, state: state)
+            } label: {
+                Image(systemName: "chart.bar.xaxis")
+            }
+            .menuIndicator(.hidden)
+            .disabled(activeSheet.isChartSheet)
+            .help(String(localized: "Toolbar.InsertChart"))
+            .accessibilityLabel(String(localized: "Toolbar.InsertChart"))
+
+            if state.selectedChartID != nil {
+                toolbarToggle(
+                    "slider.horizontal.3", label: String(localized: "Toolbar.EditChart"),
+                    isOn: state.presentedPanel == .chart
+                ) {
+                    state.presentedPanel = .chart
+                }
+            }
+        }
     }
 
     private var currentStyle: CellStyle { state.representativeStyle(in: document.workbook) }
@@ -209,6 +245,25 @@ struct WorkbookView: View {
         let sheet = state.activeSheet(in: document.workbook)
         let isEditing = state.editingAddress != nil
         let extending = press.modifiers.contains(.shift)
+
+        // With a chart picked out, the keyboard is about the chart.
+        if state.selectedChartID != nil, !isEditing {
+            switch press.key {
+            case .delete, .deleteForward:
+                state.deleteSelectedChart(in: &document.workbook)
+                return .handled
+            case .escape where !sheet.isChartSheet:
+                state.selectChart(nil)
+                return .handled
+            case .return:
+                state.presentedPanel = .chart
+                return .handled
+            default:
+                if !sheet.isChartSheet { state.selectChart(nil) }
+            }
+        }
+        // There are no cells on a chart sheet to move between or type into.
+        guard !sheet.isChartSheet else { return .ignored }
 
         switch press.key {
         case .upArrow where !isEditing:

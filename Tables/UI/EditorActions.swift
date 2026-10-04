@@ -221,7 +221,11 @@ extension EditorState {
         let index = activeIndex(in: workbook)
         let range = selectedRowRange(in: workbook.sheets[index])
         let target = above ? range.lowerBound : range.upperBound + 1
+        let snapshot = workbook
         workbook.sheets[index].insertRows(range.count, at: target)
+        workbook.chartsFollow(
+            .insert(index: target, count: range.count), axis: .row, on: workbook.sheets[index].id, before: snapshot
+        )
         workbook.recalculate()
         finishStructuralEdit(in: workbook)
     }
@@ -230,21 +234,35 @@ extension EditorState {
         let index = activeIndex(in: workbook)
         let range = selectedColumnRange(in: workbook.sheets[index])
         let target = before ? range.lowerBound : range.upperBound + 1
+        let snapshot = workbook
         workbook.sheets[index].insertColumns(range.count, at: target)
+        workbook.chartsFollow(
+            .insert(index: target, count: range.count), axis: .column, on: workbook.sheets[index].id, before: snapshot
+        )
         workbook.recalculate()
         finishStructuralEdit(in: workbook)
     }
 
     func deleteSelectedRows(in workbook: inout Workbook) {
         let index = activeIndex(in: workbook)
-        workbook.sheets[index].removeRows(selectedRowRange(in: workbook.sheets[index]))
+        let snapshot = workbook
+        let rows = selectedRowRange(in: workbook.sheets[index])
+        workbook.sheets[index].removeRows(rows)
+        workbook.chartsFollow(
+            .remove(range: rows), axis: .row, on: workbook.sheets[index].id, before: snapshot
+        )
         workbook.recalculate()
         finishStructuralEdit(in: workbook)
     }
 
     func deleteSelectedColumns(in workbook: inout Workbook) {
         let index = activeIndex(in: workbook)
-        workbook.sheets[index].removeColumns(selectedColumnRange(in: workbook.sheets[index]))
+        let snapshot = workbook
+        let columns = selectedColumnRange(in: workbook.sheets[index])
+        workbook.sheets[index].removeColumns(columns)
+        workbook.chartsFollow(
+            .remove(range: columns), axis: .column, on: workbook.sheets[index].id, before: snapshot
+        )
         workbook.recalculate()
         finishStructuralEdit(in: workbook)
     }

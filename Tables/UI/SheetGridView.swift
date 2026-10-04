@@ -198,6 +198,7 @@ struct SheetGridView: View {
 
             tiles
             selectionOverlay
+            chartOverlay
             editorOverlay
             cellMenuAnchor
         }
@@ -422,6 +423,7 @@ struct SheetGridView: View {
             return
         }
         lastTap = (address, .now)
+        state.selectChart(nil)
         if state.editingAddress != nil { state.commitEditing(in: &workbook, then: nil) }
         #if os(macOS)
         state.select(address, extending: NSEvent.modifierFlags.contains(.shift), in: activeSheet)
@@ -448,6 +450,7 @@ struct SheetGridView: View {
     /// anchor follows the selection, so the order matters.
     private func raiseCellMenu(at point: CGPoint) {
         let address = address(at: point)
+        state.selectChart(nil)
         if state.editingAddress != nil { state.commitEditing(in: &workbook, then: nil) }
         state.select(address, in: activeSheet)
         cellMenuTrigger += 1
@@ -597,6 +600,72 @@ struct SheetGridView: View {
     private func cornerPoint(of box: CellRange) -> CGPoint {
         let frame = metrics.frame(for: box)
         return CGPoint(x: frame.maxX - 1, y: frame.maxY - 1)
+    }
+
+    // MARK: - Charts
+
+    /// The charts and kept drawing objects floating over the sheet, above the
+    /// cells and the selection — where Excel draws them — and below the
+    /// in-cell editor, which must never be covered.
+    ///
+    /// Only the ones near the window are built: a chart is a whole Swift
+    /// Charts view, and a sheet can carry dozens.
+    @ViewBuilder
+    private var chartOverlay: some View {
+        let sheet = activeSheet
+        if !sheet.charts.isEmpty || !sheet.preservedDrawingAnchors.isEmpty {
+            let window = CGRect(
+                x: state.scrollOffset.x, y: state.scrollOffset.y,
+                width: state.viewportSize.width, height: state.viewportSize.height
+            ).insetBy(dx: -200, dy: -200)
+
+            ZStack(alignment: .topLeading) {
+                ForEach(Array(sheet.preservedDrawingAnchors.enumerated()), id: \.offset) { _, anchor in
+                    if let placement = anchor.placement {
+                        let frame = placement.frame(in: metrics)
+                        if frame.intersects(window), frame.width > 0, frame.height > 0 {
+                            PreservedDrawingPlaceholder(isChart: anchor.isChart, zoom: metrics.zoom)
+                                .frame(width: frame.width, height: frame.height)
+                                .offset(x: frame.minX, y: frame.minY)
+                        }
+                    }
+                }
+                ForEach(sheet.charts) { chart in
+                    let frame = chart.placement.frame(in: metrics)
+                    if frame.intersects(window), frame.width > 0, frame.height > 0 {
+                        embeddedChart(chart, frame: frame)
+                    }
+                }
+            }
+        }
+    }
+
+    private func embeddedChart(_ chart: Chart, frame: CGRect) -> some View {
+        EmbeddedChartView(
+            chart: chart,
+            data: chart.resolved(in: workbook),
+            frame: frame,
+            zoom: metrics.zoom,
+            isSelected: state.selectedChartID == chart.id,
+            onSelect: {
+                if state.editingAddress != nil { state.commitEditing(in: &workbook, then: nil) }
+                state.selectChart(chart.id)
+            },
+            onEdit: { state.presentedPanel = .chart },
+            onCommit: { frame in
+                let zoom = metrics.zoom
+                state.moveChart(
+                    chart.id,
+                    to: CGRect(
+                        x: frame.minX / zoom, y: frame.minY / zoom,
+                        width: frame.width / zoom, height: frame.height / zoom
+                    ),
+                    in: &workbook
+                )
+            },
+            onMoveToNewSheet: { state.moveSelectedChartToNewSheet(in: &workbook) },
+            onDelete: { state.deleteSelectedChart(in: &workbook) }
+        )
     }
 
     // MARK: - In-cell editor

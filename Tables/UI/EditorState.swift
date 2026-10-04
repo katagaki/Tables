@@ -7,6 +7,7 @@ enum EditorPanel: String, Identifiable, Hashable {
     case numberFormat
     case rowsAndColumns
     case functions
+    case chart
 
     var id: String { rawValue }
 
@@ -16,6 +17,7 @@ enum EditorPanel: String, Identifiable, Hashable {
         case .numberFormat: return String(localized: "Panel.NumberFormat.Title")
         case .rowsAndColumns: return String(localized: "Panel.RowsAndColumns.Title")
         case .functions: return String(localized: "Panel.Functions.Title")
+        case .chart: return String(localized: "Panel.Chart.Title")
         }
     }
 }
@@ -35,6 +37,9 @@ final class EditorState {
     var editingAddress: CellAddress?
     var editingText = ""
     var isFormulaBarActive = false
+    /// The chart picked out on the sheet, which the chart panel edits and the
+    /// Delete key removes. On a chart sheet, that sheet's chart.
+    var selectedChartID: Chart.ID?
 
     /// Distance scrolled from the top-left of the content, insets removed.
     var scrollOffset = CGPoint.zero
@@ -78,6 +83,9 @@ final class EditorState {
         additionalSelections = []
         anchor = CellAddress(row: 0, column: 0)
         scrollOffset = .zero
+        let sheet = workbook[id]
+        selectedChartID = sheet?.isChartSheet == true ? sheet?.charts.first?.id : nil
+        if selectedChartID == nil, presentedPanel == .chart { presentedPanel = nil }
         refreshMetrics(in: workbook)
     }
 

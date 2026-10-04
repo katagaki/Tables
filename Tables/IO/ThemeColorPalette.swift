@@ -53,6 +53,25 @@ struct ThemeColorScheme: Equatable {
         return nil
     }
 
+    /// accent1 through accent6, the colours charts cycle through.
+    var accentColors: [String] { Array(slots[4...9]) }
+
+    /// The six-digit RGB a DrawingML `schemeClr` names. The text and background
+    /// aliases map onto the dark and light slots the way Office's default
+    /// colour map does.
+    func color(schemeName name: String) -> String? {
+        let slot: String
+        switch name {
+        case "tx1": slot = "dk1"
+        case "bg1": slot = "lt1"
+        case "tx2": slot = "dk2"
+        case "bg2": slot = "lt2"
+        default: slot = name
+        }
+        guard let index = Self.slotNames.firstIndex(of: slot) else { return nil }
+        return slots[index]
+    }
+
     /// The six-digit RGB for a `theme="N"` index, or `nil` when out of range.
     func color(atThemeIndex index: Int) -> String? {
         slots.indices.contains(index) ? slots[index] : nil
@@ -124,6 +143,14 @@ enum ThemeColorPalette {
         }
         adjusted.luminance = min(max(adjusted.luminance, 0), 1)
         return adjusted.rgbString
+    }
+
+    /// DrawingML's `lumMod` and `lumOff`: the HLS luminance scaled, then
+    /// shifted. Office's "Lighter 40%" theme variants are made this way.
+    static func modulated(_ rgb: String, luminance modulation: Double, offset: Double) -> String {
+        guard var components = HSLComponents(rgb: rgb) else { return rgb }
+        components.luminance = min(max(components.luminance * modulation + offset, 0), 1)
+        return components.rgbString
     }
 
     // MARK: - Hex plumbing
