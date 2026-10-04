@@ -40,6 +40,7 @@ enum UnsupportedFeature: String, CaseIterable, Hashable, Sendable, Comparable {
     case hyperlinks
     case tables
     case chartsAndImages
+    case sparklines
     case pivotTables
     case documentProperties
 
@@ -55,6 +56,7 @@ enum UnsupportedFeature: String, CaseIterable, Hashable, Sendable, Comparable {
         case .hyperlinks: return String(localized: "UnsupportedFeature.Hyperlinks")
         case .tables: return String(localized: "UnsupportedFeature.Tables")
         case .chartsAndImages: return String(localized: "UnsupportedFeature.ChartsAndImages")
+        case .sparklines: return String(localized: "UnsupportedFeature.Sparklines")
         case .pivotTables: return String(localized: "UnsupportedFeature.PivotTables")
         case .documentProperties: return String(localized: "UnsupportedFeature.DocumentProperties")
         }

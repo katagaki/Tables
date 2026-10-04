@@ -375,6 +375,29 @@ struct UnsupportedFeatureTests {
         #expect(cellStyles.lowerBound < differential.lowerBound)
     }
 
+    @Test("Sparklines and Excel 2010's other sheet extensions survive; slicers' references do not dangle")
+    func sheetExtensionsSurvive() throws {
+        let body = """
+        <extLst><ext uri="{05C60535-1F16-4fd2-B633-F4F36F0B64E0}" \
+        xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">\
+        <x14:sparklineGroups xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main">\
+        <x14:sparklineGroup displayEmptyCellsAs="gap" markers="1"><x14:colorSeries rgb="FF376092"/>\
+        <x14:sparklines><x14:sparkline><xm:f>Sheet1!A1:A1</xm:f><xm:sqref>B1</xm:sqref></x14:sparkline>\
+        </x14:sparklines></x14:sparklineGroup></x14:sparklineGroups></ext>\
+        <ext uri="{A8765BA9-456A-4dab-B4F3-ACF838C121DE}" \
+        xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">\
+        <x14:slicerList><x14:slicer r:id="rId7"/></x14:slicerList></ext></extLst>
+        """
+        let (workbook, entries) = try roundTrip(try package(sheets: [body]))
+        let sheet = try text(entries, "xl/worksheets/sheet1.xml")
+        #expect(sheet.contains("<x14:sparkline>"))
+        #expect(sheet.contains("<xm:f>Sheet1!A1:A1</xm:f>"))
+        #expect(sheet.contains("xmlns:xm=\"http://schemas.microsoft.com/office/excel/2006/main\""))
+        #expect(!sheet.contains("slicer"))
+        #expect(sheet.hasSuffix("</extLst></worksheet>"))
+        #expect(workbook.unsupportedFeatures.preserved.contains(.sparklines))
+    }
+
     // MARK: - Reporting
 
     @Test("The report names what is kept and what is not, and nothing else")

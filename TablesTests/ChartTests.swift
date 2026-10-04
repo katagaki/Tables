@@ -115,7 +115,8 @@ struct ChartTests {
     /// whatever chart parts and media they name.
     private func package(
         anchors: String, drawingRelationships: String, extraParts: [(String, String, String?)],
-        extraSheets: [(name: String, path: String, xml: String, type: String, rels: String?)] = []
+        extraSheets: [(name: String, path: String, xml: String, type: String, rels: String?)] = [],
+        drawingDeclarations: String = ""
     ) throws -> Data {
         var contentTypes = """
         <?xml version="1.0" encoding="UTF-8"?>
@@ -178,7 +179,7 @@ struct ChartTests {
             <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
             <xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" \
             xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" \
-            xmlns:r="\(Self.relationships)">\(anchors)</xdr:wsDr>
+            xmlns:r="\(Self.relationships)"\(drawingDeclarations)>\(anchors)</xdr:wsDr>
             """.utf8)),
             ("xl/drawings/_rels/drawing1.xml.rels", Data("""
             <?xml version="1.0" encoding="UTF-8"?>
@@ -916,5 +917,92 @@ struct ChartTests {
         #expect(xml.contains("<c:grouping val=\"clustered\"/>"))
         #expect(xml.contains("<a:latin typeface=\"Avenir Next\"/>"))
         #expect(reopened.sheets[0].charts.first?.kind == .bar)
+    }
+
+    // MARK: - Excel 2016 charts
+
+    /// A waterfall chart as Excel 2016 places one: a `cx:chart` in a choice
+    /// that requires the chartex namespace, with a shape for older readers.
+    private static func chartExAnchor(declaringPrefix: Bool) -> String {
+        let declaration = declaringPrefix
+            ? " xmlns:cx1=\"http://schemas.microsoft.com/office/drawing/2015/9/8/chartex\"" : ""
+        return """
+        <xdr:twoCellAnchor><xdr:from><xdr:col>4</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>1</xdr:row>\
+        <xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:to><xdr:col>10</xdr:col><xdr:colOff>0</xdr:colOff>\
+        <xdr:row>15</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>\
+        <mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">\
+        <mc:Choice\(declaration) Requires="cx1"><xdr:graphicFrame macro=""><xdr:nvGraphicFramePr>\
+        <xdr:cNvPr id="2" name="Chart 1"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr>\
+        <xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm><a:graphic>\
+        <a:graphicData uri="http://schemas.microsoft.com/office/drawing/2014/chartex">\
+        <cx:chart xmlns:cx="http://schemas.microsoft.com/office/drawing/2014/chartex" r:id="rIdEx"/>\
+        </a:graphicData></a:graphic></xdr:graphicFrame></mc:Choice><mc:Fallback>\
+        <xdr:sp macro="" textlink=""><xdr:nvSpPr><xdr:cNvPr id="0" name=""/><xdr:cNvSpPr/></xdr:nvSpPr>\
+        <xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="4572000" cy="2743200"/></a:xfrm>\
+        <a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr><xdr:txBody><a:bodyPr/><a:lstStyle/>\
+        <a:p><a:r><a:rPr lang="en-US" sz="1100"/><a:t>This chart isn't available in your version of Excel.</a:t>\
+        </a:r></a:p></xdr:txBody></xdr:sp></mc:Fallback></mc:AlternateContent><xdr:clientData/></xdr:twoCellAnchor>
+        """
+    }
+
+    private static let chartEx = """
+    <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    <cx:chartSpace xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" \
+    xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" \
+    xmlns:cx="http://schemas.microsoft.com/office/drawing/2014/chartex">\
+    <cx:chartData><cx:data id="0"><cx:strDim type="cat"><cx:f>Data!$A$2:$A$4</cx:f></cx:strDim>\
+    <cx:numDim type="val"><cx:f>Data!$B$2:$B$4</cx:f></cx:numDim></cx:data></cx:chartData>\
+    <cx:chart><cx:plotArea><cx:plotAreaRegion><cx:series layoutId="waterfall" uniqueId="{1}">\
+    <cx:dataId val="0"/></cx:series></cx:plotAreaRegion></cx:plotArea></cx:chart></cx:chartSpace>
+    """
+
+    @Test("An Excel 2016 chart — waterfall, histogram, treemap — is kept whole", arguments: [true, false])
+    func keepsChartEx(declaredOnChoice: Bool) throws {
+        let chartExType = "http://schemas.microsoft.com/office/2014/relationships/chartEx"
+        let anchors = Self.chartExAnchor(declaringPrefix: declaredOnChoice)
+        // Some writers declare the prefix a choice requires on the drawing's
+        // root instead, far from the fragment that gets kept.
+        let rootDeclaration = declaredOnChoice
+            ? "" : " xmlns:cx1=\"http://schemas.microsoft.com/office/drawing/2015/9/8/chartex\""
+        let chartExRelationships = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\
+        <Relationship Id="rId1" Type="\(ChartCompanion.styleType)" Target="style1.xml"/>\
+        </Relationships>
+        """
+        let data = try package(
+            anchors: anchors,
+            drawingRelationships: "<Relationship Id=\"rIdEx\" Type=\"\(chartExType)\" Target=\"../charts/chartEx1.xml\"/>",
+            extraParts: [
+                ("xl/charts/chartEx1.xml", Self.chartEx, "application/vnd.ms-office.chartex+xml"),
+                ("xl/charts/_rels/chartEx1.xml.rels", chartExRelationships, nil),
+                ("xl/charts/style1.xml", Self.chartStyle, "application/vnd.ms-office.chartstyle+xml"),
+            ],
+            drawingDeclarations: rootDeclaration
+        )
+        let workbook = try XLSXReader.workbook(from: data)
+        let sheet = workbook.sheets[0]
+        #expect(sheet.charts.isEmpty)
+        let anchor = try #require(sheet.preservedDrawingAnchors.first)
+        #expect(anchor.isChart)
+        #expect(anchor.placement?.from.column == 4)
+        #expect(workbook.unsupportedFeatures.preserved.contains(.chartsAndImages))
+        #expect(!workbook.unsupportedFeatures.lost.contains(.chartsAndImages))
+
+        let (reopened, entries) = try roundTrip(workbook)
+        #expect(try text(entries, "xl/charts/chartEx1.xml") == Self.chartEx)
+        #expect(entries["xl/charts/style1.xml"] != nil)
+        #expect(try text(entries, "[Content_Types].xml").contains("application/vnd.ms-office.chartex+xml"))
+        let drawingPath = try #require(entries.keys.first { $0.hasPrefix("xl/drawings/drawing") && $0.hasSuffix(".xml") })
+        let drawing = try text(entries, drawingPath)
+        #expect(drawing.contains("Requires=\"cx1\""))
+        // The prefix a choice requires has to be declared where it is used,
+        // or Excel takes the fallback and shows only the apology.
+        let choice = try #require(drawing.firstMatch(of: #/<mc:Choice[^>]*>/#)).output
+        let declared = drawing.contains("xmlns:cx1=\"http://schemas.microsoft.com/office/drawing/2015/9/8/chartex\"")
+        #expect(declared, "cx1 is not declared anywhere: \(choice)")
+        #expect(drawing.contains("available in your version of Excel."))
+        try expectConsistentPackage(entries)
+        #expect(reopened.sheets[0].preservedDrawingAnchors.count == 1)
     }
 }

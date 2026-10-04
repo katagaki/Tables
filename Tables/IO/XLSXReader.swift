@@ -199,6 +199,16 @@ enum XLSXReader {
                 // which nobody would call a feature.
                 let isSplit = child.children(named: "sheetView").contains { $0.firstChild(named: "pane") != nil }
                 feature = isSplit ? .frozenPanes : nil
+            case "extLst":
+                // Excel 2010's additions, each in an `ext` of its own. The ones
+                // a person would recognise are named; the rest come along
+                // silently, as the other unremarkable sheet settings do.
+                let contents = Set(child.children(named: "ext").filter { !namesRelationship($0) }
+                    .flatMap { $0.children.map(\.name) })
+                if contents.contains("sparklineGroups") { findings.append((.sparklines, child.name)) }
+                if contents.contains("conditionalFormattings") { findings.append((.conditionalFormatting, child.name)) }
+                if contents.contains("dataValidations") { findings.append((.dataValidation, child.name)) }
+                feature = nil
             default:
                 feature = nil
             }
@@ -515,7 +525,7 @@ enum XLSXReader {
     private static let preservedWorksheetChildNames: Set<String> = [
         "sheetViews", "sheetProtection", "autoFilter", "conditionalFormatting",
         "dataValidations", "hyperlinks", "printOptions", "pageMargins", "pageSetup",
-        "drawing", "legacyDrawing", "tableParts",
+        "drawing", "legacyDrawing", "tableParts", "extLst",
     ]
 
     private static func preservedChildren(
@@ -529,9 +539,27 @@ enum XLSXReader {
                child.children(named: "cfRule").contains(where: { $0.attribute("dxfId") != nil }) {
                 return nil
             }
+            if child.name == "extLst" {
+                // Slicers and timelines name parts through the workbook, which
+                // we regenerate; extensions that stand alone — sparklines,
+                // Excel 2010's conditional formats and validations — stay.
+                for ext in child.children(named: "ext") where namesRelationship(ext) { child.removeChild(ext) }
+                guard !child.children.isEmpty else { return nil }
+            }
             guard let xml = XMLLite.serialize(child) else { return nil }
             return PreservedElement(name: child.name, xml: xml)
         }
+    }
+
+    /// Whether anything under `element` names a relationship by id: an
+    /// `r:`-prefixed attribute, however the file spells the prefix.
+    private static func namesRelationship(_ element: XMLElement) -> Bool {
+        let relationships = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+        for (key, _) in element.qualifiedAttributes where key.contains(":") && !key.hasPrefix("xmlns") {
+            let prefix = String(key.prefix { $0 != ":" })
+            if element.sourceNamespaceBinding(forPrefix: prefix) == relationships { return true }
+        }
+        return element.children.contains(where: namesRelationship)
     }
 
     /// Children of `<styleSheet>` we neither read nor write, but keep so that

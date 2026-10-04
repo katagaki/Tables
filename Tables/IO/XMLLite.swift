@@ -130,6 +130,30 @@ final class XMLElement {
         return result
     }
 
+    /// Prefixes named in attribute *values* by markup compatibility:
+    /// `mc:Ignorable="x14ac"`, `Requires="cx1"` on a choice. Nothing in the
+    /// element's own name uses them, yet dropping their declarations changes
+    /// what a reader makes of it — a choice whose requirement it cannot
+    /// resolve is a choice it skips.
+    var compatibilityPrefixes: Set<String> {
+        var result: Set<String> = []
+        for (key, value) in qualifiedAttributes {
+            let local = key.split(separator: ":").last.map(String.init) ?? key
+            let named = (name == "Choice" && key == "Requires")
+                || (key.contains(":") && Self.compatibilityAttributes.contains(local))
+            guard named else { continue }
+            for token in value.split(whereSeparator: \.isWhitespace) {
+                // `ProcessContent` lists qualified names; the rest, prefixes.
+                result.insert(String(token.split(separator: ":").first ?? token))
+            }
+        }
+        return result
+    }
+
+    private static let compatibilityAttributes: Set<String> = [
+        "Ignorable", "MustUnderstand", "ProcessContent", "PreserveElements", "PreserveAttributes",
+    ]
+
     /// What `prefix` was bound to at this point in the source document.
     ///
     /// An unbound default namespace is "no namespace", which is a real answer;
@@ -265,6 +289,14 @@ enum XMLLite {
         for prefix in element.usedNamespacePrefixes where prefix != "xml" {
             guard let uri = element.sourceNamespaceBinding(forPrefix: prefix) else { return false }
             guard scope[prefix] != uri else { continue }
+            declarations[prefix] = uri
+            scope[prefix] = uri
+        }
+        // Declared where the source declared them, if it did; a value naming
+        // a prefix nobody bound was already meaningless and stays so.
+        for prefix in element.compatibilityPrefixes where prefix != "xml" {
+            guard let uri = element.sourceNamespaceBinding(forPrefix: prefix), !uri.isEmpty,
+                  scope[prefix] != uri else { continue }
             declarations[prefix] = uri
             scope[prefix] = uri
         }
