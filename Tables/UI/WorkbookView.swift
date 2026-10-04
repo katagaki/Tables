@@ -5,6 +5,8 @@ import SwiftUI
 struct WorkbookView: View {
     @Binding var document: TablesDocument
     @State private var state = EditorState()
+    @State private var history = WorkbookHistory()
+    @Environment(\.undoManager) private var undoManager
     @Namespace private var panelTransition
 
     private var workbook: Binding<Workbook> { $document.workbook }
@@ -39,11 +41,17 @@ struct WorkbookView: View {
                 state.activeSheetID = document.workbook.sheets.first?.id
                 state.refreshMetrics(in: document.workbook)
             }
+            attachHistory()
         }
+        .onChange(of: undoManager) { _, _ in attachHistory() }
+        .onChange(of: document.workbook) { old, new in history.record(from: old, to: new) }
         .onChange(of: state.activeSheetID) { _, _ in
             // CSV holds one sheet; export whichever one the user is looking at.
             document.csvExportSheetIndex = state.activeIndex(in: document.workbook)
         }
+        #if os(iOS)
+        .toolbar { undoToolbar }
+        #endif
         .toolbar { sharingToolbar }
         #if os(macOS)
         .toolbar { macToolbar }
@@ -117,6 +125,35 @@ struct WorkbookView: View {
             sheetIndex: state.activeIndex(in: document.workbook)
         )
     }
+
+    private func attachHistory() {
+        let document = $document
+        let state = state
+        history.attach(
+            to: undoManager,
+            read: { document.wrappedValue.workbook },
+            write: { document.wrappedValue.workbook = $0 },
+            restored: { now, before in state.showRestored(now, replacing: before) }
+        )
+    }
+
+    #if os(iOS)
+    /// macOS has Undo and Redo in its Edit menu; iOS has nowhere to put them
+    /// but here, and a hardware keyboard reaches them through these too.
+    @ToolbarContentBuilder
+    private var undoToolbar: some ToolbarContent {
+        ToolbarItemGroup(placement: .primaryAction) {
+            Button("Toolbar.Undo", systemImage: "arrow.uturn.backward") { history.undo() }
+                .disabled(!history.canUndo)
+                .keyboardShortcut("z", modifiers: .command)
+                .accessibilityIdentifier("undo")
+            Button("Toolbar.Redo", systemImage: "arrow.uturn.forward") { history.redo() }
+                .disabled(!history.canRedo)
+                .keyboardShortcut("z", modifiers: [.command, .shift])
+                .accessibilityIdentifier("redo")
+        }
+    }
+    #endif
 
     @ToolbarContentBuilder
     private var sharingToolbar: some ToolbarContent {

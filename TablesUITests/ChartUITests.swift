@@ -111,4 +111,45 @@ final class ChartUITests: XCTestCase {
         XCTAssertTrue(chart.label.contains("Quarterly Sales"), "the title did not reach the chart: \(chart.label)")
         capture("chart-titled")
     }
+
+    func testUndoAndRedoAChartInsertion() throws {
+        openEditor()
+        let rows = [("Quarter", "Sales"), ("Q1", "10"), ("Q2", "14"), ("Q3", "9"), ("Q4", "17")]
+        for (index, row) in rows.enumerated() {
+            fill(row.0, into: "A\(index + 1)")
+            fill(row.1, into: "B\(index + 1)")
+        }
+        gridCell("B3", in: app).tap()
+        let before = charts.count
+
+        let insert = app.buttons["insertChart"]
+        XCTAssertTrue(insert.waitForExistence(timeout: 5))
+        reveal(insert)
+        insert.tap()
+        let column = app.buttons["Column"]
+        XCTAssertTrue(column.waitForExistence(timeout: 5))
+        column.tap()
+        XCTAssertTrue(waitFor { self.charts.count == before + 1 }, "no chart appeared")
+
+        let undo = app.buttons["undo"]
+        XCTAssertTrue(undo.waitForExistence(timeout: 5), "the Undo button is missing")
+        undo.tap()
+        XCTAssertTrue(waitFor { self.charts.count == before }, "undo left the chart on the sheet")
+        capture("chart-undone")
+
+        let redo = app.buttons["redo"]
+        XCTAssertTrue(redo.isEnabled)
+        redo.tap()
+        XCTAssertTrue(waitFor { self.charts.count == before + 1 }, "redo did not bring the chart back")
+        capture("chart-redone")
+    }
+
+    private func waitFor(_ condition: @escaping () -> Bool, timeout: TimeInterval = 5) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return true }
+            usleep(100_000)
+        }
+        return condition()
+    }
 }

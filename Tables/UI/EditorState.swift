@@ -89,6 +89,27 @@ final class EditorState {
         refreshMetrics(in: workbook)
     }
 
+    /// After an undo or redo: brings the sheet that changed into view, and
+    /// lets go of anything the change took away.
+    func showRestored(_ workbook: Workbook, replacing previous: Workbook) {
+        editingAddress = nil
+        if let changed = workbook.changedSheetID(from: previous), changed != activeSheetID {
+            selectSheet(changed, in: workbook)
+        } else if activeSheetID.flatMap({ workbook[$0] }) == nil {
+            // The active sheet itself was undone away: its neighbour, as
+            // deleting a sheet does.
+            let index = activeSheetID.flatMap { previous.index(of: $0) } ?? 0
+            selectSheet(workbook.sheets[min(index, workbook.sheets.count - 1)].id, in: workbook)
+        }
+        if let chart = selectedChartID,
+           !workbook.sheets.contains(where: { $0.charts.contains { $0.id == chart } }) {
+            selectedChartID = nil
+            if presentedPanel == .chart { presentedPanel = nil }
+        }
+        clampSelection(to: activeSheet(in: workbook))
+        refreshMetrics(in: workbook)
+    }
+
     func refreshMetrics(in workbook: Workbook) {
         metrics = SheetMetrics(sheet: activeSheet(in: workbook), zoom: zoom)
     }
