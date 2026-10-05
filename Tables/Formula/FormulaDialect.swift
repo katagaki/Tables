@@ -104,21 +104,37 @@ enum FormulaDialect {
     // MARK: - Writing
 
     /// Rewrites a formula as Excel stores it.
-    static func toFile(_ formula: String) -> String {
+    ///
+    /// `tableName` names the table a formula's cell sits in, which the file
+    /// form of an unqualified reference such as `[@Price]` has to spell out.
+    static func toFile(_ formula: String, tableName: String? = nil) -> String {
         guard let syntax = try? FormulaParser.parseSyntax(formula) else { return formula }
         let characters = Array(formula)
         var edits: [Edit] = []
-        collectWriteEdits(syntax, characters: characters, parameters: [], into: &edits)
+        collectWriteEdits(syntax, characters: characters, parameters: [], tableName: tableName, into: &edits)
         return apply(edits, to: characters)
     }
 
+    /// A structured reference in the form the file format allows: always
+    /// qualified, and with `@` spelled `[#This Row]`.
+    private static func fileStructuredReference(table: String?, specifier: String, tableName: String?) -> String? {
+        let trimmed = specifier.trimmingCharacters(in: .whitespaces)
+        guard let name = table ?? tableName else { return nil }
+        guard trimmed.hasPrefix("@") else { return table == nil ? name + "[" + specifier + "]" : nil }
+        let rest = String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces)
+        if rest.isEmpty { return name + "[#This Row]" }
+        let columns = rest.hasPrefix("[") ? rest : "[" + rest + "]"
+        return name + "[[#This Row]," + columns + "]"
+    }
+
     private static func collectWriteEdits(
-        _ syntax: FormulaSyntax, characters: [Character], parameters: Set<String>, into edits: inout [Edit]
+        _ syntax: FormulaSyntax, characters: [Character], parameters: Set<String>, tableName: String?,
+        into edits: inout [Edit]
     ) {
         var parameters = parameters
         if syntax.isGroup {
             for child in syntax.children {
-                collectWriteEdits(child, characters: characters, parameters: parameters, into: &edits)
+                collectWriteEdits(child, characters: characters, parameters: parameters, tableName: tableName, into: &edits)
             }
             return
         }
@@ -151,16 +167,21 @@ enum FormulaDialect {
                     edits.append(Edit(range: child.range.lowerBound..<child.range.lowerBound, replacement: "_xleta."))
                 }
             }
+        case .structured(let table, let specifier):
+            if let written = fileStructuredReference(table: table, specifier: specifier, tableName: tableName) {
+                edits.append(Edit(range: syntax.range, replacement: written))
+            }
+            return
         case .intersect:
             if characters[syntax.range.lowerBound] == "@", let operand = syntax.children.first {
                 edits.append(Edit(range: syntax.range,
-                                  replacement: "_xlfn.SINGLE(" + toFile(String(characters[operand.range])) + ")"))
+                                  replacement: "_xlfn.SINGLE(" + toFile(String(characters[operand.range]), tableName: tableName) + ")"))
                 return
             }
         case .spill:
             if characters[syntax.range.upperBound - 1] == "#", let operand = syntax.children.first {
                 edits.append(Edit(range: syntax.range,
-                                  replacement: "_xlfn.ANCHORARRAY(" + toFile(String(characters[operand.range])) + ")"))
+                                  replacement: "_xlfn.ANCHORARRAY(" + toFile(String(characters[operand.range]), tableName: tableName) + ")"))
                 return
             }
         case .definedName(nil, let variable) where parameters.contains(variable.lowercased()):
@@ -172,7 +193,7 @@ enum FormulaDialect {
             break
         }
         for child in syntax.children {
-            collectWriteEdits(child, characters: characters, parameters: parameters, into: &edits)
+            collectWriteEdits(child, characters: characters, parameters: parameters, tableName: tableName, into: &edits)
         }
     }
 
@@ -274,6 +295,11 @@ enum FormulaDialect {
             if context == .value { mark() }
         case .definedName(_, let name):
             if context == .value, isRangeName(name) { mark() }
+        case .structured(_, let specifier):
+            // A column is a range, intersected like any other; `@` and
+            // `#This Row` already name one cell.
+            let lowered = specifier.lowercased()
+            if context == .value, !lowered.hasPrefix("@"), !lowered.contains("#this row") { mark() }
         case .binary(":", _, _), .intersect, .spill, .array, .invoke, .sheetSpan:
             break
         case .binary, .unary, .postfixPercent:

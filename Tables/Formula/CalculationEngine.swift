@@ -358,6 +358,21 @@ final class CalculationEngine: FormulaContext {
 
     var sheetCount: Int { workbook.sheets.count }
 
+    func structuredReference(table name: String?, specifier: String, at address: CellAddress?) -> FormulaReference? {
+        let table: TableDefinition?
+        if let name {
+            table = workbook.tables.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+        } else {
+            let sheetID = workbook.sheets.indices.contains(activeSheetIndex) ? workbook.sheets[activeSheetIndex].id : nil
+            table = workbook.tables.first { table in
+                table.sheetID == sheetID && address.map { table.range.contains($0) } == true
+            }
+        }
+        guard let table, let sheetIndex = workbook.index(of: table.sheetID),
+              let range = table.resolve(specifier, row: address?.row) else { return nil }
+        return FormulaReference(sheet: workbook.sheets[sheetIndex].name, range: range)
+    }
+
     func columnWidth(_ column: Int, sheetName: String?) -> Double? {
         guard let index = resolveSheetIndex(sheetName) else { return nil }
         return Worksheet.columnWidthCharacters(points: workbook.sheets[index].width(ofColumn: column))

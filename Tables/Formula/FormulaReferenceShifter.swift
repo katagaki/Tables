@@ -67,6 +67,27 @@ enum FormulaReferenceShifter {
                 index += 1
                 continue
             }
+            // A table's column names in brackets are names, not references,
+            // however much `[Q1]` looks like a cell.
+            if character == "[" {
+                var depth = 0
+                while index < characters.count {
+                    let inner = characters[index]
+                    result.append(inner)
+                    index += 1
+                    if inner == "'", index < characters.count {
+                        result.append(characters[index])
+                        index += 1
+                        continue
+                    }
+                    if inner == "[" { depth += 1 }
+                    if inner == "]" {
+                        depth -= 1
+                        if depth == 0 { break }
+                    }
+                }
+                continue
+            }
 
             if let span = scanLineSpan(characters, from: index) {
                 result += transform(span, operation: operation, axis: axis)

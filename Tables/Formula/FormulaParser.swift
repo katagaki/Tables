@@ -28,6 +28,10 @@ indirect enum FormulaNode: Hashable, Sendable {
     case intersect(FormulaNode)
     /// `A1#`: the whole range the formula in `A1` spilled into.
     case spill(FormulaNode)
+    /// A structured reference into a table: `Sales[Amount]`, or `[@Price]`
+    /// inside the table itself. The specifier is the text between the outer
+    /// brackets, escapes and all.
+    case structured(table: String?, specifier: String)
 }
 
 struct FormulaParseError: Error, Sendable {
@@ -225,6 +229,8 @@ struct FormulaParser {
             return leaf(.text(value), from: first)
         case .error(let error):
             return leaf(.errorLiteral(error), from: first)
+        case .bracket(let specifier):
+            return leaf(.structured(table: nil, specifier: specifier), from: first)
         case .leftParenthesis:
             let inner = try parseExpression(minimumPrecedence: 0)
             try expect(.rightParenthesis, "“)”")
@@ -298,6 +304,11 @@ struct FormulaParser {
     }
 
     private mutating func parseIdentifier(_ word: String, from first: Int) throws -> FormulaSyntax {
+        // A structured reference: Sales[Amount]
+        if case .bracket(let specifier)? = current {
+            index += 1
+            return leaf(.structured(table: word, specifier: specifier), from: first)
+        }
         // A sheet-qualified reference: Sheet1!A1
         if current == .bang {
             index += 1

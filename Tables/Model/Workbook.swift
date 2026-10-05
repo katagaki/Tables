@@ -188,6 +188,8 @@ struct Workbook: Hashable, Sendable {
     /// The theme's six accent colours, as six-digit RGB. Chart series without
     /// a colour of their own take these in turn, exactly as Excel draws them.
     var themeAccentColors = ThemeColorScheme.office.accentColors
+    /// The file's tables, so structured references in formulas resolve.
+    var tables: [TableDefinition] = []
 
     init(sheets: [Worksheet], definedNames: [DefinedName] = []) {
         self.sheets = sheets.isEmpty ? [Worksheet(name: Workbook.defaultSheetName(1))] : sheets

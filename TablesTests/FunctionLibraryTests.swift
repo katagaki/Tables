@@ -901,3 +901,81 @@ struct ForecastTests {
         #expect(evaluate("=FORECAST.ETS(0,B1:B12,A1:A12)", with: seasonal) == .error(.numberError))
     }
 }
+
+@Suite("Structured references")
+struct StructuredReferenceTests {
+    private func salesWorkbook(_ extra: [String: String] = [:]) -> Workbook {
+        var sheet = Worksheet(name: "Sheet1")
+        let entries: [String: String] = [
+            "A1": "Item", "B1": "Price", "C1": "Qty", "D1": "Total",
+            "A2": "Pen", "B2": "2", "C2": "10", "D2": "=[@Price]*[@Qty]",
+            "A3": "Ink", "B3": "5", "C3": "3", "D3": "=[@Price]*[@Qty]",
+            "A4": "Pad", "B4": "4", "C4": "1", "D4": "=Sales[[#This Row],[Price]]*Sales[[#This Row],[Qty]]",
+        ].merging(extra) { $1 }
+        for (reference, input) in entries {
+            let address = CellAddress(a1: reference)!
+            sheet.rowCount = max(sheet.rowCount, address.row + 1)
+            sheet.columnCount = max(sheet.columnCount, address.column + 1)
+            sheet[address] = CellInputParser.cell(from: input, inheriting: .default)
+        }
+        var workbook = Workbook(sheets: [sheet])
+        workbook.tables = [TableDefinition(
+            name: "Sales", sheetID: sheet.id,
+            range: CellRange(start: CellAddress(a1: "A1")!, end: CellAddress(a1: "D4")!),
+            headerRowCount: 1, totalsRowCount: 0, columns: ["Item", "Price", "Qty", "Total"])]
+        workbook.recalculate()
+        return workbook
+    }
+
+    private func value(_ workbook: Workbook, _ reference: String) -> CellValue {
+        workbook.sheets[0][CellAddress(a1: reference)!].value
+    }
+
+    @Test("Columns, this row, headers and spans resolve to the table's cells")
+    func resolution() {
+        let workbook = salesWorkbook([
+            "F1": "=SUM(Sales[Total])", "F2": "=ROWS(Sales)", "F3": "=Sales[[#Headers],[Qty]]",
+            "F4": "=SUM(Sales[[Price]:[Qty]])", "F5": "=COUNTA(Sales[#All])", "F6": "=Sales[Missing]",
+            "F7": "=SUMIFS(Sales[Total],Sales[Item],\"P*\")",
+        ])
+        #expect(value(workbook, "D2") == .number(20))
+        #expect(value(workbook, "D3") == .number(15))
+        #expect(value(workbook, "D4") == .number(4))
+        #expect(value(workbook, "F1") == .number(39))
+        #expect(value(workbook, "F2") == .number(3))
+        #expect(value(workbook, "F3") == .text("Qty"))
+        #expect(value(workbook, "F4") == .number(25))
+        #expect(value(workbook, "F5") == .number(16))
+        #expect(value(workbook, "F6") == .error(.referenceError))
+        #expect(value(workbook, "F7") == .number(24))
+    }
+
+    @Test("Column names in brackets are not shifted as cell references")
+    func shifting() {
+        #expect(FormulaReferenceShifter.rewrite("SUM(T[Q1])+A1", operation: .insert(index: 0, count: 1), axis: .row)
+                == "SUM(T[Q1])+A2")
+        #expect(FormulaReferenceShifter.rewrite("T[[#This Row],[Q1]]", operation: .insert(index: 0, count: 1), axis: .row)
+                == "T[[#This Row],[Q1]]")
+    }
+
+    @Test("@ references are written out in full for the file")
+    func fileForm() {
+        #expect(FormulaDialect.toFile("[@Price]*[@Qty]", tableName: "Sales")
+                == "Sales[[#This Row],[Price]]*Sales[[#This Row],[Qty]]")
+        #expect(FormulaDialect.toFile("Sales[@[Unit Price]]") == "Sales[[#This Row],[Unit Price]]")
+        #expect(FormulaDialect.toFile("SUM(Sales[Total])") == "SUM(Sales[Total])")
+        #expect(FormulaDialect.toFile("SUM([Total])", tableName: "Sales") == "SUM(Sales[Total])")
+        #expect(FormulaDialect.legacyToDynamic("Sales[Price]*2") == "@Sales[Price]*2")
+    }
+
+    @Test("A formula Tables cannot read keeps the result it was saved with")
+    func unreadable() {
+        var sheet = Worksheet(name: "Sheet1")
+        sheet[CellAddress(a1: "A1")!] = Cell(value: .number(5), formula: "[1]Prices!B2")
+        sheet[CellAddress(a1: "A2")!] = Cell(formula: "A1*2")
+        var workbook = Workbook(sheets: [sheet])
+        workbook.recalculate()
+        #expect(workbook.sheets[0][CellAddress(a1: "A1")!].value == .number(5))
+        #expect(workbook.sheets[0][CellAddress(a1: "A2")!].value == .number(10))
+    }
+}

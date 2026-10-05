@@ -173,6 +173,7 @@ enum XLSXReader {
         }
         workbook.preservedPackage = preserved
         workbook.unsupportedFeatures = report
+        workbook.tables = readTables(workbook: workbook, preserved: preserved, sheetPaths: sheetPaths)
         workbook.recalculate()
         return workbook
     }
@@ -935,6 +936,32 @@ enum XLSXReader {
             rowDelta: address.row - master.origin.row,
             columnDelta: address.column - master.origin.column
         )
+    }
+
+    /// The tables each sheet's relationships name, from the parts kept for a save.
+    private static func readTables(
+        workbook: Workbook, preserved: PreservedPackage, sheetPaths: [String]
+    ) -> [TableDefinition] {
+        let tableType = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/table"
+        var tables: [TableDefinition] = []
+        for (index, sheet) in workbook.sheets.enumerated() {
+            let directory = PackagePreservation.directory(of: sheetPaths[index])
+            for entry in PackagePreservation.relationships(in: preserved.sheetRelationshipParts[sheet.id])
+            where entry.type == tableType {
+                guard let path = PackagePreservation.packagePath(of: entry, relativeTo: directory),
+                      let data = preserved.parts[path], let root = try? XMLLite.parse(data),
+                      let name = root.attribute("displayName") ?? root.attribute("name"),
+                      let ref = root.attribute("ref"), let range = CellRange(a1Range: ref)?.normalized else { continue }
+                let columns = root.firstChild(named: "tableColumns")?.children(named: "tableColumn")
+                    .map { $0.attribute("name") ?? "" } ?? []
+                tables.append(TableDefinition(
+                    name: name, sheetID: sheet.id, range: range,
+                    headerRowCount: root.attribute("headerRowCount").flatMap(Int.init) ?? 1,
+                    totalsRowCount: root.attribute("totalsRowCount").flatMap(Int.init) ?? 0,
+                    columns: columns))
+            }
+        }
+        return tables
     }
 
     /// Brings formulas written before dynamic arrays into today's meaning, and

@@ -34,17 +34,20 @@ struct FormulaPlan {
         let isRangeName = workbook.isRangeName
         for sheet in workbook.sheets {
             var sheetForms: [CellAddress: Form] = [:]
+            let tables = workbook.tables.filter { $0.sheetID == sheet.id }
             for (address, cell) in sheet.cells {
                 guard let formula = cell.formula else { continue }
+                let tableName = tables.first { $0.range.contains(address) }?.name
+                func toFile(_ text: String) -> String { FormulaDialect.toFile(text, tableName: tableName) }
                 if let extent = cell.arrayExtent {
                     let block = CellRange(start: address, end: CellAddress(
                         row: address.row + extent.rows - 1, column: address.column + extent.columns - 1))
-                    sheetForms[address] = .array(FormulaDialect.toFile(formula), block: block, dynamic: false)
+                    sheetForms[address] = .array(toFile(formula), block: block, dynamic: false)
                 } else if let legacy = FormulaDialect.legacyForm(formula, isRangeName: isRangeName) {
-                    sheetForms[address] = .plain(FormulaDialect.toFile(legacy))
+                    sheetForms[address] = .plain(toFile(legacy))
                 } else {
                     let block = sheet.spills[address] ?? CellRange(address)
-                    sheetForms[address] = .array(FormulaDialect.toFile(formula), block: block, dynamic: true)
+                    sheetForms[address] = .array(toFile(formula), block: block, dynamic: true)
                     usesDynamicArrays = true
                 }
             }

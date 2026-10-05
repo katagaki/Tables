@@ -122,6 +122,9 @@ protocol FormulaContext: AnyObject {
     func spillRange(anchoredAt address: CellAddress, sheetName: String?) -> CellRange?
     /// A column's width in characters of the default font, for `CELL("width")`.
     func columnWidth(_ column: Int, sheetName: String?) -> Double?
+    /// The cells a structured reference names. A nil table means the table
+    /// holding the formula's own cell.
+    func structuredReference(table: String?, specifier: String, at address: CellAddress?) -> FormulaReference?
 }
 
 extension FormulaContext {
@@ -138,6 +141,7 @@ extension FormulaContext {
     var sheetCount: Int { 1 }
     func spillRange(anchoredAt address: CellAddress, sheetName: String?) -> CellRange? { nil }
     func columnWidth(_ column: Int, sheetName: String?) -> Double? { nil }
+    func structuredReference(table: String?, specifier: String, at address: CellAddress?) -> FormulaReference? { nil }
 }
 
 struct FormulaEvaluator {
@@ -219,7 +223,7 @@ struct FormulaEvaluator {
             guard let cell = intersection(of: whole) else { return .failure(.valueError) }
             return materialize(cell)
 
-        case .binary(":", _, _), .spill:
+        case .binary(":", _, _), .spill, .structured:
             guard let reference = reference(node) else { return .failure(.referenceError) }
             return materialize(reference)
 
@@ -258,6 +262,10 @@ struct FormulaEvaluator {
                 return materialize(reference)
             }
             if let value = context.resolveDefinedName(name, sheetName: sheet) { return value }
+            // A table's name alone stands for its data rows.
+            if sheet == nil, let table = context.structuredReference(table: name, specifier: "", at: currentAddress) {
+                return materialize(table)
+            }
             // A built-in function named without a call is a LAMBDA wrapping it,
             // as in `GROUPBY(A2:A9, B2:B9, SUM)`.
             if sheet == nil, let spec = FormulaFunctions.registry[name.uppercased()] {
@@ -284,7 +292,10 @@ struct FormulaEvaluator {
             return FormulaReference(sheet: sheet, range: CellRange(start: start, end: end))
         case .definedName(let sheet, let name):
             if sheet == nil, let binding = scope[name.lowercased()] { return binding.reference }
-            return context.definedNameReference(name, sheetName: sheet)
+            if let named = context.definedNameReference(name, sheetName: sheet) { return named }
+            return sheet == nil ? context.structuredReference(table: name, specifier: "", at: currentAddress) : nil
+        case .structured(let table, let specifier):
+            return context.structuredReference(table: table, specifier: specifier, at: currentAddress)
         case .binary(":", let lhs, let rhs):
             // The smallest range covering both ends, which must share a sheet.
             guard let first = reference(lhs), let second = reference(rhs),
