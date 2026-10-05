@@ -979,3 +979,46 @@ struct StructuredReferenceTests {
         #expect(workbook.sheets[0][CellAddress(a1: "A2")!].value == .number(10))
     }
 }
+
+@Suite("Excel's own forecasts")
+struct KeptForecastTests {
+    private func workbook(savedValue: Double) -> Workbook {
+        var sheet = Worksheet(name: "Sheet1")
+        let pattern = [5.0, -2, 3, -6]
+        for index in 0..<12 {
+            sheet[CellAddress(row: index, column: 0)] = Cell(value: .number(Double(index + 1)))
+            sheet[CellAddress(row: index, column: 1)] = Cell(value: .number(100 + 2 * Double(index) + pattern[index % 4]))
+        }
+        sheet[CellAddress(a1: "D1")!] = Cell(value: .number(savedValue), formula: "FORECAST.ETS(13,B1:B12,A1:A12)")
+        return Workbook(sheets: [sheet])
+    }
+
+    @Test("A file's forecast stands until the data under it changes")
+    func keepsUntilInputsChange() throws {
+        let data = try XLSXWriter.data(from: workbook(savedValue: 128.75))
+        var opened = try XLSXReader.workbook(from: data)
+        let d1 = CellAddress(a1: "D1")!
+        #expect(opened.sheets[0][d1].value == .number(128.75))
+        #expect(opened.sheets[0][d1].savedResultInputs != nil)
+
+        // Unrelated edits leave it alone.
+        opened.sheets[0][CellAddress(a1: "F1")!] = Cell(value: .number(1))
+        opened.recalculate()
+        #expect(opened.sheets[0][d1].value == .number(128.75))
+
+        // Changing a value it reads hands it to Tables' own calculation.
+        opened.sheets[0][CellAddress(a1: "B12")!] = Cell(value: .number(500))
+        opened.recalculate()
+        #expect(opened.sheets[0][d1].value != .number(128.75))
+        #expect(opened.sheets[0][d1].savedResultInputs == nil)
+    }
+
+    @Test("A forecast typed in Tables is always calculated")
+    func typedIsCalculated() {
+        var book = workbook(savedValue: 0)
+        book.sheets[0][CellAddress(a1: "D1")!] = CellInputParser.cell(
+            from: "=FORECAST.ETS(13,B1:B12,A1:A12)", inheriting: .default)
+        book.recalculate()
+        #expect(close(book.sheets[0][CellAddress(a1: "D1")!].value, 129, tolerance: 0.02))
+    }
+}

@@ -1019,6 +1019,12 @@ enum XLSXReader {
             var blocks = sheet.spills
             for (address, cell) in sheet.cells {
                 guard let formula = cell.formula else { continue }
+                // Excel's result for a function Tables approximates is the
+                // better answer until the inputs change.
+                if !cell.value.isEmpty, let node = try? FormulaParser.parse(formula),
+                   FormulaFunctions.callsApproximatedFunction(node) {
+                    workbook.sheets[index].cells[address]?.savedResultInputs = Cell.unverifiedInputs
+                }
                 if let extent = cell.arrayExtent {
                     blocks[address] = CellRange(start: address, end: CellAddress(
                         row: address.row + extent.rows - 1, column: address.column + extent.columns - 1))

@@ -12,6 +12,13 @@ struct Cell: Hashable, Sendable {
     /// For a legacy array formula, entered with Ctrl+Shift+Enter in Excel, the
     /// fixed block its result fills, counted from this cell.
     var arrayExtent: ArrayExtent?
+    /// For a formula whose function Tables can only approximate, a fingerprint
+    /// of the inputs its saved result was worked out from. While they are
+    /// unchanged that result — Excel's own — is kept.
+    var savedResultInputs: Int?
+
+    /// Marks a result read from a file, before its inputs have been seen.
+    static let unverifiedInputs = Int.min
 
     var isBlank: Bool { value.isEmpty && formula == nil }
     var isEmptyEntirely: Bool { isBlank && style.isDefault }

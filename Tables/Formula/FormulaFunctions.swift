@@ -22,6 +22,39 @@ enum FormulaFunctions {
     /// Every function name, sorted, for the function picker.
     static let names: [String] = registry.keys.sorted()
 
+    /// Functions whose method Excel does not publish, so Tables' answers are
+    /// close to Excel's rather than identical. A file's saved results for
+    /// them are kept until their inputs change.
+    static let approximatedFunctions: Set<String> = [
+        "FORECAST.ETS", "FORECAST.ETS.CONFINT", "FORECAST.ETS.SEASONALITY", "FORECAST.ETS.STAT",
+    ]
+
+    /// Whether a formula calls any of `approximatedFunctions`.
+    static func callsApproximatedFunction(_ node: FormulaNode) -> Bool {
+        !approximatedCalls(in: node).isEmpty
+    }
+
+    /// The calls to approximated functions in a formula.
+    static func approximatedCalls(in node: FormulaNode) -> [[FormulaNode]] {
+        switch node {
+        case .call(let name, let arguments):
+            let own = approximatedFunctions.contains(name) ? [arguments] : []
+            return own + arguments.flatMap { approximatedCalls(in: $0) }
+        case .invoke(let target, let arguments):
+            return approximatedCalls(in: target) + arguments.flatMap { approximatedCalls(in: $0) }
+        case .unary(_, let operand), .postfixPercent(let operand), .intersect(let operand), .spill(let operand):
+            return approximatedCalls(in: operand)
+        case .binary(_, let lhs, let rhs):
+            return approximatedCalls(in: lhs) + approximatedCalls(in: rhs)
+        case .array(let rows):
+            return rows.flatMap { $0.flatMap { approximatedCalls(in: $0) } }
+        case .union(let parts):
+            return parts.flatMap { approximatedCalls(in: $0) }
+        default:
+            return []
+        }
+    }
+
     /// Whether a function name is one the library evaluates.
     static func isKnown(_ name: String) -> Bool { registry[name.uppercased()] != nil }
 

@@ -129,12 +129,15 @@ final class CalculationEngine: FormulaContext {
         for (sheetIndex, sheet) in workbook.sheets.enumerated() {
             for (address, cell) in sheet.cells where cell.formula != nil {
                 let value = value(at: address, sheetIndex: sheetIndex)
+                let fingerprint = inputFingerprints[.cell(sheet: sheetIndex, address: address)]
+                let fingerprintChanged = fingerprint.map { $0 != cell.savedResultInputs } ?? false
                 // Most of a recalculation lands on the value already there.
                 // Writing it back anyway would copy the sheet's whole cell
                 // dictionary for nothing and tell the view every cell moved.
-                guard value != cell.value else { continue }
+                guard value != cell.value || fingerprintChanged else { continue }
                 var updated = cell
                 updated.value = value
+                if let fingerprint { updated.savedResultInputs = fingerprint }
                 result.sheets[sheetIndex].cells[address] = updated
             }
 
@@ -419,6 +422,10 @@ final class CalculationEngine: FormulaContext {
             results[key] = saved
             return saved
         }
+        if let kept = keptApproximation(sheetIndex: sheetIndex, address: address, formula: formula) {
+            results[key] = kept
+            return kept
+        }
         guard !evaluating.contains(key) else { return .failure(.circularReference) }
         evaluating.insert(key)
         defer { evaluating.remove(key) }
@@ -454,6 +461,42 @@ final class CalculationEngine: FormulaContext {
             block = hints[sheetIndex]?[address]
         }
         guard let block, !block.isSingleCell else { return .scalar(cell.value) }
+        return .block(block.rowRange.map { row in
+            block.columnRange.map { column in
+                let here = CellAddress(row: row, column: column)
+                return here == address ? cell.value : (sheet.cells[here]?.value ?? .empty)
+            }
+        })
+    }
+
+    /// Fingerprints to store on cells once this pass is written back: the
+    /// inputs a kept result stands for, or nil where it was recalculated.
+    private var inputFingerprints: [Key: Int?] = [:]
+
+    /// A file's saved result for a formula Tables can only approximate, while
+    /// the values it reads are the ones it was saved with.
+    private func keptApproximation(sheetIndex: Int, address: CellAddress, formula: String) -> FormulaValue? {
+        let key = Key.cell(sheet: sheetIndex, address: address)
+        guard let cell = workbook.sheets[sheetIndex].cells[address], let recorded = cell.savedResultInputs,
+              case .success(let node) = parsed(formula) else { return nil }
+        // Fingerprint everything the approximated calls read.
+        let previousSheet = activeSheetIndex
+        activeSheetIndex = sheetIndex
+        let evaluator = FormulaEvaluator(context: self, currentAddress: address)
+        var hasher = Hasher()
+        hasher.combine(formula)
+        for arguments in FormulaFunctions.approximatedCalls(in: node) {
+            for argument in arguments { hasher.combine(evaluator.evaluate(argument)) }
+        }
+        activeSheetIndex = previousSheet
+        let fingerprint = hasher.finalize()
+        guard recorded == Cell.unverifiedInputs || recorded == fingerprint else {
+            inputFingerprints[key] = .some(nil)
+            return nil
+        }
+        inputFingerprints[key] = .some(fingerprint)
+        let block = hints[sheetIndex]?[address] ?? CellRange(address)
+        let sheet = workbook.sheets[sheetIndex]
         return .block(block.rowRange.map { row in
             block.columnRange.map { column in
                 let here = CellAddress(row: row, column: column)
