@@ -286,3 +286,48 @@ struct DistributionTests {
         check("=ERFC(1)", 0.15729921)
     }
 }
+
+@Suite("SUBTOTAL and AGGREGATE")
+struct SubtotalTests {
+    private func sheet(hiding rows: Set<Int> = []) -> (String) -> CellValue {
+        var sheet = Worksheet(name: "Sheet 1")
+        let entries = ["A1": "10", "A2": "20", "A3": "=SUBTOTAL(9,A1:A2)", "A4": "=1/0", "A5": "5"]
+        for (reference, input) in entries {
+            sheet[CellAddress(a1: reference)!] = CellInputParser.cell(from: input, inheriting: .default)
+        }
+        let formulas = [
+            "B1": "=SUBTOTAL(9,A1:A3)", "B2": "=SUBTOTAL(109,A1:A2,A5)", "B3": "=SUBTOTAL(9,A1:A2,A5)",
+            "B4": "=AGGREGATE(9,6,A1:A5)", "B5": "=AGGREGATE(9,3,A1:A5)", "B6": "=AGGREGATE(14,6,A1:A5,2)",
+            "B7": "=AGGREGATE(9,4,A1:A5)", "B8": "=SUBTOTAL(2,A1:A5)", "B9": "=AGGREGATE(15,6,{3,1,#N/A,2},2)",
+        ]
+        for (reference, input) in formulas {
+            sheet[CellAddress(a1: reference)!] = CellInputParser.cell(from: input, inheriting: .default)
+        }
+        sheet.hiddenRows = rows
+        var workbook = Workbook(sheets: [sheet])
+        workbook.recalculate()
+        return { workbook.sheets[0][CellAddress(a1: $0)!].value }
+    }
+
+    @Test("Nested subtotals are left out, and hidden rows when asked")
+    func subtotal() {
+        let visible = sheet()
+        #expect(visible("B1") == .number(30))
+        #expect(visible("B2") == .number(35))
+        #expect(visible("B8") == .number(3))
+        let hidden = sheet(hiding: [1])
+        #expect(hidden("B2") == .number(15))
+        #expect(hidden("B3") == .number(35))
+    }
+
+    @Test("AGGREGATE can pass over errors, hidden rows and nested results")
+    func aggregate() {
+        let visible = sheet()
+        #expect(visible("B4") == .number(65))  // option 6 keeps nested subtotals
+        #expect(visible("B6") == .number(20))
+        #expect(visible("B7") == .error(.divideByZero))
+        #expect(visible("B9") == .number(2))
+        let hidden = sheet(hiding: [0])
+        #expect(hidden("B5") == .number(25))
+    }
+}
