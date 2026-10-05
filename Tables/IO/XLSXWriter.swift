@@ -350,7 +350,7 @@ enum XLSXWriter {
             for (name, position) in names {
                 xml += "<definedName name=\"\(XMLLite.escape(name.name))\""
                 if let position { xml += " localSheetId=\"\(position)\"" }
-                xml += ">\(XMLLite.escape(name.formula))</definedName>"
+                xml += ">\(XMLLite.escape(FormulaDialect.toFile(name.formula)))</definedName>"
             }
             xml += "</definedNames>"
         }
@@ -497,7 +497,7 @@ enum XLSXWriter {
 
         var body = ""
         if let formula = cell.formula {
-            body += "<f>\(XMLLite.escape(formula))</f>"
+            body += "<f>\(XMLLite.escape(FormulaDialect.toFile(formula)))</f>"
         }
 
         switch cell.value {

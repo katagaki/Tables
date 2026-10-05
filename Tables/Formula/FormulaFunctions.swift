@@ -20,6 +20,9 @@ enum FormulaFunctions {
         "YEAR", "COS", "SIN", "TAN", "ACOS", "ASIN", "ATAN", "ATAN2",
     ]
 
+    /// Whether a function name is one the library evaluates.
+    static func isKnown(_ name: String) -> Bool { names.contains(name.uppercased()) }
+
     // MARK: - Dispatch
 
     static func call(_ name: String, arguments: [FormulaNode], evaluator: FormulaEvaluator) -> FormulaValue {

@@ -42,6 +42,9 @@ struct FormulaSyntax: Sendable {
     var range: Range<Int>
     /// The syntax of each operand or argument, in source order.
     var children: [FormulaSyntax]
+    /// A parenthesised expression: the parentheses' span around the one child
+    /// that is the expression itself, carrying that child's node.
+    var isGroup = false
 }
 
 /// Excel's grid limits, which whole-column and whole-row references reach to.
@@ -225,9 +228,7 @@ struct FormulaParser {
         case .leftParenthesis:
             let inner = try parseExpression(minimumPrecedence: 0)
             try expect(.rightParenthesis, "“)”")
-            // The parentheses belong to the span, so a rewrite that wraps the
-            // operand keeps them, but the node is the expression inside.
-            return FormulaSyntax(node: inner.node, range: span(from: first), children: inner.children)
+            return FormulaSyntax(node: inner.node, range: span(from: first), children: [inner], isGroup: true)
         case .leftBrace:
             return try parseArrayLiteral(from: first)
         case .quotedName(let sheetName):

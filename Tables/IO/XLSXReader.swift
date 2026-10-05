@@ -242,7 +242,7 @@ enum XLSXReader {
                 guard sheets.indices.contains(position) else { continue }
                 scope = sheets[position].id
             }
-            result.append(DefinedName(name: name, formula: formula, scope: scope))
+            result.append(DefinedName(name: name, formula: FormulaDialect.fromFile(formula), scope: scope))
         }
         return result
     }
@@ -486,6 +486,7 @@ enum XLSXReader {
                 }
                 if let element = cellElement.firstChild(named: "f") {
                     cell.formula = formula(from: element, at: address, shared: &sharedFormulas)
+                        .map(FormulaDialect.fromFile)
                 }
                 cell.value = decodeValue(cellElement, sharedStrings: sharedStrings)
                 if usesMacEpoch, case .number(let serial) = cell.value,

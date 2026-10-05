@@ -378,3 +378,44 @@ struct WholeLineShiftTests {
                 == "TEXT(A2,\"h:m\")")
     }
 }
+
+@Suite("Excel's stored formula spelling")
+struct FormulaDialectTests {
+    @Test("Newer functions gain _xlfn. on the way out and lose it on the way in")
+    func functionPrefixes() {
+        #expect(FormulaDialect.toFile("IFNA(A1, 0) + sum(B1:B2)") == "_xlfn.IFNA(A1, 0) + sum(B1:B2)")
+        #expect(FormulaDialect.toFile("FILTER(A1:A3,B1:B3)") == "_xlfn._xlws.FILTER(A1:A3,B1:B3)")
+        #expect(FormulaDialect.toFile("(XOR(TRUE,FALSE))") == "(_xlfn.XOR(TRUE,FALSE))")
+        #expect(FormulaDialect.fromFile("_xlfn.IFNA(A1,0)") == "IFNA(A1,0)")
+        #expect(FormulaDialect.fromFile("_xlfn.XOR(TRUE,(_xlfn.IFNA(A1,0)))") == "XOR(TRUE,(IFNA(A1,0)))")
+    }
+
+    @Test("A function Tables does not know keeps its prefix, so it goes back unchanged")
+    func unknownFunctions() {
+        #expect(FormulaDialect.fromFile("_xlfn.SOMEDAY(A1)") == "_xlfn.SOMEDAY(A1)")
+        #expect(FormulaDialect.toFile("_xlfn.SOMEDAY(A1)") == "_xlfn.SOMEDAY(A1)")
+    }
+
+    @Test("LET and LAMBDA names carry _xlpm. in the file")
+    func parameterPrefixes() {
+        #expect(FormulaDialect.toFile("LET(x,2,y,x*3,x+y)")
+                == "_xlfn.LET(_xlpm.x,2,_xlpm.y,_xlpm.x*3,_xlpm.x+_xlpm.y)")
+        #expect(FormulaDialect.toFile("LAMBDA(n,n+Rate)(4)") == "_xlfn.LAMBDA(_xlpm.n,_xlpm.n+Rate)(4)")
+        #expect(FormulaDialect.fromFile("_xlfn.LET(_xlpm.x,2,_xlpm.x+1)") == "_xlfn.LET(x,2,x+1)")
+    }
+
+    @Test("@ and # are stored as SINGLE and ANCHORARRAY")
+    func operators() {
+        #expect(FormulaDialect.toFile("@A1:A3*2") == "_xlfn.SINGLE(A1:A3)*2")
+        #expect(FormulaDialect.toFile("SUM(B1#)") == "SUM(_xlfn.ANCHORARRAY(B1))")
+        #expect(FormulaDialect.fromFile("_xlfn.SINGLE(A1:A3)*2") == "@A1:A3*2")
+        #expect(FormulaDialect.fromFile("SUM(_xlfn.ANCHORARRAY(B1))") == "SUM(B1#)")
+        #expect(FormulaDialect.fromFile("_xlfn.SINGLE(A1+A2)") == "@(A1+A2)")
+    }
+
+    @Test("Text that does not parse passes through untouched")
+    func unparseable() {
+        #expect(FormulaDialect.toFile("SUM(((") == "SUM(((")
+        #expect(FormulaDialect.fromFile("_xlfn.SUM(((") == "_xlfn.SUM(((")
+    }
+}
