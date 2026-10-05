@@ -189,6 +189,7 @@ private struct ModuleEditorView: View {
     @State private var text: String
     @State private var savedText: String
     @State private var saveError: String?
+    @AppStorage("MacroEditor.WrapsLines") private var wrapsLines = false
 
     init(module: VBAProject.Module, save: @escaping (String) throws -> Void) {
         self.module = module
@@ -219,10 +220,18 @@ private struct ModuleEditorView: View {
                     .background(.orange.opacity(0.1))
                     .accessibilityIdentifier("codeProblem")
             }
-            CodeEditor(text: $text)
+            CodeEditor(text: $text, wrapsLines: wrapsLines)
         }
         .navigationTitle(module.name)
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Toggle(isOn: $wrapsLines) {
+                    Label("Macros.WrapLines", systemImage: "text.word.spacing")
+                }
+                .toggleStyle(.button)
+                .help(String(localized: "Macros.WrapLines"))
+                .accessibilityIdentifier("wrapLines")
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button("Macros.Save") { commit() }
                     .disabled(text == savedText)
