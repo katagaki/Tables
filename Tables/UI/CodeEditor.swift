@@ -85,18 +85,17 @@ extension CodeEditor: UIViewRepresentable {
             text.wrappedValue = view.text
         }
 
-        /// New lines keep the indentation of the line they break, as every
-        /// code editor does.
+        /// Return indents the new line for the block it is in, and snaps a
+        /// line that closes a block back to where the block began.
         func textView(_ view: UITextView, shouldChangeTextIn range: NSRange, replacementText replacement: String) -> Bool {
             guard replacement == "\n" else { return true }
-            let source = view.text as NSString
-            let lineStart = source.lineRange(for: NSRange(location: range.location, length: 0)).location
-            let line = source.substring(with: NSRange(location: lineStart, length: range.location - lineStart))
-            let indent = String(line.prefix { $0 == " " || $0 == "\t" })
-            guard !indent.isEmpty else { return true }
-            view.textStorage.replaceCharacters(in: range, with: NSAttributedString(string: "\n" + indent,
-                                                                                   attributes: CodeEditor.baseAttributes))
-            view.selectedRange = NSRange(location: range.location + 1 + indent.utf16.count, length: 0)
+            let edit = VBAIndenter.returnEdit(in: view.text, selection: range)
+            guard let start = view.position(from: view.beginningOfDocument, offset: edit.range.location),
+                  let end = view.position(from: start, offset: edit.range.length),
+                  let textRange = view.textRange(from: start, to: end) else { return true }
+            // Through the text input system, so the edit undoes like typing.
+            view.replace(textRange, withText: edit.replacement)
+            view.selectedRange = NSRange(location: edit.cursor, length: 0)
             textViewDidChange(view)
             return false
         }
@@ -155,6 +154,14 @@ extension CodeEditor: NSViewRepresentable {
             view.selectedRanges = selection
             view.typingAttributes = CodeEditor.baseAttributes
             text.wrappedValue = view.string
+        }
+
+        func textView(_ view: NSTextView, doCommandBy selector: Selector) -> Bool {
+            guard selector == #selector(NSResponder.insertNewline(_:)) else { return false }
+            let edit = VBAIndenter.returnEdit(in: view.string, selection: view.selectedRange())
+            view.insertText(edit.replacement, replacementRange: edit.range)
+            view.setSelectedRange(NSRange(location: edit.cursor, length: 0))
+            return true
         }
     }
 }
