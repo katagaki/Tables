@@ -4,8 +4,17 @@ import SwiftUI
 /// and whichever platform chrome belongs on top.
 struct WorkbookView: View {
     @Binding var document: TablesDocument
+    /// The file's name, which macros see as `ThisWorkbook.Name`.
+    var fileName: String?
     @State private var state = EditorState()
     @State private var history = WorkbookHistory()
+    @State private var macroRunner = MacroRunner()
+    @State private var isShowingMacros = false
+    /// The macro waiting on the user's say-so before the first run.
+    @State private var pendingMacro: MacroCatalog.Macro?
+    /// Asked once per window: after that, running a macro just runs it.
+    @State private var hasAllowedMacros = false
+    @State private var macroInput = ""
     @Environment(\.undoManager) private var undoManager
     @Namespace private var panelTransition
 
@@ -36,6 +45,22 @@ struct WorkbookView: View {
                 .background(.bar)
         }
         .background(Color.sheetBackground)
+        .overlay { if macroRunner.isRunning { runningMacroOverlay } }
+        .modifier(MacroPrompts(runner: macroRunner, input: $macroInput))
+        .sheet(isPresented: $isShowingMacros) { macrosSheet }
+        .confirmationDialog(
+            "Macros.Confirm.Title",
+            isPresented: Binding(get: { pendingMacro != nil }, set: { if !$0 { pendingMacro = nil } }),
+            titleVisibility: .visible,
+            presenting: pendingMacro
+        ) { macro in
+            Button("Macros.Confirm.Run") {
+                hasAllowedMacros = true
+                runMacro(macro)
+            }
+        } message: { _ in
+            Text("Macros.Confirm.Message")
+        }
         .onAppear {
             state.allowsFormatting = !document.isPlainText
             if state.activeSheetID == nil {
@@ -158,6 +183,14 @@ struct WorkbookView: View {
 
     @ToolbarContentBuilder
     private var sharingToolbar: some ToolbarContent {
+        if document.workbook.hasMacros {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Toolbar.Macros", systemImage: "curlybraces") { isShowingMacros = true }
+                    .disabled(macroRunner.isRunning)
+                    .help(String(localized: "Toolbar.Macros"))
+                    .accessibilityIdentifier("macros")
+            }
+        }
         // Declared before the share button so it sits beside it on the inside.
         if !document.unsupportedFeatures.isEmpty {
             ToolbarItem(placement: .primaryAction) {
@@ -287,6 +320,78 @@ struct WorkbookView: View {
         .accessibilityLabel(label)
     }
     #endif
+
+    // MARK: - Macros
+
+    private var macrosSheet: some View {
+        let loaded = Result { try document.workbook.macroProject.map(VBAProject.init(data:)) }
+        return MacrosView(
+            project: (try? loaded.get()) ?? nil,
+            loadError: loaded.failureDescription,
+            output: macroRunner.output
+        ) { module, procedure in
+            let macro = MacroCatalog.Macro(module: module, procedure: procedure)
+            isShowingMacros = false
+            if hasAllowedMacros {
+                runMacro(macro)
+            } else {
+                pendingMacro = macro
+            }
+        }
+        #if os(macOS)
+        .frame(minWidth: 420, minHeight: 480)
+        #endif
+    }
+
+    /// Runs a macro on a copy of the workbook and puts back what it made
+    /// of it in one change, so a single undo takes the whole run back.
+    private func runMacro(_ macro: MacroCatalog.Macro) {
+        guard let data = document.workbook.macroProject, let project = try? VBAProject(data: data) else { return }
+        state.commitEditing(in: &document.workbook, then: nil)
+        let before = document.workbook
+        Task {
+            let outcome = await macroRunner.run(
+                macro.procedure, in: macro.module, project: project, workbook: before,
+                workbookName: fileName ?? String(localized: "Macros.DefaultWorkbookName"),
+                activeSheet: state.activeSheetID, selection: state.selection
+            )
+            if outcome.workbook != before { document.workbook = outcome.workbook }
+            if outcome.activeSheetID != state.activeSheetID, outcome.workbook.index(of: outcome.activeSheetID) != nil {
+                state.selectSheet(outcome.activeSheetID, in: outcome.workbook)
+            }
+            state.selection = outcome.selection
+            state.anchor = outcome.selection.start
+            state.additionalSelections = []
+            state.clampSelection(to: state.activeSheet(in: document.workbook))
+            state.refreshMetrics(in: document.workbook)
+            if let failure = outcome.failure {
+                state.errorMessage = String(format: String(localized: "Macros.Failed"), failure)
+            }
+        }
+    }
+
+    /// While a macro runs the sheet is the macro's: a veil keeps edits off
+    /// it, and says how to stop a macro that does not finish.
+    private var runningMacroOverlay: some View {
+        ZStack(alignment: .bottom) {
+            Color.black.opacity(0.08)
+                .ignoresSafeArea()
+                .contentShape(.rect)
+                .onTapGesture {}
+            HStack(spacing: 12) {
+                ProgressView()
+                Text(String(format: String(localized: "Macros.Running"), macroRunner.runningMacro ?? ""))
+                    .lineLimit(1)
+                Button("Macros.Stop", role: .destructive) { macroRunner.stop() }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("stopMacro")
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .glassEffect(.regular, in: .capsule)
+            .padding(.bottom, 24)
+        }
+    }
 
     // MARK: - Keyboard
 
