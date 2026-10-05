@@ -310,7 +310,11 @@ enum CellPainter {
         }
         guard box.width > 0, box.height > 0 else { return }
 
-        let wraps = style.wrapsText || style.isTextStacked
+        // Excel never wraps a number or cuts one short: one too wide for its
+        // cell shows as a row of #s, so a figure is never misread.
+        let isNumber: Bool
+        if case .number = cell.value { isNumber = true } else { isNumber = false }
+        let wraps = (style.wrapsText && !isNumber) || style.isTextStacked
         // The width the text has, out to the far edge of its overflow.
         var room = box.width
         if let overflow, !wraps {
@@ -327,7 +331,9 @@ enum CellPainter {
             width: wraps ? box.width : unbounded, height: unbounded
         ))
         if !wraps, measured.width > room {
-            let shortened = elided(string, to: room, make: make, in: context)
+            let shortened = isNumber
+                ? hashes(filling: room, make: make, in: context)
+                : elided(string, to: room, make: make, in: context)
             resolved = context.resolve(make(shortened))
             measured = resolved.measure(in: CGSize(width: unbounded, height: unbounded))
         }
@@ -394,6 +400,14 @@ enum CellPainter {
             }
         }
         return best
+    }
+
+    /// As many #s as fit in `width`, which is what Excel shows for a number
+    /// its cell is too narrow for.
+    private static func hashes(filling width: Double, make: (String) -> Text, in context: GraphicsContext) -> String {
+        let one = context.resolve(make("#")).measure(in: CGSize(width: unbounded, height: unbounded)).width
+        guard one > 0 else { return "" }
+        return String(repeating: "#", count: max(Int(width / one), 1))
     }
 
     // MARK: - Borders
