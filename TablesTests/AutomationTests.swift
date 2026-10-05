@@ -101,7 +101,7 @@ struct WorkbookAutomationTests {
 struct ShortcutsActionTests {
     @Test("Actions chain: open, set, append, read back and export")
     func chaining() async throws {
-        var open = OpenWorkbookIntent()
+        var open = GetWorkbookIntent()
         let csv = Data("Item,Qty\nPen,10\n".utf8)
         open.file = IntentFile(data: csv, filename: "Orders.csv", type: .commaSeparatedText)
         let opened = try await open.perform().value

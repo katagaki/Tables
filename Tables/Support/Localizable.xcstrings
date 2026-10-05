@@ -9530,31 +9530,31 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open ${file}"
+            "value" : "Get workbook from ${file}"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "${file} を開く"
+            "value" : "${file} からワークブックを取得"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "${file} 열기"
+            "value" : "${file}에서 통합 문서 가져오기"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打开 ${file}"
+            "value" : "从 ${file} 获取工作簿"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打開 ${file}"
+            "value" : "從 ${file} 取得活頁簿"
           }
         }
       }
@@ -9565,31 +9565,31 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open Workbook"
+            "value" : "Get Workbook"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ワークブックを開く"
+            "value" : "ワークブックを取得"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "통합 문서 열기"
+            "value" : "통합 문서 가져오기"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打开工作簿"
+            "value" : "获取工作簿"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打開活頁簿"
+            "value" : "取得活頁簿"
           }
         }
       }

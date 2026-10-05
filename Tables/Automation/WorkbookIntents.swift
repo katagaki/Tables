@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 
 /// A workbook as it travels through a shortcut. Each action takes one and,
 /// if it changes it, hands on the changed copy, so actions chain:
-/// Open Workbook → Set Cell → Append Row → Export Workbook.
+/// Get Workbook → Set Cell → Append Row → Export Workbook.
 struct WorkbookEntity: TransientAppEntity {
     static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Intent.Workbook.Type")
 
@@ -92,7 +92,7 @@ enum RangeLayout: String, AppEnum {
 
 // MARK: - Files
 
-struct OpenWorkbookIntent: AppIntent {
+struct GetWorkbookIntent: AppIntent {
     static let title: LocalizedStringResource = "Intent.Open.Title"
     static let description = IntentDescription("Intent.Open.Description")
 
