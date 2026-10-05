@@ -70,14 +70,41 @@ enum CellError: String, Hashable, Sendable, CaseIterable {
     case numberError = "#NUM!"
     case notAvailable = "#N/A"
     case nullError = "#NULL!"
+    /// A dynamic array result with no room to spill into.
+    case spill = "#SPILL!"
+    /// A calculation Excel's engine cannot represent, such as an empty array
+    /// or a LAMBDA left uncalled in a cell.
+    case calc = "#CALC!"
     /// Shown in the grid when a formula depends on itself. Excel has no such
     /// literal — it reports circularity out of band — so this one is ours.
     case circularReference = "#CIRC!"
 
     /// The literal to store in a workbook. OOXML defines a closed set of error
     /// values, and writing anything outside it makes the file unreadable, so the
-    /// app's own sentinel is mapped onto the nearest standard one.
+    /// newer errors — which Excel itself stores as `#VALUE!` plus metadata —
+    /// and the app's own sentinel are mapped onto the nearest standard one.
     var ooxmlValue: String {
-        self == .circularReference ? CellError.valueError.rawValue : rawValue
+        switch self {
+        case .spill, .calc, .circularReference: return CellError.valueError.rawValue
+        default: return rawValue
+        }
+    }
+
+    /// The number `ERROR.TYPE` reports.
+    var typeNumber: Int {
+        switch self {
+        case .nullError: return 1
+        case .divideByZero: return 2
+        case .valueError, .circularReference: return 3
+        case .referenceError: return 4
+        case .nameError: return 5
+        case .numberError: return 6
+        case .notAvailable: return 7
+        case .spill: return 9
+        case .calc: return 14
+        }
     }
 }
+
+/// Errors travel through formula functions as thrown values.
+extension CellError: Error {}

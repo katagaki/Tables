@@ -1,693 +1,519 @@
 import Foundation
 
-/// The built-in function library. Functions receive unevaluated arguments so
-/// that `IF`, `IFERROR` and friends can control evaluation themselves.
+/// The built-in function library.
+///
+/// Each function is a `FunctionSpec` in one of the category tables, which
+/// `registry` merges. A function receives its arguments unevaluated, through a
+/// `FunctionCall`, so that `IF`, `IFERROR` and friends can decide what to
+/// evaluate, and so that functions such as `ROWS` and `OFFSET` can see the
+/// reference an argument names rather than only its values.
 enum FormulaFunctions {
-    static let names: [String] = [
-        "ABS", "AND", "AVERAGE", "AVERAGEA", "AVERAGEIF", "AVERAGEIFS", "CEILING", "CHAR",
-        "CHOOSE", "CODE", "COLUMN", "CONCAT", "CONCATENATE", "COUNT", "COUNTA", "COUNTBLANK",
-        "COUNTIF", "COUNTIFS", "DATE",
-        "DAY", "DEGREES", "EXACT", "EXP", "FALSE", "FIND", "FLOOR", "HLOOKUP", "HOUR", "IF",
-        "IFERROR", "IFNA", "IFS", "INDEX", "INT", "ISBLANK", "ISERROR", "ISEVEN", "ISLOGICAL",
-        "ISNUMBER", "ISODD", "ISTEXT", "LARGE", "LEFT", "LEN", "LN", "LOG", "LOG10", "LOWER",
-        "MATCH", "MAX", "MEDIAN", "MID", "MIN", "MINUTE", "MOD", "MONTH", "NA", "NOT", "NOW",
-        "OR", "PI", "POWER", "PRODUCT", "PROPER", "RADIANS", "RAND", "RANDBETWEEN", "REPLACE",
-        "REPT", "RIGHT", "ROUND", "ROUNDDOWN", "ROUNDUP", "ROW", "SEARCH", "SECOND", "SIGN",
-        "SMALL", "SQRT", "STDEV", "SUBSTITUTE", "SUM", "SUMIF", "SUMIFS", "SUMPRODUCT", "SWITCH",
-        "TEXT", "TEXTJOIN", "TIME",
-        "TODAY", "TRIM", "TRUE", "TRUNC", "UPPER", "VALUE", "VAR", "VLOOKUP", "WEEKDAY",
-        "XLOOKUP", "XOR",
-        "YEAR", "COS", "SIN", "TAN", "ACOS", "ASIN", "ATAN", "ATAN2",
-    ]
+    static let registry: [String: FunctionSpec] = {
+        var all: [String: FunctionSpec] = [:]
+        for table in [
+            mathFunctions, statisticalFunctions, logicalFunctions, informationFunctions, textFunctions,
+            dateFunctions, lookupFunctions,
+        ] {
+            all.merge(table) { existing, _ in existing }
+        }
+        return all
+    }()
+
+    /// Every function name, sorted, for the function picker.
+    static let names: [String] = registry.keys.sorted()
 
     /// Whether a function name is one the library evaluates.
-    static func isKnown(_ name: String) -> Bool { names.contains(name.uppercased()) }
+    static func isKnown(_ name: String) -> Bool { registry[name.uppercased()] != nil }
 
     // MARK: - Dispatch
 
     static func call(_ name: String, arguments: [FormulaNode], evaluator: FormulaEvaluator) -> FormulaValue {
-        var call = CallFrame(name: name, nodes: arguments, evaluator: evaluator)
-        return dispatch(&call)
-    }
+        guard let spec = registry[name] else { return .failure(.nameError) }
+        guard spec.arity.contains(arguments.count) else { return .failure(.valueError) }
+        let call = FunctionCall(name: name, nodes: arguments, evaluator: evaluator)
 
-    /// Bundles an invocation so each implementation can pull what it needs.
-    private struct CallFrame {
-        let name: String
-        let nodes: [FormulaNode]
-        let evaluator: FormulaEvaluator
+        // Arguments a function reads as single values are spread over arrays:
+        // `LEN(A1:A3)` is three lengths.
+        let lifted = arguments.indices.filter { spec.lifts.contains($0) && arguments[$0] != .missing }
+        let arrays = lifted.filter { call.value($0).isArray }
+        guard !arrays.isEmpty else { return run(spec, call) }
 
-        var count: Int { nodes.count }
-
-        func value(_ index: Int) -> FormulaValue {
-            guard index < nodes.count else { return .scalar(.empty) }
-            return evaluator.evaluate(nodes[index])
-        }
-
-        func scalar(_ index: Int) -> CellValue { value(index).single }
-
-        func number(_ index: Int) -> Double? { scalar(index).numericValue }
-
-        func string(_ index: Int) -> String { scalar(index).stringValue }
-
-        func boolean(_ index: Int) -> Bool {
-            let value = scalar(index)
-            if case .text(let text) = value {
-                if text.caseInsensitiveCompare("TRUE") == .orderedSame { return true }
-                if text.caseInsensitiveCompare("FALSE") == .orderedSame { return false }
-            }
-            return (value.numericValue ?? 0) != 0
-        }
-
-        /// Every cell across all arguments, ranges expanded.
-        var allValues: [CellValue] { nodes.indices.flatMap { evaluator.evaluate(nodes[$0]).flattened } }
-
-        /// The first error found in any argument, if any.
-        var propagatedError: CellError? { allValues.compactMap(\.errorValue).first }
-
-        /// Numbers only — text and blanks are skipped, the way `SUM` does it.
-        var numbers: [Double] {
-            allValues.compactMap { value in
-                switch value {
-                case .number(let number): return number
-                case .boolean(let flag): return flag ? 1 : 0
-                default: return nil
+        let blocks = Dictionary(uniqueKeysWithValues: arrays.map { ($0, call.value($0).rows) })
+        let height = blocks.values.map(\.count).max() ?? 1
+        let width = blocks.values.map { $0.first?.count ?? 0 }.max() ?? 1
+        var rows: [[CellValue]] = []
+        for row in 0..<height {
+            var line: [CellValue] = []
+            for column in 0..<width {
+                let element = call.copy()
+                var outside = false
+                for (index, block) in blocks {
+                    let r = block.count == 1 ? 0 : row
+                    let c = (block.first?.count ?? 0) == 1 ? 0 : column
+                    guard r < block.count, c < (block.first?.count ?? 0) else { outside = true; break }
+                    element.preset(index, .scalar(block[r][c]))
                 }
+                line.append(outside ? .error(.notAvailable) : run(spec, element).single)
             }
+            rows.append(line)
+        }
+        return .block(rows)
+    }
+
+    private static func run(_ spec: FunctionSpec, _ call: FunctionCall) -> FormulaValue {
+        do {
+            return try spec.body(call)
+        } catch {
+            return .failure(error)
         }
     }
 
-    private static func dispatch(_ call: inout CallFrame) -> FormulaValue {
-        switch call.name {
-        // MARK: Aggregates
-        case "SUM": return aggregate(call) { $0.reduce(0, +) }
-        case "PRODUCT": return aggregate(call) { $0.isEmpty ? 0 : $0.reduce(1, *) }
-        case "AVERAGE", "AVERAGEA":
-            if let error = call.propagatedError { return .failure(error) }
-            let numbers = call.numbers
-            guard !numbers.isEmpty else { return .failure(.divideByZero) }
-            return .number(numbers.reduce(0, +) / Double(numbers.count))
-        case "MIN": return aggregate(call) { $0.min() ?? 0 }
-        case "MAX": return aggregate(call) { $0.max() ?? 0 }
-        case "MEDIAN":
-            if let error = call.propagatedError { return .failure(error) }
-            let sorted = call.numbers.sorted()
-            guard !sorted.isEmpty else { return .failure(.numberError) }
-            let middle = sorted.count / 2
-            return .number(sorted.count % 2 == 1
-                           ? sorted[middle]
-                           : (sorted[middle - 1] + sorted[middle]) / 2)
-        case "STDEV", "VAR":
-            if let error = call.propagatedError { return .failure(error) }
-            let numbers = call.numbers
-            guard numbers.count > 1 else { return .failure(.divideByZero) }
-            let mean = numbers.reduce(0, +) / Double(numbers.count)
-            let variance = numbers.reduce(0) { $0 + pow($1 - mean, 2) } / Double(numbers.count - 1)
-            return .number(call.name == "VAR" ? variance : sqrt(variance))
-        case "COUNT":
-            return .number(Double(call.allValues.filter { if case .number = $0 { return true }; return false }.count))
-        case "COUNTA":
-            return .number(Double(call.allValues.filter { !$0.isEmpty }.count))
-        case "COUNTBLANK":
-            return .number(Double(call.allValues.filter(\.isEmpty).count))
-        case "LARGE", "SMALL":
-            guard call.count >= 2, let rank = call.number(1) else { return .failure(.valueError) }
-            let pool = call.value(0).flattened.compactMap { value -> Double? in
-                if case .number(let number) = value { return number }
-                return nil
-            }
-            let sorted = call.name == "LARGE" ? pool.sorted(by: >) : pool.sorted()
-            let position = Int(rank) - 1
-            guard position >= 0, position < sorted.count else { return .failure(.numberError) }
-            return .number(sorted[position])
-        case "SUMPRODUCT":
-            let columns = call.nodes.indices.map { call.evaluator.evaluate(call.nodes[$0]).flattened }
-            guard let width = columns.first?.count, columns.allSatisfy({ $0.count == width }) else {
-                return .failure(.valueError)
-            }
-            var total = 0.0
-            for position in 0..<width {
-                var product = 1.0
-                for column in columns { product *= column[position].numericValue ?? 0 }
-                total += product
-            }
-            return .number(total)
+    /// The reference a call returns, for the functions that return references.
+    static func reference(_ name: String, arguments: [FormulaNode], evaluator: FormulaEvaluator) -> FormulaReference? {
+        guard let spec = registry[name], let referenceBody = spec.referenceBody,
+              spec.arity.contains(arguments.count) else { return nil }
+        return try? referenceBody(FunctionCall(name: name, nodes: arguments, evaluator: evaluator))
+    }
+}
 
-        // MARK: Conditional aggregates
-        case "SUMIF", "COUNTIF", "AVERAGEIF":
-            return conditionalAggregate(call)
-        case "SUMIFS", "COUNTIFS", "AVERAGEIFS":
-            return multiCriteriaAggregate(call)
+// MARK: - Specs
 
-        // MARK: Logic
-        case "IF":
-            guard call.count >= 2 else { return .failure(.valueError) }
-            if let error = call.scalar(0).errorValue { return .failure(error) }
-            if call.boolean(0) { return call.value(1) }
-            return call.count >= 3 ? call.value(2) : .boolean(false)
-        case "IFS":
-            var index = 0
-            while index + 1 < call.count {
-                if let error = call.scalar(index).errorValue { return .failure(error) }
-                if call.boolean(index) { return call.value(index + 1) }
-                index += 2
+/// Which argument positions a function reads as single values, and so spreads
+/// over when given an array.
+enum Lifting: Sendable {
+    case none
+    case all
+    case only(Set<Int>)
+    case allExcept(Set<Int>)
+    /// Every position satisfying a rule, such as the criteria of `SUMIFS`.
+    case matching(@Sendable (Int) -> Bool)
+
+    func contains(_ index: Int) -> Bool {
+        switch self {
+        case .none: return false
+        case .all: return true
+        case .only(let set): return set.contains(index)
+        case .allExcept(let set): return !set.contains(index)
+        case .matching(let rule): return rule(index)
+        }
+    }
+}
+
+struct FunctionSpec: Sendable {
+    typealias Body = @Sendable (FunctionCall) throws(CellError) -> FormulaValue
+    typealias ReferenceBody = @Sendable (FunctionCall) throws(CellError) -> FormulaReference
+
+    var arity: ClosedRange<Int>
+    var lifts: Lifting
+    var body: Body
+    /// Set for functions that can answer with a reference, such as `OFFSET`,
+    /// so that `ROWS(OFFSET(…))` and `A1:INDEX(…)` see cells, not values.
+    var referenceBody: ReferenceBody?
+
+    init(_ arity: ClosedRange<Int>, lifts: Lifting = .all, _ body: @escaping Body) {
+        self.arity = arity
+        self.lifts = lifts
+        self.body = body
+    }
+
+    /// A function that always answers with a reference; its value is read out of it.
+    init(_ arity: ClosedRange<Int>, lifts: Lifting = .none, reference: @escaping ReferenceBody) {
+        self.arity = arity
+        self.lifts = lifts
+        self.body = { call throws(CellError) in call.evaluator.materialize(try reference(call)) }
+        self.referenceBody = reference
+    }
+
+    /// A function that answers with a reference when its arguments allow and a
+    /// value otherwise, as `INDEX` does for a range and for an array.
+    init(_ arity: ClosedRange<Int>, lifts: Lifting = .none, reference: @escaping ReferenceBody,
+         value: @escaping Body) {
+        self.arity = arity
+        self.lifts = lifts
+        self.body = value
+        self.referenceBody = reference
+    }
+
+    /// A function of one number.
+    static func unary(_ transform: @escaping @Sendable (Double) throws(CellError) -> Double) -> FunctionSpec {
+        FunctionSpec(1...1) { call throws(CellError) in .number(try transform(try call.number(0))) }
+    }
+
+    /// A function of two numbers.
+    static func binary(_ transform: @escaping @Sendable (Double, Double) throws(CellError) -> Double) -> FunctionSpec {
+        FunctionSpec(2...2) { call throws(CellError) in .number(try transform(try call.number(0), try call.number(1))) }
+    }
+
+    /// A function with no arguments.
+    static func constant(_ value: @escaping @Sendable () -> FormulaValue) -> FunctionSpec {
+        FunctionSpec(0...0) { _ throws(CellError) in value() }
+    }
+}
+
+extension FormulaValue {
+    /// More than one cell.
+    var isArray: Bool {
+        if case .matrix(let rows) = self { return rows.count > 1 || (rows.first?.count ?? 0) > 1 }
+        return false
+    }
+
+    /// An array of any size, a 1×1 one from `{5}` included.
+    var isMatrix: Bool {
+        if case .matrix = self { return true }
+        return false
+    }
+}
+
+// MARK: - Calls
+
+/// One invocation of a function: its argument nodes, evaluated on demand and
+/// at most once each.
+final class FunctionCall {
+    let name: String
+    let nodes: [FormulaNode]
+    let evaluator: FormulaEvaluator
+    private var values: [Int: FormulaValue] = [:]
+    private var references: [Int: FormulaReference?] = [:]
+
+    init(name: String, nodes: [FormulaNode], evaluator: FormulaEvaluator) {
+        self.name = name
+        self.nodes = nodes
+        self.evaluator = evaluator
+    }
+
+    /// A call sharing what has been evaluated so far, for one element of a
+    /// lifted call.
+    func copy() -> FunctionCall {
+        let copy = FunctionCall(name: name, nodes: nodes, evaluator: evaluator)
+        copy.values = values
+        copy.references = references
+        return copy
+    }
+
+    /// Replaces an argument's value, as lifting does with each element.
+    func preset(_ index: Int, _ value: FormulaValue) {
+        values[index] = value
+        references[index] = .some(nil)
+    }
+
+    var count: Int { nodes.count }
+
+    var context: any FormulaContext { evaluator.context }
+
+    /// Whether an argument was left out, either past the end or empty.
+    func isMissing(_ index: Int) -> Bool {
+        index >= nodes.count || nodes[index] == .missing
+    }
+
+    func value(_ index: Int) -> FormulaValue {
+        guard index < nodes.count else { return .scalar(.empty) }
+        if let cached = values[index] { return cached }
+        let value: FormulaValue
+        if let reference = reference(index) {
+            value = evaluator.materialize(reference)
+        } else {
+            value = evaluator.evaluate(nodes[index])
+        }
+        values[index] = value
+        return value
+    }
+
+    /// The reference an argument names, when it names one.
+    func reference(_ index: Int) -> FormulaReference? {
+        guard index < nodes.count else { return nil }
+        if let cached = references[index] { return cached }
+        let reference = evaluator.reference(nodes[index])
+        references[index] = .some(reference)
+        return reference
+    }
+
+    /// Whether an argument names cells rather than computing a value. Excel
+    /// treats the text and booleans in a referenced range differently from the
+    /// same values typed straight into the call.
+    func isReference(_ index: Int) -> Bool {
+        if reference(index) != nil { return true }
+        if index < nodes.count, case .sheetSpan = nodes[index] { return true }
+        return false
+    }
+
+    /// One value. A multi-cell reference gives the cell in line with the
+    /// formula, the way a range collapses wherever one value is wanted.
+    func scalar(_ index: Int) -> CellValue {
+        let value = value(index)
+        guard value.isArray else { return value.single }
+        if let reference = reference(index), let cell = evaluator.intersection(of: reference) {
+            return evaluator.materialize(cell).single
+        }
+        return value.single
+    }
+
+    func number(_ index: Int) throws(CellError) -> Double {
+        let number = try scalar(index).coercedNumber()
+        guard number.isFinite else { throw .numberError }
+        return number
+    }
+
+    func number(_ index: Int, default fallback: Double) throws(CellError) -> Double {
+        isMissing(index) ? fallback : try number(index)
+    }
+
+    /// A whole number, truncated toward zero as Excel truncates count and
+    /// position arguments.
+    func integer(_ index: Int) throws(CellError) -> Int {
+        let value = try number(index).rounded(.towardZero)
+        guard abs(value) < 1e15 else { throw .numberError }
+        return Int(value)
+    }
+
+    func integer(_ index: Int, default fallback: Int) throws(CellError) -> Int {
+        isMissing(index) ? fallback : try integer(index)
+    }
+
+    func text(_ index: Int) throws(CellError) -> String {
+        try scalar(index).coercedText()
+    }
+
+    func text(_ index: Int, default fallback: String) throws(CellError) -> String {
+        isMissing(index) ? fallback : try text(index)
+    }
+
+    func boolean(_ index: Int) throws(CellError) -> Bool {
+        try scalar(index).coercedBoolean()
+    }
+
+    func boolean(_ index: Int, default fallback: Bool) throws(CellError) -> Bool {
+        isMissing(index) ? fallback : try boolean(index)
+    }
+
+    /// An argument as rows of cells; a single value is a 1×1 block.
+    func matrix(_ index: Int) throws(CellError) -> [[CellValue]] {
+        let value = value(index)
+        if case .lambda = value { throw .valueError }
+        if case .scalar(.error(let error)) = value { throw error }
+        return value.rows
+    }
+
+    func lambda(_ index: Int) throws(CellError) -> FormulaLambda {
+        guard case .lambda(let lambda) = value(index) else { throw .valueError }
+        return lambda
+    }
+}
+
+// MARK: - Collecting numbers
+
+/// How aggregates read their arguments.
+enum NumberCollection {
+    /// `SUM`, `AVERAGE`, `MAX` and most others: in ranges and arrays only
+    /// numbers count; values typed into the call are converted.
+    case numbersOnly
+    /// The `…A` variants: in ranges, TRUE is 1 and text and FALSE are 0.
+    case valuesAsNumbers
+}
+
+extension FunctionCall {
+    /// The numbers an aggregate works on, from the arguments at `indices`.
+    /// Errors stop the collection unless `skippingErrors`.
+    func numbers(
+        _ indices: some Sequence<Int>, mode: NumberCollection = .numbersOnly, skippingErrors: Bool = false
+    ) throws(CellError) -> [Double] {
+        var result: [Double] = []
+        for index in indices {
+            if isMissing(index) {
+                if index < count { result.append(0) }
+                continue
             }
-            return .failure(.notAvailable)
-        case "SWITCH":
-            return switchCase(call)
-        case "IFERROR", "IFNA":
-            let primary = call.value(0)
-            let trapped: Bool
-            if call.name == "IFNA" {
-                trapped = primary.firstError == .notAvailable
+            let value = value(index)
+            if case .lambda = value { throw .valueError }
+            if isReference(index) || value.isMatrix {
+                for cell in value.flattened {
+                    switch cell {
+                    case .number(let number): result.append(number)
+                    case .error(let error): if !skippingErrors { throw error }
+                    case .boolean(let flag): if mode == .valuesAsNumbers { result.append(flag ? 1 : 0) }
+                    case .text: if mode == .valuesAsNumbers { result.append(0) }
+                    case .empty: break
+                    }
+                }
             } else {
-                trapped = primary.firstError != nil
+                let cell = value.single
+                if case .error(let error) = cell {
+                    if skippingErrors { continue }
+                    throw error
+                }
+                result.append(try cell.coercedNumber())
             }
-            return trapped ? (call.count >= 2 ? call.value(1) : .scalar(.empty)) : primary
-        case "AND":
-            if let error = call.propagatedError { return .failure(error) }
-            return .boolean(call.nodes.indices.allSatisfy { call.boolean($0) })
-        case "OR":
-            if let error = call.propagatedError { return .failure(error) }
-            return .boolean(call.nodes.indices.contains { call.boolean($0) })
-        case "XOR":
-            if let error = call.propagatedError { return .failure(error) }
-            return .boolean(call.nodes.indices.filter { call.boolean($0) }.count % 2 == 1)
-        case "NOT":
-            return .boolean(!call.boolean(0))
-        case "TRUE": return .boolean(true)
-        case "FALSE": return .boolean(false)
-        case "NA": return .failure(.notAvailable)
-
-        // MARK: Information
-        case "ISBLANK": return .boolean(call.value(0).single.isEmpty)
-        case "ISERROR": return .boolean(call.value(0).firstError != nil)
-        case "ISNUMBER":
-            if case .number = call.scalar(0) { return .boolean(true) }
-            return .boolean(false)
-        case "ISTEXT":
-            if case .text = call.scalar(0) { return .boolean(true) }
-            return .boolean(false)
-        case "ISLOGICAL":
-            if case .boolean = call.scalar(0) { return .boolean(true) }
-            return .boolean(false)
-        case "ISEVEN", "ISODD":
-            guard let number = call.number(0) else { return .failure(.valueError) }
-            let isEven = Int(number.rounded(.towardZero)) % 2 == 0
-            return .boolean(call.name == "ISEVEN" ? isEven : !isEven)
-        case "ROW", "COLUMN":
-            // With no argument the answer is the position of the calling cell.
-            let address: CellAddress?
-            if call.nodes.isEmpty {
-                address = call.evaluator.currentAddress
-            } else if case .reference(_, let referenced)? = call.nodes.first {
-                address = referenced
-            } else {
-                address = nil
-            }
-            guard let address else { return .failure(.valueError) }
-            return .number(Double(call.name == "ROW" ? address.row + 1 : address.column + 1))
-
-        // MARK: Math
-        case "ABS": return unaryMath(call, abs)
-        case "SQRT":
-            guard let value = call.number(0) else { return .failure(.valueError) }
-            return value < 0 ? .failure(.numberError) : .number(sqrt(value))
-        case "EXP": return unaryMath(call, exp)
-        case "LN":
-            guard let value = call.number(0) else { return .failure(.valueError) }
-            return value <= 0 ? .failure(.numberError) : .number(log(value))
-        case "LOG10": return logarithm(call, base: 10)
-        case "LOG": return logarithm(call, base: call.count >= 2 ? call.number(1) ?? 10 : 10)
-        case "SIGN":
-            guard let value = call.number(0) else { return .failure(.valueError) }
-            return .number(value > 0 ? 1 : (value < 0 ? -1 : 0))
-        case "INT": return unaryMath(call) { $0.rounded(.down) }
-        case "TRUNC": return roundingFunction(call, rule: .towardZero)
-        case "ROUND": return roundingFunction(call, rule: .toNearestOrAwayFromZero)
-        case "ROUNDUP": return roundingFunction(call, rule: .awayFromZero)
-        case "ROUNDDOWN": return roundingFunction(call, rule: .towardZero)
-        case "MOD":
-            guard let a = call.number(0), let b = call.number(1) else { return .failure(.valueError) }
-            guard b != 0 else { return .failure(.divideByZero) }
-            return .number(a - b * (a / b).rounded(.down))
-        case "POWER":
-            guard let a = call.number(0), let b = call.number(1) else { return .failure(.valueError) }
-            let result = pow(a, b)
-            return result.isFinite ? .number(result) : .failure(.numberError)
-        case "CEILING", "FLOOR":
-            guard let value = call.number(0) else { return .failure(.valueError) }
-            let step = call.count >= 2 ? (call.number(1) ?? 1) : 1
-            guard step != 0 else { return .failure(.divideByZero) }
-            let quotient = value / step
-            return .number(step * (call.name == "CEILING" ? quotient.rounded(.up) : quotient.rounded(.down)))
-        case "PI": return .number(.pi)
-        case "RADIANS": return unaryMath(call) { $0 * .pi / 180 }
-        case "DEGREES": return unaryMath(call) { $0 * 180 / .pi }
-        case "COS": return unaryMath(call, cos)
-        case "SIN": return unaryMath(call, sin)
-        case "TAN": return unaryMath(call, tan)
-        case "ACOS": return unaryMath(call, acos)
-        case "ASIN": return unaryMath(call, asin)
-        case "ATAN": return unaryMath(call, atan)
-        case "ATAN2":
-            guard let x = call.number(0), let y = call.number(1) else { return .failure(.valueError) }
-            return .number(atan2(y, x))
-        case "RAND": return .number(Double.random(in: 0..<1))
-        case "RANDBETWEEN":
-            guard let low = call.number(0), let high = call.number(1), low <= high else {
-                return .failure(.numberError)
-            }
-            return .number(Double(Int.random(in: Int(low)...Int(high))))
-
-        // MARK: Text
-        case "CONCAT", "CONCATENATE":
-            return .text(call.allValues.map(\.stringValue).joined())
-        case "TEXTJOIN":
-            return textJoin(call)
-        case "LEN": return .number(Double(call.string(0).count))
-        case "LOWER": return .text(call.string(0).lowercased())
-        case "UPPER": return .text(call.string(0).uppercased())
-        case "PROPER": return .text(call.string(0).capitalized)
-        case "TRIM":
-            let collapsed = call.string(0).split(separator: " ", omittingEmptySubsequences: true).joined(separator: " ")
-            return .text(collapsed)
-        case "LEFT", "RIGHT":
-            let text = call.string(0)
-            let count = call.count >= 2 ? Int(call.number(1) ?? 1) : 1
-            guard count >= 0 else { return .failure(.valueError) }
-            return .text(call.name == "LEFT" ? String(text.prefix(count)) : String(text.suffix(count)))
-        case "MID":
-            let characters = Array(call.string(0))
-            guard let start = call.number(1), let length = call.number(2), start >= 1, length >= 0 else {
-                return .failure(.valueError)
-            }
-            let from = min(max(0, Int(start) - 1), characters.count)
-            let to = min(from + Int(length), characters.count)
-            return .text(String(characters[from..<to]))
-        case "REPT":
-            guard let times = call.number(1), times >= 0 else { return .failure(.valueError) }
-            return .text(String(repeating: call.string(0), count: min(Int(times), 10_000)))
-        case "EXACT":
-            return .boolean(call.string(0) == call.string(1))
-        case "FIND", "SEARCH":
-            let needle = call.string(0)
-            let haystack = call.string(1)
-            let start = call.count >= 3 ? max(1, Int(call.number(2) ?? 1)) : 1
-            guard start <= haystack.count + 1 else { return .failure(.valueError) }
-            let searchStart = haystack.index(haystack.startIndex, offsetBy: start - 1)
-            let options: String.CompareOptions = call.name == "SEARCH" ? [.caseInsensitive] : []
-            guard !needle.isEmpty else { return .number(Double(start)) }
-            guard let found = haystack.range(of: needle, options: options,
-                                             range: searchStart..<haystack.endIndex) else {
-                return .failure(.valueError)
-            }
-            return .number(Double(haystack.distance(from: haystack.startIndex, to: found.lowerBound) + 1))
-        case "SUBSTITUTE":
-            let text = call.string(0)
-            let old = call.string(1)
-            let new = call.string(2)
-            guard !old.isEmpty else { return .text(text) }
-            if call.count >= 4, let occurrence = call.number(3) {
-                return .text(replace(text, old, new, occurrence: Int(occurrence)))
-            }
-            return .text(text.replacingOccurrences(of: old, with: new))
-        case "REPLACE":
-            let characters = Array(call.string(0))
-            guard let start = call.number(1), let length = call.number(2), start >= 1 else {
-                return .failure(.valueError)
-            }
-            let from = min(Int(start) - 1, characters.count)
-            let to = min(from + max(0, Int(length)), characters.count)
-            return .text(String(characters[0..<from]) + call.string(3) + String(characters[to...]))
-        case "TEXT":
-            return .text(CellFormatter.displayText(for: call.scalar(0), format: call.string(1)))
-        case "VALUE":
-            let trimmed = call.string(0).trimmingCharacters(in: .whitespaces)
-            guard let number = Double(trimmed) else { return .failure(.valueError) }
-            return .number(number)
-        case "CHAR":
-            guard let code = call.number(0), let scalar = UnicodeScalar(UInt32(max(0, code))) else {
-                return .failure(.valueError)
-            }
-            return .text(String(Character(scalar)))
-        case "CODE":
-            guard let scalar = call.string(0).unicodeScalars.first else { return .failure(.valueError) }
-            return .number(Double(scalar.value))
-
-        // MARK: Dates
-        case "TODAY":
-            return .number(CellFormatter.serial(fromDate: Date()).rounded(.down))
-        case "NOW":
-            return .number(CellFormatter.serial(fromDate: Date()))
-        case "DATE":
-            guard let year = call.number(0), let month = call.number(1), let day = call.number(2) else {
-                return .failure(.valueError)
-            }
-            var components = DateComponents()
-            components.year = Int(year)
-            components.month = Int(month)
-            components.day = Int(day)
-            var calendar = Calendar(identifier: .gregorian)
-            calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
-            guard let date = calendar.date(from: components) else { return .failure(.numberError) }
-            return .number(CellFormatter.serial(fromDate: date).rounded(.down))
-        case "TIME":
-            guard let hour = call.number(0), let minute = call.number(1), let second = call.number(2) else {
-                return .failure(.valueError)
-            }
-            return .number((hour * 3600 + minute * 60 + second) / 86_400)
-        case "YEAR", "MONTH", "DAY", "HOUR", "MINUTE", "SECOND", "WEEKDAY":
-            guard let serial = call.number(0) else { return .failure(.valueError) }
-            return .number(Double(datePart(call.name, serial: serial)))
-
-        // MARK: Lookup
-        case "CHOOSE":
-            guard let index = call.number(0) else { return .failure(.valueError) }
-            let position = Int(index)
-            guard position >= 1, position < call.count else { return .failure(.valueError) }
-            return call.value(position)
-        case "INDEX":
-            guard case .matrix(let rows) = call.value(0) else { return call.value(0) }
-            let rowIndex = Int(call.number(1) ?? 1)
-            let columnIndex = call.count >= 3 ? Int(call.number(2) ?? 1) : 1
-            // A single-row or single-column range accepts one index.
-            if call.count == 2, rows.count == 1 {
-                guard rowIndex >= 1, rowIndex <= (rows.first?.count ?? 0) else { return .failure(.referenceError) }
-                return .scalar(rows[0][rowIndex - 1])
-            }
-            guard rowIndex >= 1, rowIndex <= rows.count,
-                  columnIndex >= 1, columnIndex <= rows[rowIndex - 1].count else {
-                return .failure(.referenceError)
-            }
-            return .scalar(rows[rowIndex - 1][columnIndex - 1])
-        case "MATCH":
-            return match(call)
-        case "VLOOKUP", "HLOOKUP":
-            return lookup(call)
-        case "XLOOKUP":
-            return crossLookup(call)
-
-        default:
-            return .failure(.nameError)
-        }
-    }
-
-    // MARK: - Shared helpers
-
-    private static func aggregate(_ call: CallFrame, _ reduce: ([Double]) -> Double) -> FormulaValue {
-        if let error = call.propagatedError { return .failure(error) }
-        return .number(reduce(call.numbers))
-    }
-
-    private static func unaryMath(_ call: CallFrame, _ transform: (Double) -> Double) -> FormulaValue {
-        guard let value = call.number(0) else { return .failure(.valueError) }
-        let result = transform(value)
-        return result.isFinite ? .number(result) : .failure(.numberError)
-    }
-
-    private static func logarithm(_ call: CallFrame, base: Double?) -> FormulaValue {
-        guard let value = call.number(0), let base, value > 0, base > 0, base != 1 else {
-            return .failure(.numberError)
-        }
-        return .number(log(value) / log(base))
-    }
-
-    private static func roundingFunction(_ call: CallFrame, rule: FloatingPointRoundingRule) -> FormulaValue {
-        guard let value = call.number(0) else { return .failure(.valueError) }
-        let places = call.count >= 2 ? Int(call.number(1) ?? 0) : 0
-        let factor = pow(10.0, Double(places))
-        guard factor.isFinite, factor != 0 else { return .failure(.numberError) }
-        return .number((value * factor).rounded(rule) / factor)
-    }
-
-    private static func replace(_ text: String, _ old: String, _ new: String, occurrence: Int) -> String {
-        guard occurrence >= 1 else { return text }
-        var result = text
-        var searchStart = result.startIndex
-        var seen = 0
-        while let found = result.range(of: old, range: searchStart..<result.endIndex) {
-            seen += 1
-            if seen == occurrence {
-                result.replaceSubrange(found, with: new)
-                return result
-            }
-            searchStart = found.upperBound
         }
         return result
     }
 
-    private static func datePart(_ name: String, serial: Double) -> Int {
-        let date = CellFormatter.date(fromSerial: serial)
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
-        let parts = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second, .weekday], from: date)
-        switch name {
-        case "YEAR": return parts.year ?? 1900
-        case "MONTH": return parts.month ?? 1
-        case "DAY": return parts.day ?? 1
-        case "HOUR": return parts.hour ?? 0
-        case "MINUTE": return parts.minute ?? 0
-        case "SECOND": return parts.second ?? 0
-        default: return parts.weekday ?? 1
+    /// Every argument's numbers.
+    func allNumbers(mode: NumberCollection = .numbersOnly, skippingErrors: Bool = false) throws(CellError) -> [Double] {
+        try numbers(0..<count, mode: mode, skippingErrors: skippingErrors)
+    }
+
+    /// The cells of every argument from `start` on, ranges expanded in order.
+    func cells(from start: Int = 0) throws(CellError) -> [CellValue] {
+        var result: [CellValue] = []
+        for index in start..<max(start, count) {
+            result += try matrix(index).flatMap { $0 }
+        }
+        return result
+    }
+}
+
+// MARK: - Criteria
+
+/// A `COUNTIF`-style condition: `">=10"`, `"<>x"`, `"app*"`, `5`, `TRUE`.
+struct FormulaCriterion {
+    private enum Comparand {
+        case number(Double)
+        case text(String)
+        case boolean(Bool)
+        case error(CellError)
+        case blank
+    }
+
+    private let symbol: String
+    private let comparand: Comparand
+    /// A bare `""` matches blank cells and empty text alike; `"="` matches
+    /// only the blank ones.
+    private let matchesEmptyText: Bool
+
+    init(_ raw: CellValue) {
+        guard case .text(let text) = raw else {
+            symbol = "="
+            matchesEmptyText = false
+            switch raw {
+            case .number(let number): comparand = .number(number)
+            case .boolean(let flag): comparand = .boolean(flag)
+            case .error(let error): comparand = .error(error)
+            default: comparand = .number(0)
+            }
+            return
+        }
+        let operators = ["<=", ">=", "<>", "<", ">", "="]
+        let found = operators.first(where: { text.hasPrefix($0) })
+        symbol = found ?? "="
+        let rest = String(text.dropFirst(found?.count ?? 0))
+        matchesEmptyText = found == nil && rest.isEmpty
+        if rest.isEmpty {
+            comparand = .blank
+        } else if let number = FormulaValueParser.number(from: rest) {
+            comparand = .number(number)
+        } else if rest.caseInsensitiveCompare("TRUE") == .orderedSame {
+            comparand = .boolean(true)
+        } else if rest.caseInsensitiveCompare("FALSE") == .orderedSame {
+            comparand = .boolean(false)
+        } else if let error = CellError.allCases.first(where: { $0.rawValue == rest.uppercased() }) {
+            comparand = .error(error)
+        } else {
+            comparand = .text(rest)
         }
     }
 
-    // MARK: - Criteria
-
-    /// Parses `">=10"`, `"<>x"`, `"apple"` and applies it to a candidate value.
-    private struct Criterion {
-        var symbol: String
-        var comparand: CellValue
-
-        init(_ raw: CellValue) {
-            guard case .text(let text) = raw else {
-                symbol = "="
-                comparand = raw
-                return
+    func matches(_ candidate: CellValue) -> Bool {
+        switch comparand {
+        case .blank:
+            let equal: Bool
+            switch candidate {
+            case .empty: equal = true
+            case .text(let text): equal = matchesEmptyText && text.isEmpty
+            default: equal = false
             }
-            let operators = ["<=", ">=", "<>", "<", ">", "="]
-            if let found = operators.first(where: { text.hasPrefix($0) }) {
-                symbol = found
-                let remainder = String(text.dropFirst(found.count))
-                comparand = Double(remainder).map(CellValue.number) ?? .text(remainder)
-            } else {
-                symbol = "="
-                comparand = Double(text).map(CellValue.number) ?? .text(text)
-            }
-        }
+            return symbol == "<>" ? !equal : (symbol == "=" && equal)
 
-        func matches(_ candidate: CellValue) -> Bool {
-            if case .text(let pattern) = comparand, symbol == "=" || symbol == "<>" {
-                let equal = candidate.stringValue.compare(pattern, options: .caseInsensitive) == .orderedSame
+        case .number(let target):
+            let actual: Double?
+            switch candidate {
+            case .number(let number): actual = number
+            // Text that reads as the number counts as equal, not as ordered.
+            case .text(let text) where symbol == "=" || symbol == "<>":
+                actual = Double(text.trimmingCharacters(in: .whitespaces))
+            default: actual = nil
+            }
+            guard let actual else { return symbol == "<>" }
+            return Self.ordered(FormulaComparison.compareNumbers(actual, target), symbol)
+
+        case .boolean(let target):
+            guard case .boolean(let actual) = candidate else { return symbol == "<>" }
+            return Self.ordered(FormulaComparison.compareNumbers(actual ? 1 : 0, target ? 1 : 0), symbol)
+
+        case .error(let target):
+            let equal = candidate.errorValue == target
+            return symbol == "<>" ? !equal : (symbol == "=" && equal)
+
+        case .text(let pattern):
+            if symbol == "=" || symbol == "<>" {
+                var equal = false
+                if case .text(let text) = candidate { equal = FormulaWildcard.matches(text, pattern: pattern) }
                 return symbol == "=" ? equal : !equal
             }
-            guard let a = candidate.numericValue, let b = comparand.numericValue else {
-                let equal = candidate.stringValue == comparand.stringValue
-                return symbol == "<>" ? !equal : (symbol == "=" && equal)
-            }
-            switch symbol {
-            case "=": return a == b
-            case "<>": return a != b
-            case "<": return a < b
-            case ">": return a > b
-            case "<=": return a <= b
-            default: return a >= b
-            }
+            guard case .text(let text) = candidate else { return false }
+            return Self.ordered(FormulaComparison.compareText(text, pattern), symbol)
         }
     }
 
-    private static func conditionalAggregate(_ call: CallFrame) -> FormulaValue {
-        guard call.count >= 2 else { return .failure(.valueError) }
-        let testRange = call.value(0).flattened
-        let criterion = Criterion(call.scalar(1))
-
-        if call.name == "COUNTIF" {
-            return .number(Double(testRange.filter { criterion.matches($0) }.count))
-        }
-
-        // SUMIF/AVERAGEIF may total a parallel range instead of the tested one.
-        let sumRange = call.count >= 3 ? call.value(2).flattened : testRange
-        var collected: [Double] = []
-        for (position, candidate) in testRange.enumerated() where criterion.matches(candidate) {
-            guard position < sumRange.count, let number = sumRange[position].numericValue else { continue }
-            collected.append(number)
-        }
-        if call.name == "SUMIF" { return .number(collected.reduce(0, +)) }
-        guard !collected.isEmpty else { return .failure(.divideByZero) }
-        return .number(collected.reduce(0, +) / Double(collected.count))
-    }
-
-    /// `SUMIFS`, `AVERAGEIFS` and `COUNTIFS`. Unlike `SUMIF`, the aggregated range
-    /// comes first and every criteria pair must match for a position to count.
-    private static func multiCriteriaAggregate(_ call: CallFrame) -> FormulaValue {
-        let counting = call.name == "COUNTIFS"
-        let firstPair = counting ? 0 : 1
-        guard call.count >= firstPair + 2, (call.count - firstPair) % 2 == 0 else {
-            return .failure(.valueError)
-        }
-
-        var tests: [(values: [CellValue], criterion: Criterion)] = []
-        var index = firstPair
-        while index + 1 < call.count {
-            tests.append((call.value(index).flattened, Criterion(call.scalar(index + 1))))
-            index += 2
-        }
-        // Excel requires every criteria range to have the same shape.
-        guard let width = tests.first?.values.count,
-              tests.allSatisfy({ $0.values.count == width }) else { return .failure(.valueError) }
-
-        let aggregated = counting ? [] : call.value(0).flattened
-        guard counting || aggregated.count == width else { return .failure(.valueError) }
-
-        var matched = 0
-        var collected: [Double] = []
-        for position in 0..<width where tests.allSatisfy({ $0.criterion.matches($0.values[position]) }) {
-            matched += 1
-            guard !counting, !aggregated[position].isEmpty,
-                  let number = aggregated[position].numericValue else { continue }
-            collected.append(number)
-        }
-
-        switch call.name {
-        case "COUNTIFS": return .number(Double(matched))
-        case "SUMIFS": return .number(collected.reduce(0, +))
-        default:
-            guard !collected.isEmpty else { return .failure(.divideByZero) }
-            return .number(collected.reduce(0, +) / Double(collected.count))
+    private static func ordered(_ ordering: ComparisonResult, _ symbol: String) -> Bool {
+        switch symbol {
+        case "=": return ordering == .orderedSame
+        case "<>": return ordering != .orderedSame
+        case "<": return ordering == .orderedAscending
+        case ">": return ordering == .orderedDescending
+        case "<=": return ordering != .orderedDescending
+        default: return ordering != .orderedAscending
         }
     }
+}
 
-    // MARK: - Text assembly
+// MARK: - Wildcards
 
-    /// `TEXTJOIN(delimiter, ignore_empty, text1, …)`, expanding ranges in order.
-    private static func textJoin(_ call: CallFrame) -> FormulaValue {
-        guard call.count >= 2 else { return .failure(.valueError) }
-        if let error = call.propagatedError { return .failure(error) }
-        let delimiter = call.string(0)
-        let skipsBlanks = call.boolean(1)
-        var pieces: [String] = []
-        for index in 2..<call.count {
-            for value in call.value(index).flattened {
-                let text = value.stringValue
-                // A formula that produced "" reads as blank here, just as a blank cell does.
-                if skipsBlanks, text.isEmpty { continue }
-                pieces.append(text)
+/// Excel's wildcard patterns: `*` for any run of characters, `?` for any one,
+/// and `~` to take the next character literally. Matching ignores case.
+enum FormulaWildcard {
+    static func matches(_ text: String, pattern: String) -> Bool {
+        let candidate = Array(text.lowercased())
+        var tokens: [(character: Character, isWildcard: Bool)] = []
+        var escaping = false
+        for character in pattern.lowercased() {
+            if escaping {
+                tokens.append((character, false))
+                escaping = false
+            } else if character == "~" {
+                escaping = true
+            } else {
+                tokens.append((character, character == "*" || character == "?"))
             }
         }
-        return .text(pieces.joined(separator: delimiter))
-    }
+        if escaping { tokens.append(("~", false)) }
 
-    // MARK: - Logic
-
-    /// `SWITCH(expression, value1, result1, …, [default])`.
-    private static func switchCase(_ call: CallFrame) -> FormulaValue {
-        guard call.count >= 3 else { return .failure(.valueError) }
-        let subject = call.scalar(0)
-        if let error = subject.errorValue { return .failure(error) }
-
-        var index = 1
-        while index + 1 < call.count {
-            if let error = call.scalar(index).errorValue { return .failure(error) }
-            if sameValue(call.scalar(index), subject) { return call.value(index + 1) }
-            index += 2
-        }
-        // A leftover trailing argument is the default result.
-        let hasDefault = (call.count - 1) % 2 == 1
-        return hasDefault ? call.value(call.count - 1) : .failure(.notAvailable)
-    }
-
-    // MARK: - Lookup
-
-    /// Equality as the exact-match lookups define it: text comparison, ignoring case.
-    private static func sameValue(_ lhs: CellValue, _ rhs: CellValue) -> Bool {
-        lhs.stringValue.compare(rhs.stringValue, options: .caseInsensitive) == .orderedSame
-    }
-
-    /// `XLOOKUP(lookup_value, lookup_array, return_array, [if_not_found], [match_mode])`.
-    /// Only exact matching (mode 0) is supported; other modes report `#VALUE!`
-    /// rather than quietly returning a neighbouring row.
-    private static func crossLookup(_ call: CallFrame) -> FormulaValue {
-        guard call.count >= 3 else { return .failure(.valueError) }
-        guard call.count < 5 || Int(call.number(4) ?? 0) == 0 else { return .failure(.valueError) }
-
-        let needle = call.scalar(0)
-        if let error = needle.errorValue { return .failure(error) }
-        let keys = call.value(1).flattened
-        let results = call.value(2).flattened
-        guard keys.count == results.count else { return .failure(.valueError) }
-
-        for (position, candidate) in keys.enumerated() where sameValue(candidate, needle) {
-            return .scalar(results[position])
-        }
-        return call.count >= 4 ? call.value(3) : .failure(.notAvailable)
-    }
-
-    private static func match(_ call: CallFrame) -> FormulaValue {
-        guard call.count >= 2 else { return .failure(.valueError) }
-        let needle = call.scalar(0)
-        let haystack = call.value(1).flattened
-        let mode = call.count >= 3 ? Int(call.number(2) ?? 1) : 1
-
-        if mode == 0 {
-            for (position, candidate) in haystack.enumerated()
-            where candidate.stringValue.compare(needle.stringValue, options: .caseInsensitive) == .orderedSame {
-                return .number(Double(position + 1))
+        // Greedy matching that backtracks to the last `*`.
+        var t = 0
+        var p = 0
+        var star: Int?
+        var mark = 0
+        while t < candidate.count {
+            if p < tokens.count, tokens[p].isWildcard, tokens[p].character == "*" {
+                star = p
+                mark = t
+                p += 1
+            } else if p < tokens.count,
+                      (tokens[p].isWildcard && tokens[p].character == "?") || tokens[p].character == candidate[t] {
+                t += 1
+                p += 1
+            } else if let star {
+                p = star + 1
+                mark += 1
+                t = mark
+            } else {
+                return false
             }
-            return .failure(.notAvailable)
         }
-
-        guard let target = needle.numericValue else { return .failure(.notAvailable) }
-        var best: Int?
-        for (position, candidate) in haystack.enumerated() {
-            guard let value = candidate.numericValue else { continue }
-            if mode > 0, value <= target { best = position }
-            if mode < 0, value >= target { best = position }
-        }
-        guard let best else { return .failure(.notAvailable) }
-        return .number(Double(best + 1))
+        while p < tokens.count, tokens[p].isWildcard, tokens[p].character == "*" { p += 1 }
+        return p == tokens.count
     }
 
-    private static func lookup(_ call: CallFrame) -> FormulaValue {
-        guard call.count >= 3, case .matrix(let rows) = call.value(1) else { return .failure(.valueError) }
-        let needle = call.scalar(0)
-        let offset = Int(call.number(2) ?? 1)
-        let approximate = call.count >= 4 ? call.boolean(3) : true
-        let isVertical = call.name == "VLOOKUP"
-
-        // Normalize so the search always runs down `keys`.
-        let keys: [CellValue] = isVertical ? rows.map { $0.first ?? .empty } : (rows.first ?? [])
-        guard offset >= 1 else { return .failure(.valueError) }
-
-        func result(at position: Int) -> FormulaValue {
-            if isVertical {
-                guard position < rows.count, offset <= rows[position].count else { return .failure(.referenceError) }
-                return .scalar(rows[position][offset - 1])
-            }
-            guard offset <= rows.count, position < rows[offset - 1].count else { return .failure(.referenceError) }
-            return .scalar(rows[offset - 1][position])
-        }
-
-        if !approximate {
-            for (position, candidate) in keys.enumerated()
-            where candidate.stringValue.compare(needle.stringValue, options: .caseInsensitive) == .orderedSame {
-                return result(at: position)
-            }
-            return .failure(.notAvailable)
-        }
-
-        guard let target = needle.numericValue else {
-            for (position, candidate) in keys.enumerated()
-            where candidate.stringValue.compare(needle.stringValue, options: .caseInsensitive) == .orderedSame {
-                return result(at: position)
-            }
-            return .failure(.notAvailable)
-        }
-        var best: Int?
-        for (position, candidate) in keys.enumerated() {
-            guard let value = candidate.numericValue else { continue }
-            if value <= target { best = position } else { break }
-        }
-        guard let best else { return .failure(.notAvailable) }
-        return result(at: best)
+    /// Whether a pattern uses any wildcard at all.
+    static func hasWildcards(_ pattern: String) -> Bool {
+        pattern.contains("*") || pattern.contains("?") || pattern.contains("~")
     }
 }

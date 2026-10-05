@@ -124,16 +124,30 @@ struct CrossLookupTests {
         #expect(functionNumber(workbook, "E3") == 0)
     }
 
-    @Test("Bad arity, mismatched arrays and unsupported modes give #VALUE!")
+    @Test("Bad arity, mismatched arrays and unknown modes give #VALUE!")
     func lookupErrors() {
         let workbook = makeSampleWorkbook([
             "E1": "=XLOOKUP(\"apple\",A1:A5)",
             "E2": "=XLOOKUP(\"apple\",A1:A5,B1:B4)",
-            "E3": "=XLOOKUP(\"apple\",A1:A5,B1:B5,\"none\",2)",
+            "E3": "=XLOOKUP(\"apple\",A1:A5,B1:B5,\"none\",5)",
         ])
         for reference in ["E1", "E2", "E3"] {
             #expect(functionValue(workbook, reference).errorValue == .valueError)
         }
+    }
+
+    @Test("Wildcard and nearest-value match modes")
+    func matchModes() {
+        let workbook = makeSampleWorkbook([
+            "E1": "=XLOOKUP(\"ch*\",A1:A5,B1:B5,\"none\",2)",
+            "E2": "=XLOOKUP(25,B1:B5,A1:A5,,-1)",
+            "E3": "=XLOOKUP(25,B1:B5,A1:A5,,1)",
+            "E4": "=XLOOKUP(\"apple\",A1:A5,B1:B5,,0,-1)",
+        ])
+        #expect(functionNumber(workbook, "E1") == 40)
+        #expect(functionValue(workbook, "E2") == .text("banana"))
+        #expect(functionValue(workbook, "E3") == .text("apple"))
+        #expect(functionNumber(workbook, "E4") == 30)
     }
 }
 

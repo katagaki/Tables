@@ -99,6 +99,43 @@ final class CalculationEngine: FormulaContext {
         }
     }
 
+    func definedNameReference(_ name: String, sheetName: String?) -> FormulaReference? {
+        guard let scopeIndex = resolveSheetIndex(sheetName) else { return nil }
+        let scopeID = workbook.sheets[scopeIndex].id
+        guard let definition = workbook.definedName(name, visibleFrom: scopeID),
+              case .success(let node) = parsed(definition.formula) else { return nil }
+        let key = Key.definedName(name.lowercased(), scope: definition.scope)
+        guard !evaluating.contains(key) else { return nil }
+        evaluating.insert(key)
+        defer { evaluating.remove(key) }
+
+        let previousSheet = activeSheetIndex
+        activeSheetIndex = definition.scope.flatMap { workbook.index(of: $0) } ?? scopeIndex
+        defer { activeSheetIndex = previousSheet }
+        guard var reference = FormulaEvaluator(context: self).reference(node) else { return nil }
+        // Pin the sheet, so the reference still means the same cells once it
+        // is read from wherever the name was used.
+        if reference.sheet == nil { reference.sheet = workbook.sheets[activeSheetIndex].name }
+        return reference
+    }
+
+    func cell(at address: CellAddress, sheetName: String?) -> Cell? {
+        guard let index = resolveSheetIndex(sheetName) else { return nil }
+        let sheet = workbook.sheets[index]
+        return sheet.contains(address) ? sheet[address] : Cell()
+    }
+
+    func isRowHidden(_ row: Int, sheetName: String?) -> Bool {
+        guard let index = resolveSheetIndex(sheetName) else { return false }
+        return workbook.sheets[index].hiddenRows.contains(row)
+    }
+
+    func sheetNumber(named name: String?) -> Int? {
+        resolveSheetIndex(name).map { $0 + 1 }
+    }
+
+    var sheetCount: Int { workbook.sheets.count }
+
     func sheetNames(from first: String, to last: String) -> [String]? {
         guard let start = sheetIndicesByName[first.lowercased()],
               let end = sheetIndicesByName[last.lowercased()] else { return nil }
