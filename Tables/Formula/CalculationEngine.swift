@@ -417,14 +417,20 @@ final class CalculationEngine: FormulaContext {
         return result
     }
 
-    /// For a formula calling something Tables cannot calculate — a web or
-    /// cube function, an add-in, or one newer than this version — the result
+    /// For a formula Tables cannot calculate — one calling a web or cube
+    /// function, an add-in or something newer than this version, or one it
+    /// cannot read at all — the result
     /// the file was saved with, spill and all. Without one there is nothing
     /// better than `#NAME?`, which is what evaluating it gives.
     private func savedResult(sheetIndex: Int, address: CellAddress, formula: String) -> FormulaValue? {
         let sheet = workbook.sheets[sheetIndex]
-        guard let cell = sheet.cells[address], !cell.value.isEmpty, cell.value != .error(.nameError),
-              case .success(let node) = parsed(formula), callsUnknownFunction(formula, node) else { return nil }
+        guard let cell = sheet.cells[address], !cell.value.isEmpty, cell.value != .error(.nameError) else { return nil }
+        // A formula Tables cannot read, such as a link into another workbook,
+        // keeps its result just as one calling an unknown function does.
+        switch parsed(formula) {
+        case .failure: break
+        case .success(let node): guard callsUnknownFunction(formula, node) else { return nil }
+        }
         let block: CellRange?
         if let extent = cell.arrayExtent {
             block = CellRange(start: address, end: CellAddress(row: address.row + extent.rows - 1,
