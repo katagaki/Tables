@@ -94,3 +94,48 @@ struct CommentFileTests {
         #expect(written.contains("data=\"1,5\""))
     }
 }
+
+@Suite("Comment editing")
+@MainActor
+struct CommentEditingTests {
+    private func setUp() -> (EditorState, Workbook) {
+        let workbook = Workbook(sheets: [Worksheet(name: "Sheet1")])
+        let state = EditorState()
+        state.activeSheetID = workbook.sheets[0].id
+        UserDefaults.standard.set("Kim", forKey: EditorState.commentAuthorKey)
+        return (state, workbook)
+    }
+
+    @Test("Starting, answering, resolving and deleting a conversation")
+    func thread() {
+        var (state, workbook) = setUp()
+        let b2 = CellAddress(a1: "B2")!
+        state.addComment("  Is this right?  ", kind: .thread, at: b2, in: &workbook)
+        state.reply("Yes.", at: b2, in: &workbook)
+        state.reply("   ", at: b2, in: &workbook)
+        var thread = workbook.sheets[0].comments[b2]
+        #expect(thread?.entries.map(\.text) == ["Is this right?", "Yes."])
+        #expect(thread?.entries.first?.author == "Kim")
+        state.setResolved(true, at: b2, in: &workbook)
+        thread = workbook.sheets[0].comments[b2]
+        #expect(thread?.isResolved == true)
+        state.deleteComment(at: b2, in: &workbook)
+        #expect(workbook.sheets[0].comments.isEmpty)
+    }
+
+    @Test("Notes are edited in place and cleared with the selection")
+    func note() {
+        var (state, workbook) = setUp()
+        let a1 = CellAddress(a1: "A1")!
+        state.addComment("Draft", kind: .note, at: a1, in: &workbook)
+        state.updateNote("Final", at: a1, in: &workbook)
+        state.setNoteAlwaysVisible(true, at: a1, in: &workbook)
+        #expect(workbook.sheets[0].comments[a1]?.text == "Final")
+        #expect(workbook.sheets[0].comments[a1]?.isAlwaysVisible == true)
+        state.reply("Not for notes", at: a1, in: &workbook)
+        #expect(workbook.sheets[0].comments[a1]?.entries.count == 1)
+        state.select(a1)
+        state.deleteComments(in: &workbook)
+        #expect(workbook.sheets[0].comments.isEmpty)
+    }
+}

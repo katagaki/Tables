@@ -41,6 +41,16 @@ struct TileContents: Equatable, Sendable {
     /// Cells whose trailing edge spilled text runs across, which draw no
     /// gridline there — Excel's text reads as one run, not as boxes.
     var overflowEdges: Set<CellAddress> = []
+    /// The corner markers of commented cells.
+    var comments: [CommentMark] = []
+}
+
+/// The small triangle in the top-right corner of a commented cell.
+struct CommentMark: Equatable, Sendable {
+    var address: CellAddress
+    var frame: CGRect
+    var kind: CellComment.Kind
+    var isResolved: Bool
 }
 
 /// A rectangular block of the grid, drawn as a single `Canvas`.
@@ -111,6 +121,7 @@ struct GridTileView: View, Equatable {
         let painted = Dictionary(
             contents.cells.map { ($0.address, $0.cell) }, uniquingKeysWith: { first, _ in first }
         )
+        let commented = Set(contents.comments.map(\.address))
 
         return ZStack(alignment: .topLeading) {
             ForEach(rows, id: \.self) { row in
@@ -121,19 +132,21 @@ struct GridTileView: View, Equatable {
                             element(
                                 in: metrics.frame(for: address),
                                 at: address,
-                                cell: painted[address] ?? Cell()
+                                cell: painted[address] ?? Cell(),
+                                hasComment: commented.contains(address)
                             )
                         }
                     }
                 }
             }
             ForEach(contents.merges.filter(\.ownsElement), id: \.range) { merge in
-                element(in: merge.frame, at: merge.range.start, cell: merge.cell)
+                element(in: merge.frame, at: merge.range.start, cell: merge.cell,
+                        hasComment: commented.contains(merge.range.start))
             }
         }
     }
 
-    private func element(in frame: CGRect, at address: CellAddress, cell: Cell) -> some View {
+    private func element(in frame: CGRect, at address: CellAddress, cell: Cell, hasComment: Bool) -> some View {
         Color.clear
             .frame(width: frame.width, height: frame.height)
             .offset(x: frame.minX - origin.x, y: frame.minY - origin.y)
@@ -141,7 +154,9 @@ struct GridTileView: View, Equatable {
             // unit instead of losing the cell inside the scroll view's contents.
             .accessibilityElement(children: .ignore)
             .accessibilityIdentifier("cell.\(address.a1)")
-            .accessibilityLabel(Self.description(of: cell, at: address))
+            .accessibilityLabel(hasComment
+                ? String(format: Self.commentedLabelFormat, Self.description(of: cell, at: address))
+                : Self.description(of: cell, at: address))
             .accessibilityAddTraits(.isButton)
             .accessibilityRespondsToUserInteraction(true)
     }
@@ -150,6 +165,7 @@ struct GridTileView: View, Equatable {
     /// lookup apiece is a few hundred of them for a string that never changes.
     private static let emptyCellLabelFormat = String(localized: "Grid.Cell.Accessibility.Empty")
     private static let cellLabelFormat = String(localized: "Grid.Cell.Accessibility.Value")
+    private static let commentedLabelFormat = String(localized: "Grid.Cell.Accessibility.Commented")
 
     /// "B4, 2180.5" — the reference followed by whatever the cell shows.
     private static func description(of cell: Cell, at address: CellAddress) -> String {
@@ -199,6 +215,28 @@ enum CellPainter {
         for merge in contents.merges {
             paint(merge.cell, in: merge.frame, zoom: metrics.zoom, scheme: scheme, into: &context)
         }
+        for mark in contents.comments {
+            paintCommentMark(mark, zoom: metrics.zoom, into: &context)
+        }
+    }
+
+    /// Notes are marked red and conversations purple, as Excel marks them;
+    /// a resolved conversation fades to grey.
+    private static func paintCommentMark(_ mark: CommentMark, zoom: Double, into context: inout GraphicsContext) {
+        let size = min(7 * zoom, mark.frame.width / 2, mark.frame.height / 2)
+        guard size > 0 else { return }
+        var triangle = Path()
+        triangle.move(to: CGPoint(x: mark.frame.maxX - size, y: mark.frame.minY))
+        triangle.addLine(to: CGPoint(x: mark.frame.maxX, y: mark.frame.minY))
+        triangle.addLine(to: CGPoint(x: mark.frame.maxX, y: mark.frame.minY + size))
+        triangle.closeSubpath()
+        let color: Color
+        switch (mark.kind, mark.isResolved) {
+        case (.note, _): color = Color(red: 0.86, green: 0.15, blue: 0.15)
+        case (.thread, false): color = Color(red: 0.44, green: 0.19, blue: 0.63)
+        case (.thread, true): color = .gray
+        }
+        context.fill(triangle, with: .color(color))
     }
 
     /// The separators of every cell with nothing else to draw, as one stroke.
