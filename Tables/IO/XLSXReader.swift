@@ -606,6 +606,32 @@ enum XLSXReader {
         /// tables pointing at a cache the workbook no longer declares.
         static let pivotPathPrefixes = ["xl/pivotCache", "xl/pivotTables"]
 
+        /// Slicers and timelines, excluded for the same reason as PivotTables:
+        /// their caches are declared in `xl/workbook.xml`'s extensions.
+        static let slicerPathPrefixes = ["xl/slicers/", "xl/slicerCaches/", "xl/timelines/", "xl/timelineCaches/"]
+
+        /// Sheet relationships to parts that are never kept, and that nothing
+        /// we write back into the sheet names: a PivotTable hangs off its
+        /// sheet's `_rels` alone, and the `extLst` entry naming a slicer or a
+        /// timeline is dropped with it. Leaving these out is what lets the
+        /// rest of the sheet's relationships — its tables, hyperlinks,
+        /// comments — be kept rather than lost with them.
+        static let droppedSheetRelationshipTypes: Set<String> = [
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable",
+            "http://schemas.microsoft.com/office/2007/relationships/slicer",
+            "http://schemas.microsoft.com/office/2011/relationships/timeline",
+        ]
+
+        /// A `_rels` part without the relationships of `types`.
+        static func removingRelationships(ofTypes types: Set<String>, from payload: Data) -> Data {
+            guard let root = try? XMLLite.parse(payload) else { return payload }
+            let dropped = root.children(named: "Relationship").filter { types.contains($0.attribute("Type") ?? "") }
+            guard !dropped.isEmpty else { return payload }
+            dropped.forEach(root.removeChild)
+            guard let xml = XMLLite.serialize(root) else { return payload }
+            return Data(("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n" + xml).utf8)
+        }
+
         /// `takenOver` names parts the model now holds — drawings and the
         /// charts read out of them — which count as generated, so whatever
         /// points at them stays valid. `extraRoots` are parts that something
@@ -654,7 +680,8 @@ enum XLSXReader {
             var sheetRelationshipParts: [Worksheet.ID: Data] = [:]
             for (index, sheet) in sheets.enumerated() {
                 let path = relationshipsPath(for: sheetPaths[index])
-                guard let payload = entries[path] else { continue }
+                guard let original = entries[path] else { continue }
+                let payload = removingRelationships(ofTypes: droppedSheetRelationshipTypes, from: original)
                 let targets = relationships(in: payload).compactMap {
                     packagePath(of: $0, relativeTo: directory(of: sheetPaths[index]))
                 }
@@ -715,6 +742,7 @@ enum XLSXReader {
                 $0.hasPrefix("xl/charts/") || $0.hasPrefix("xl/media/") || $0.hasPrefix("xl/drawings/drawing")
             }
             note(.pivotTables) { path in pivotPathPrefixes.contains(where: path.hasPrefix) }
+            note(.slicers) { path in slicerPathPrefixes.contains(where: path.hasPrefix) }
             note(.documentProperties) { $0.hasPrefix("docProps/") }
         }
 

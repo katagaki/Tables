@@ -398,6 +398,54 @@ struct UnsupportedFeatureTests {
         #expect(workbook.unsupportedFeatures.preserved.contains(.sparklines))
     }
 
+    @Test("A sheet with a PivotTable or a slicer keeps its hyperlinks; the slicer is reported lost")
+    func pivotAndSlicerRelationshipsDoNotTakeTheSheetsWithThem() throws {
+        let slicer = Part(
+            "xl/slicers/slicer1.xml",
+            "<?xml version=\"1.0\"?><slicers xmlns=\"http://schemas.microsoft.com/office/spreadsheetml/2009/9/main\"/>",
+            contentType: "application/vnd.ms-excel.slicer+xml"
+        )
+        let pivot = Part(
+            "xl/pivotTables/pivotTable1.xml",
+            "<?xml version=\"1.0\"?><pivotTableDefinition xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"/>",
+            contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.pivotTable+xml"
+        )
+        let body = """
+        <hyperlinks><hyperlink ref="A1" r:id="rId1"/></hyperlinks>\
+        <extLst><ext uri="{A8765BA9-456A-4dab-B4F3-ACF838C121DE}" \
+        xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">\
+        <x14:slicerList><x14:slicer r:id="rId3"/></x14:slicerList></ext></extLst>
+        """
+        let data = try package(
+            sheets: [body],
+            extraParts: [slicer, pivot],
+            sheetRelationships: [
+                0: "<Relationship Id=\"rId1\" "
+                    + "Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" "
+                    + "Target=\"https://example.com\" TargetMode=\"External\"/>"
+                    + "<Relationship Id=\"rId2\" "
+                    + "Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable\" "
+                    + "Target=\"../pivotTables/pivotTable1.xml\"/>"
+                    + "<Relationship Id=\"rId3\" "
+                    + "Type=\"http://schemas.microsoft.com/office/2007/relationships/slicer\" "
+                    + "Target=\"../slicers/slicer1.xml\"/>",
+            ]
+        )
+        let (workbook, entries) = try roundTrip(data)
+        let sheet = try text(entries, "xl/worksheets/sheet1.xml")
+        #expect(sheet.contains("<hyperlinks") && sheet.contains("r:id=\"rId1\" ref=\"A1\""), "\(sheet)")
+        #expect(!sheet.contains("slicer"))
+        let relationships = try text(entries, "xl/worksheets/_rels/sheet1.xml.rels")
+        #expect(relationships.contains("https://example.com"))
+        #expect(!relationships.contains("pivotTable") && !relationships.contains("slicer"))
+        #expect(entries["xl/slicers/slicer1.xml"] == nil)
+
+        let report = workbook.unsupportedFeatures
+        #expect(report.preserved.contains(.hyperlinks))
+        #expect(report.lost.contains(.slicers))
+        #expect(report.lost.contains(.pivotTables))
+    }
+
     // MARK: - Reporting
 
     @Test("The report names what is kept and what is not, and nothing else")

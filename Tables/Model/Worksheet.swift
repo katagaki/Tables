@@ -257,7 +257,7 @@ struct Worksheet: Identifiable, Hashable, Sendable {
         rowHeights = Self.shift(rowHeights, from: index, by: count)
         hiddenRows = Self.shift(hiddenRows, from: index, by: count)
         remapMerges(along: \.row) { Self.span($0, insertingAt: index, count: count) }
-        moveCharts(.insert(index: index, count: count), axis: .row)
+        moveDrawings(.insert(index: index, count: count), axis: .row)
         rowCount += count
     }
 
@@ -269,7 +269,7 @@ struct Worksheet: Identifiable, Hashable, Sendable {
         columnWidths = Self.shift(columnWidths, from: index, by: count)
         hiddenColumns = Self.shift(hiddenColumns, from: index, by: count)
         remapMerges(along: \.column) { Self.span($0, insertingAt: index, count: count) }
-        moveCharts(.insert(index: index, count: count), axis: .column)
+        moveDrawings(.insert(index: index, count: count), axis: .column)
         columnCount += count
     }
 
@@ -282,7 +282,7 @@ struct Worksheet: Identifiable, Hashable, Sendable {
         rowHeights = Self.shift(rowHeights.filter { !range.contains($0.key) }, from: range.upperBound + 1, by: -count)
         hiddenRows = Self.shift(hiddenRows.filter { !range.contains($0) }, from: range.upperBound + 1, by: -count)
         remapMerges(along: \.row) { Self.span($0, removing: range) }
-        moveCharts(.remove(range: range), axis: .row)
+        moveDrawings(.remove(range: range), axis: .row)
         rowCount -= count
     }
 
@@ -295,7 +295,7 @@ struct Worksheet: Identifiable, Hashable, Sendable {
         columnWidths = Self.shift(columnWidths.filter { !range.contains($0.key) }, from: range.upperBound + 1, by: -count)
         hiddenColumns = Self.shift(hiddenColumns.filter { !range.contains($0) }, from: range.upperBound + 1, by: -count)
         remapMerges(along: \.column) { Self.span($0, removing: range) }
-        moveCharts(.remove(range: range), axis: .column)
+        moveDrawings(.remove(range: range), axis: .column)
         columnCount -= count
     }
 
@@ -360,12 +360,15 @@ struct Worksheet: Identifiable, Hashable, Sendable {
     /// Carries the charts floating over the sheet with the cells beneath them.
     /// What they read from is the workbook's business, since a chart can
     /// read from any sheet.
-    private mutating func moveCharts(
+    private mutating func moveDrawings(
         _ operation: FormulaReferenceShifter.Operation, axis: FormulaReferenceShifter.Axis
     ) {
         guard !isChartSheet else { return }
         for index in charts.indices {
             charts[index].placement = charts[index].placement.shifted(operation, axis: axis)
+        }
+        for index in preservedDrawingAnchors.indices {
+            preservedDrawingAnchors[index].shift(operation, axis: axis)
         }
     }
 

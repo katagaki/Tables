@@ -309,9 +309,37 @@ extension Chart {
 }
 
 extension ChartPlacement {
-    /// Moves the chart with the cells under it. A chart whose cells are all
+    /// Moves the chart with the cells under it, as its `editAs` says Excel
+    /// should: stretching with them by default, moving as a block for
+    /// `oneCell`, staying put for `absolute`. A chart whose cells are all
     /// removed collapses onto the line where they were, as Excel's does.
     func shifted(_ operation: FormulaReferenceShifter.Operation, axis: FormulaReferenceShifter.Axis) -> ChartPlacement {
+        switch editAs {
+        case "absolute": return self
+        case "oneCell": return movedAsBlock(operation, axis: axis)
+        default: return stretched(operation, axis: axis)
+        }
+    }
+
+    /// Both corners move by however far the top-left one does.
+    private func movedAsBlock(
+        _ operation: FormulaReferenceShifter.Operation, axis: FormulaReferenceShifter.Axis
+    ) -> ChartPlacement {
+        let line: WritableKeyPath<ChartAnchor, Int> = axis == .row ? \.row : \.column
+        var corner = self
+        corner.to = corner.from
+        corner.editAs = nil
+        let moved = corner.stretched(operation, axis: axis)
+        var result = self
+        let distance = moved.from[keyPath: line] - from[keyPath: line]
+        result.from = moved.from
+        result.to[keyPath: line] = max(result.from[keyPath: line], to[keyPath: line] + distance)
+        return result
+    }
+
+    private func stretched(
+        _ operation: FormulaReferenceShifter.Operation, axis: FormulaReferenceShifter.Axis
+    ) -> ChartPlacement {
         var result = self
         let line: WritableKeyPath<ChartAnchor, Int> = axis == .row ? \.row : \.column
         let offset: WritableKeyPath<ChartAnchor, Double> = axis == .row ? \.rowOffset : \.columnOffset
@@ -339,6 +367,41 @@ extension ChartPlacement {
             break
         }
         return result
+    }
+}
+
+extension PreservedDrawingAnchor {
+    /// Moves a picture, shape or unmodelled chart with the cells under it.
+    ///
+    /// Only the anchor's cell markers are rewritten — and of those, only the
+    /// lines and offsets that actually moved — so the rest of the fragment is
+    /// written back exactly as it came. A one-cell anchor moves as a block,
+    /// keeping its size; an absolute one stays where it is.
+    mutating func shift(_ operation: FormulaReferenceShifter.Operation, axis: FormulaReferenceShifter.Axis) {
+        guard var placement, let root = try? XMLLite.parse(Data(xml.utf8)) else { return }
+        switch root.name {
+        case "twoCellAnchor": break
+        case "oneCellAnchor": placement.editAs = "oneCell"
+        default: return
+        }
+        var moved = placement.shifted(operation, axis: axis)
+        guard moved.from != placement.from || moved.to != placement.to else { return }
+
+        let emusPerPoint = 12_700.0
+        for (name, before, after) in [("from", placement.from, moved.from), ("to", placement.to, moved.to)] {
+            guard let marker = root.firstChild(named: name) else { continue }
+            func set(_ child: String, _ value: String) { marker.firstChild(named: child)?.setText(value) }
+            if after.row != before.row { set("row", String(after.row)) }
+            if after.column != before.column { set("col", String(after.column)) }
+            if after.rowOffset != before.rowOffset { set("rowOff", String(Int((after.rowOffset * emusPerPoint).rounded()))) }
+            if after.columnOffset != before.columnOffset {
+                set("colOff", String(Int((after.columnOffset * emusPerPoint).rounded())))
+            }
+        }
+        guard let rewritten = XMLLite.serialize(root) else { return }
+        xml = rewritten
+        moved.editAs = self.placement?.editAs
+        self.placement = moved
     }
 }
 

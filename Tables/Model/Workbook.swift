@@ -42,6 +42,7 @@ enum UnsupportedFeature: String, CaseIterable, Hashable, Sendable, Comparable {
     case chartsAndImages
     case sparklines
     case pivotTables
+    case slicers
     case documentProperties
 
     var label: String {
@@ -58,6 +59,7 @@ enum UnsupportedFeature: String, CaseIterable, Hashable, Sendable, Comparable {
         case .chartsAndImages: return String(localized: "UnsupportedFeature.ChartsAndImages")
         case .sparklines: return String(localized: "UnsupportedFeature.Sparklines")
         case .pivotTables: return String(localized: "UnsupportedFeature.PivotTables")
+        case .slicers: return String(localized: "UnsupportedFeature.Slicers")
         case .documentProperties: return String(localized: "UnsupportedFeature.DocumentProperties")
         }
     }

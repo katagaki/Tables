@@ -1005,4 +1005,67 @@ struct ChartTests {
         try expectConsistentPackage(entries)
         #expect(reopened.sheets[0].preservedDrawingAnchors.count == 1)
     }
+
+    // MARK: - Kept anchors
+
+    @Test("Pictures and charts kept whole move with rows, as their anchoring says")
+    func keptAnchorsFollowRows() throws {
+        let oneCell = Self.anchor(id: 3, relationship: "rId3D", from: (4, 16), to: (10, 30))
+        let twoCell = oneCell.replacingOccurrences(of: " editAs=\"oneCell\"", with: "")
+            .replacingOccurrences(of: "id=\"3\" name=\"Chart 3\"", with: "id=\"4\" name=\"Chart 4\"")
+        let absolute = oneCell.replacingOccurrences(of: "editAs=\"oneCell\"", with: "editAs=\"absolute\"")
+            .replacingOccurrences(of: "id=\"3\" name=\"Chart 3\"", with: "id=\"5\" name=\"Chart 5\"")
+        let data = try package(
+            anchors: oneCell + twoCell + absolute + Self.pictureAnchor,
+            drawingRelationships: chartRelationship("rId3D", "../charts/chart2.xml")
+                + "<Relationship Id=\"rIdImage\" Type=\"\(Self.relationships)/image\" Target=\"../media/image1.png\"/>",
+            extraParts: [
+                ("xl/charts/chart2.xml", Self.unsupportedChart, Self.chartType),
+                ("xl/media/image1.png", "PNGDATA", nil),
+            ]
+        )
+        var workbook = try XLSXReader.workbook(from: data)
+        #expect(workbook.sheets[0].preservedDrawingAnchors.count == 4)
+
+        /// Each anchor's first and last row, as its XML now says.
+        func rows(_ workbook: Workbook) throws -> [[Int]] {
+            try workbook.sheets[0].preservedDrawingAnchors.map { anchor in
+                let root = try XMLLite.parse(Data(anchor.xml.utf8))
+                return ["from", "to"].compactMap { root.firstDescendant(atPath: "\($0)/row").flatMap { Int($0.text) } }
+            }
+        }
+        #expect(try rows(workbook) == [[16, 30], [16, 30], [16, 30], [1]])
+
+        // Inside the charts: the default anchor stretches, "oneCell" keeps its
+        // size, "absolute" does not move, and the picture above is untouched.
+        workbook.sheets[0].insertRows(3, at: 20)
+        #expect(try rows(workbook) == [[16, 30], [16, 33], [16, 30], [1]])
+        // Above everything: all but the absolute one move down.
+        workbook.sheets[0].insertRows(2, at: 0)
+        #expect(try rows(workbook) == [[18, 32], [18, 35], [16, 30], [3]])
+        #expect(workbook.sheets[0].preservedDrawingAnchors[3].placement?.from.row == 3)
+        workbook.sheets[0].removeRows(0...1)
+        #expect(try rows(workbook) == [[16, 30], [16, 33], [16, 30], [1]])
+
+        // Written out, the moved markers are what Excel reads; nothing else in
+        // the fragments changed.
+        let written = try ZipArchive.entries(in: XLSXWriter.data(from: workbook))
+        try expectConsistentPackage(written)
+        let reread = try XLSXReader.workbook(from: XLSXWriter.data(from: workbook))
+        #expect(try rows(reread) == [[16, 30], [16, 33], [16, 30], [1]])
+        #expect(try text(written, "xl/drawings/drawing1.xml").contains("r:embed=\"rIdImage\""))
+    }
+
+    @Test("A chart anchored absolutely stays put; one moving as a block keeps its size")
+    func chartAnchoringIsHonoured() throws {
+        var placement = ChartPlacement(
+            from: ChartAnchor(row: 4, column: 1), to: ChartAnchor(row: 10, column: 5), editAs: "absolute"
+        )
+        #expect(placement.shifted(.insert(index: 0, count: 3), axis: .row) == placement)
+        placement.editAs = "oneCell"
+        let moved = placement.shifted(.insert(index: 0, count: 3), axis: .row)
+        #expect(moved.from.row == 7 && moved.to.row == 13)
+        let inside = placement.shifted(.insert(index: 6, count: 3), axis: .row)
+        #expect(inside.from.row == 4 && inside.to.row == 10)
+    }
 }

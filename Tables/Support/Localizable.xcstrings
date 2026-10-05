@@ -9524,6 +9524,41 @@
         }
       }
     },
+    "UnsupportedFeature.Slicers" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Slicers and timelines"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スライサーとタイムライン"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "슬라이서 및 시간 표시 막대"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切片器和日程表"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "交叉分析篩選器和時間表"
+          }
+        }
+      }
+    },
     "UnsupportedFeature.Sparklines" : {
       "extractionState" : "manual",
       "localizations" : {
