@@ -569,3 +569,105 @@ struct InformationFunctionTests {
         #expect(evaluate("=INFO(\"recalc\")") == .text("Automatic"))
     }
 }
+
+@Suite("Financial")
+struct FinancialFunctionTests {
+    private func check(_ formula: String, _ expected: Double, _ tolerance: Double = 1e-6) {
+        let value = evaluate(formula)
+        #expect(close(value, expected, tolerance: tolerance), "\(formula) gave \(value)")
+    }
+
+    @Test("Loans and annuities")
+    func annuities() {
+        check("=PMT(0.08/12,10,10000)", -1037.032089)
+        check("=FV(0.06/12,10,-200,-500,1)", 2581.403374)
+        check("=PV(0.08/12,12*20,500,,0)", -59777.14585)
+        check("=NPER(0.12/12,-100,-1000,10000,1)", 59.6738657)
+        check("=RATE(4*12,-200,8000)", 0.007701472)
+        check("=IPMT(0.1/12,1,3*12,8000)", -66.66666667)
+        check("=IPMT(0.1,3,3,8000)", -292.4471299)
+        check("=PPMT(0.1/12,1,2*12,2000)", -75.62318601)
+        check("=CUMIPMT(0.09/12,30*12,125000,13,24,0)", -11135.23213)
+        check("=CUMPRINC(0.09/12,30*12,125000,13,24,0)", -934.1071234)
+        check("=ISPMT(0.1/12,1,3*12,8000000)", -64814.81481)
+        check("=EFFECT(0.0525,4)", 0.053542667)
+        check("=NOMINAL(0.053543,4)", 0.05250032, 1e-7)
+        check("=PDURATION(0.025,2000,2200)", 3.859866163)
+        check("=RRI(96,10000,11000)", 0.000992824)
+        check("=FVSCHEDULE(1,{0.09,0.11,0.1})", 1.33089)
+        check("=DOLLARDE(1.02,16)", 1.125)
+        check("=DOLLARFR(1.125,16)", 1.02)
+    }
+
+    @Test("Cash flow returns")
+    func cashFlows() {
+        check("=NPV(0.1,-10000,3000,4200,6800)", 1188.443412)
+        check("=XNPV(0.09,{-10000,2750,4250,3250,2750},{39448,39508,39751,39859,39904})", 2086.647602)
+        check("=IRR({-70000,12000,15000,18000,21000,26000})", 0.086630948)
+        check("=IRR({-70000,12000,15000})", -0.443506941)
+        check("=XIRR({-10000,2750,4250,3250,2750},{39448,39508,39751,39859,39904})", 0.373362535)
+        check("=MIRR({-120000,39000,30000,21000,37000,46000},0.1,0.12)", 0.126094937)
+        #expect(evaluate("=IRR({1,2,3})") == .error(.numberError))
+    }
+
+    @Test("Depreciation")
+    func depreciation() {
+        check("=SLN(30000,7500,10)", 2250)
+        check("=SYD(30000,7500,10,1)", 4090.909091)
+        check("=DB(1000000,100000,6,1,7)", 186083.3333)
+        check("=DB(1000000,100000,6,2,7)", 259639.4167)
+        check("=DB(1000000,100000,6,7,7)", 15845.0984)
+        check("=DDB(2400,300,10*365,1)", 1.315068493)
+        check("=DDB(2400,300,10,1,2)", 480)
+        check("=DDB(2400,300,10,10)", 22.1225472)
+        check("=VDB(2400,300,10*365,0,1)", 1.315068493)
+        check("=VDB(2400,300,10*12,0,1)", 40)
+        check("=VDB(2400,300,10,0,1)", 480)
+        check("=VDB(2400,300,10*12,6,18)", 396.3060533)
+        check("=VDB(2400,300,10*12,6,18,1.5)", 311.8089366)
+        check("=VDB(2400,300,10,0,0.875,1.5)", 315)
+        check("=AMORLINC(2400,DATE(2008,8,19),DATE(2008,12,31),300,1,0.15,1)", 360)
+        check("=AMORDEGRC(2400,DATE(2008,8,19),DATE(2008,12,31),300,1,0.15,1)", 776)
+    }
+
+    @Test("Coupon schedules")
+    func coupons() {
+        let bond = "DATE(2011,1,25),DATE(2011,11,15),2,1"
+        check("=COUPDAYBS(\(bond))", 71)
+        check("=COUPDAYS(\(bond))", 181)
+        check("=COUPDAYSNC(\(bond))", 110)
+        check("=COUPNCD(\(bond))", 40678)
+        check("=COUPPCD(\(bond))", 40497)
+        check("=COUPNUM(\(bond))", 2)
+    }
+
+    @Test("Bond prices, yields and durations")
+    func bonds() {
+        check("=PRICE(DATE(2008,2,15),DATE(2017,11,15),0.0575,0.065,100,2,0)", 94.63436162)
+        check("=YIELD(DATE(2008,2,15),DATE(2016,11,15),0.0575,95.04287,100,2,0)", 0.065, 1e-6)
+        check("=DURATION(DATE(2008,1,1),DATE(2016,1,1),0.08,0.09,2,1)", 5.993774912)
+        check("=MDURATION(DATE(2008,1,1),DATE(2016,1,1),0.08,0.09,2,1)", 5.73566981)
+        check("=ACCRINT(DATE(2008,3,1),DATE(2008,8,31),DATE(2008,5,1),0.1,1000,2,0)", 16.66666667)
+        check("=ACCRINTM(DATE(2008,4,1),DATE(2008,6,15),0.1,1000,3)", 20.54794521)
+        check("=DISC(DATE(2018,7,1),DATE(2048,1,1),97.975,100,1)", 0.000686003, 1e-5)
+        check("=INTRATE(DATE(2008,2,15),DATE(2008,5,15),1000000,1014420,2)", 0.05768)
+        check("=RECEIVED(DATE(2008,2,15),DATE(2008,5,15),1000000,0.0575,2)", 1014584.654)
+        check("=PRICEDISC(DATE(2008,2,16),DATE(2008,3,1),0.0525,100,2)", 99.79583333)
+        check("=PRICEMAT(DATE(2008,2,15),DATE(2008,4,13),DATE(2007,11,11),0.061,0.061,0)", 99.98449888)
+        check("=YIELDDISC(DATE(2008,2,16),DATE(2008,3,1),99.795,100,2)", 0.052822572)
+        check("=YIELDMAT(DATE(2008,3,15),DATE(2008,11,3),DATE(2007,11,8),0.0625,100.0123,0)", 0.060954334)
+        check("=TBILLEQ(DATE(2008,3,31),DATE(2008,6,1),0.0914)", 0.094151494)
+        check("=TBILLPRICE(DATE(2008,3,31),DATE(2008,6,1),0.09)", 98.45)
+        check("=TBILLYIELD(DATE(2008,3,31),DATE(2008,6,1),98.45)", 0.091417)
+    }
+
+    @Test("Odd first and last periods")
+    func oddPeriods() {
+        check("=ODDLPRICE(DATE(2008,2,7),DATE(2008,6,15),DATE(2007,10,15),0.0375,0.0405,100,2,0)", 99.87828601)
+        check("=ODDLYIELD(DATE(2008,4,20),DATE(2008,6,15),DATE(2007,12,24),0.0375,99.875,100,2,0)", 0.045192, 1e-5)
+        check("=ODDFPRICE(DATE(2008,11,11),DATE(2021,3,1),DATE(2008,10,15),DATE(2009,3,1),0.0785,0.0625,100,2,1)",
+              113.5977, 1e-5)
+        check("=ODDFYIELD(DATE(2008,11,11),DATE(2021,3,1),DATE(2008,10,15),DATE(2009,3,1),0.0575,84.5,100,2,0)",
+              0.0772, 1e-3)
+    }
+}
