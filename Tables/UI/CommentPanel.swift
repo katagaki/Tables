@@ -68,6 +68,7 @@ struct CommentPanel: View {
                 draft = ""
             }
             .disabled(draft.trimmed.isEmpty)
+            .accessibilityIdentifier("comment.post")
         } header: {
             Text(String(format: String(localized: "Comment.Cell.Header"), address.a1))
         }
@@ -111,6 +112,7 @@ struct CommentPanel: View {
                         draft = ""
                     }
                     .disabled(draft.trimmed.isEmpty)
+                    .accessibilityIdentifier("comment.reply")
                 }
                 Button(thread.isResolved ? "Comment.Reopen" : "Comment.Resolve") {
                     state.setResolved(!thread.isResolved, at: address, in: &workbook)

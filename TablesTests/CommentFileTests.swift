@@ -109,6 +109,7 @@ struct CommentEditingTests {
     @Test("Starting, answering, resolving and deleting a conversation")
     func thread() {
         var (state, workbook) = setUp()
+        defer { UserDefaults.standard.removeObject(forKey: EditorState.commentAuthorKey) }
         let b2 = CellAddress(a1: "B2")!
         state.addComment("  Is this right?  ", kind: .thread, at: b2, in: &workbook)
         state.reply("Yes.", at: b2, in: &workbook)
@@ -126,6 +127,7 @@ struct CommentEditingTests {
     @Test("Notes are edited in place and cleared with the selection")
     func note() {
         var (state, workbook) = setUp()
+        defer { UserDefaults.standard.removeObject(forKey: EditorState.commentAuthorKey) }
         let a1 = CellAddress(a1: "A1")!
         state.addComment("Draft", kind: .note, at: a1, in: &workbook)
         state.updateNote("Final", at: a1, in: &workbook)

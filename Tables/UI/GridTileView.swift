@@ -223,7 +223,7 @@ enum CellPainter {
     /// Notes are marked red and conversations purple, as Excel marks them;
     /// a resolved conversation fades to grey.
     private static func paintCommentMark(_ mark: CommentMark, zoom: Double, into context: inout GraphicsContext) {
-        let size = min(7 * zoom, mark.frame.width / 2, mark.frame.height / 2)
+        let size = min(10 * zoom, mark.frame.width / 2, mark.frame.height / 2)
         guard size > 0 else { return }
         var triangle = Path()
         triangle.move(to: CGPoint(x: mark.frame.maxX - size, y: mark.frame.minY))
