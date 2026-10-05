@@ -67,6 +67,11 @@ final class EditorState {
     var allowsFormatting = true
     var errorMessage: String?
     var clipboard: [[Cell]]?
+    /// The comments on the copied cells, position for position.
+    var clipboardComments: [[CellComment?]] = []
+    /// Where the copied cells came from, so pasted formulas can move their
+    /// relative references by the distance travelled.
+    var clipboardOrigin: CellAddress?
     /// Whether the toolbar's popover about parts of the file we cannot edit is up.
     var isShowingUnsupportedFeatureNotice = false
 

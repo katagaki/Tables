@@ -141,3 +141,59 @@ struct CommentEditingTests {
         #expect(workbook.sheets[0].comments.isEmpty)
     }
 }
+
+@Suite("Copying and pasting")
+@MainActor
+struct ClipboardTests {
+    @Test("Comments travel with copied cells, and cutting moves them")
+    func comments() {
+        var sheet = Worksheet(name: "Sheet1")
+        sheet[CellAddress(a1: "A1")!] = Cell(value: .number(1))
+        sheet.comments[CellAddress(a1: "A1")!] = .note(author: "Ann", text: "Source")
+        var workbook = Workbook(sheets: [sheet])
+        let state = EditorState()
+        state.activeSheetID = workbook.sheets[0].id
+
+        state.select(CellAddress(a1: "A1")!)
+        state.copySelection(in: workbook)
+        state.select(CellAddress(a1: "C3")!)
+        state.paste(in: &workbook)
+        #expect(workbook.sheets[0].comments[CellAddress(a1: "C3")!]?.text == "Source")
+        #expect(workbook.sheets[0].comments[CellAddress(a1: "A1")!] != nil)
+
+        state.select(CellAddress(a1: "A1")!)
+        state.cutSelection(in: &workbook)
+        #expect(workbook.sheets[0].comments[CellAddress(a1: "A1")!] == nil)
+        state.select(CellAddress(a1: "D4")!)
+        state.paste(in: &workbook)
+        #expect(workbook.sheets[0].comments[CellAddress(a1: "D4")!]?.text == "Source")
+    }
+
+    @Test("Pasted formulas move their relative references, and spilled values stay put")
+    func formulas() {
+        var sheet = Worksheet(name: "Sheet1")
+        for (reference, input) in [("A1", "1"), ("A2", "2"), ("B1", "=A1*10"), ("C1", "=$A$1+A2"), ("E1", "={5;6}")] {
+            sheet[CellAddress(a1: reference)!] = CellInputParser.cell(from: input, inheriting: .default)
+        }
+        var workbook = Workbook(sheets: [sheet])
+        workbook.recalculate()
+        let state = EditorState()
+        state.activeSheetID = workbook.sheets[0].id
+
+        state.select(CellAddress(a1: "B1")!)
+        state.select(CellAddress(a1: "C1")!, extending: true)
+        state.copySelection(in: workbook)
+        state.select(CellAddress(a1: "B2")!)
+        state.paste(in: &workbook)
+        #expect(workbook.sheets[0][CellAddress(a1: "B2")!].formula == "A2*10")
+        #expect(workbook.sheets[0][CellAddress(a1: "B2")!].value == .number(20))
+        #expect(workbook.sheets[0][CellAddress(a1: "C2")!].formula == "$A$1+A3")
+
+        state.select(CellAddress(a1: "E2")!)
+        state.copySelection(in: workbook)
+        state.select(CellAddress(a1: "D3")!)
+        state.paste(in: &workbook)
+        #expect(workbook.sheets[0][CellAddress(a1: "D3")!].value == .number(6))
+        #expect(!workbook.sheets[0][CellAddress(a1: "D3")!].isSpilled)
+    }
+}
