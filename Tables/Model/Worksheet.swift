@@ -97,6 +97,11 @@ struct Worksheet: Identifiable, Hashable, Sendable {
     var columnCount: Int = Worksheet.defaultColumnCount
     var columnWidths: [Int: Double] = [:]
     var rowHeights: [Int: Double] = [:]
+    /// Rows whose height in `rowHeights` is one Excel fitted to their text
+    /// rather than one somebody set. Excel only writes those down when the
+    /// text needs more room than usual, so they are honoured — and written
+    /// back as fitted, so Excel goes on fitting them.
+    var fittedRows: Set<Int> = []
     var hiddenRows: Set<Int> = []
     var hiddenColumns: Set<Int> = []
     /// Rectangular regions drawn, selected and edited as a single cell. They
@@ -255,6 +260,7 @@ struct Worksheet: Identifiable, Hashable, Sendable {
         FormulaReferenceShifter.apply(.insert(index: index, count: count), axis: .row, to: &cells)
         remapCells { $0.row >= index ? CellAddress(row: $0.row + count, column: $0.column) : $0 }
         rowHeights = Self.shift(rowHeights, from: index, by: count)
+        fittedRows = Self.shift(fittedRows, from: index, by: count)
         hiddenRows = Self.shift(hiddenRows, from: index, by: count)
         remapMerges(along: \.row) { Self.span($0, insertingAt: index, count: count) }
         moveDrawings(.insert(index: index, count: count), axis: .row)
@@ -280,6 +286,7 @@ struct Worksheet: Identifiable, Hashable, Sendable {
         cells = cells.filter { !range.contains($0.key.row) }
         remapCells { $0.row > range.upperBound ? CellAddress(row: $0.row - count, column: $0.column) : $0 }
         rowHeights = Self.shift(rowHeights.filter { !range.contains($0.key) }, from: range.upperBound + 1, by: -count)
+        fittedRows = Self.shift(fittedRows.filter { !range.contains($0) }, from: range.upperBound + 1, by: -count)
         hiddenRows = Self.shift(hiddenRows.filter { !range.contains($0) }, from: range.upperBound + 1, by: -count)
         remapMerges(along: \.row) { Self.span($0, removing: range) }
         moveDrawings(.remove(range: range), axis: .row)

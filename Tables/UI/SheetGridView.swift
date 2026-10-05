@@ -365,12 +365,51 @@ struct SheetGridView: View {
                 let address = CellAddress(row: row, column: column)
                 guard !painted.covered.contains(address),
                       let cell = sheet.cells[address], !cell.isEmptyEntirely else { continue }
-                painted.cells.append(PaintedCell(
-                    address: address, frame: metrics.frame(for: address), cell: cell
-                ))
+                var entry = PaintedCell(address: address, frame: metrics.frame(for: address), cell: cell)
+                entry.overflow = overflow(of: address, in: sheet, edges: &painted.overflowEdges)
+                painted.cells.append(entry)
             }
+            spillsFromOutside(row: row, of: plan, in: sheet, into: &painted)
         }
         return painted
+    }
+
+    /// How far a cell's text spills, as a frame, noting the cell edges it
+    /// runs across so their gridlines can make way for it.
+    private func overflow(
+        of address: CellAddress, in sheet: Worksheet, edges: inout Set<CellAddress>
+    ) -> CGRect? {
+        guard let span = sheet.overflowSpan(of: address) else { return nil }
+        for column in span.lowerBound..<span.upperBound {
+            edges.insert(CellAddress(row: address.row, column: column))
+        }
+        return metrics.frame(for: CellRange(
+            start: CellAddress(row: address.row, column: span.lowerBound),
+            end: CellAddress(row: address.row, column: span.upperBound)
+        ))
+    }
+
+    /// Text that starts in a cell outside the tile and runs into it. The
+    /// nearest filled cell on either side is the only one that can: anything
+    /// further away is stopped by it.
+    private func spillsFromOutside(row: Int, of plan: TilePlan, in sheet: Worksheet, into painted: inout TileContents) {
+        let reach = 24
+        let before = stride(from: plan.columns.lowerBound - 1, through: max(0, plan.columns.lowerBound - reach), by: -1)
+        let after = stride(from: plan.columns.upperBound, to: min(sheet.columnCount, plan.columns.upperBound + reach), by: 1)
+        for columns in [AnySequence(before), AnySequence(after)] {
+            for column in columns {
+                let address = CellAddress(row: row, column: column)
+                guard let cell = sheet.cells[address], !cell.isBlank else { continue }
+                if let span = sheet.overflowSpan(of: address, reach: reach),
+                   span.overlaps(plan.columns.lowerBound...(plan.columns.upperBound - 1)) {
+                    var entry = PaintedCell(address: address, frame: metrics.frame(for: address), cell: cell)
+                    entry.overflow = overflow(of: address, in: sheet, edges: &painted.overflowEdges)
+                    entry.textOnly = true
+                    painted.cells.append(entry)
+                }
+                break
+            }
+        }
     }
 
     /// Merged regions intersecting the tiles being built.
@@ -624,9 +663,16 @@ struct SheetGridView: View {
                     if let placement = anchor.placement {
                         let frame = placement.frame(in: metrics)
                         if frame.intersects(window), frame.width > 0, frame.height > 0 {
-                            PreservedDrawingPlaceholder(isChart: anchor.isChart, zoom: metrics.zoom)
-                                .frame(width: frame.width, height: frame.height)
-                                .offset(x: frame.minX, y: frame.minY)
+                            Group {
+                                if let picture = anchor.picture,
+                                   let data = workbook.preservedPackage.parts[picture.target] {
+                                    PreservedPictureView(picture: picture, data: data)
+                                } else {
+                                    PreservedDrawingPlaceholder(isChart: anchor.isChart, zoom: metrics.zoom)
+                                }
+                            }
+                            .frame(width: frame.width, height: frame.height)
+                            .offset(x: frame.minX, y: frame.minY)
                         }
                     }
                 }

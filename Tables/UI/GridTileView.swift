@@ -5,6 +5,17 @@ struct PaintedCell: Equatable, Sendable {
     var address: CellAddress
     var frame: CGRect
     var cell: Cell
+    /// Where the text may run past the cell, across empty neighbours.
+    var overflow: CGRect?
+    /// A cell outside the tile whose text runs into it: only its text is
+    /// drawn here, its own tile draws the rest.
+    var textOnly = false
+
+    init(address: CellAddress, frame: CGRect, cell: Cell) {
+        self.address = address
+        self.frame = frame
+        self.cell = cell
+    }
 }
 
 /// A merged region, drawn from its top-left cell across the whole range.
@@ -27,6 +38,9 @@ struct TileContents: Equatable, Sendable {
     var cells: [PaintedCell] = []
     var merges: [PaintedMerge] = []
     var covered: Set<CellAddress> = []
+    /// Cells whose trailing edge spilled text runs across, which draw no
+    /// gridline there — Excel's text reads as one run, not as boxes.
+    var overflowEdges: Set<CellAddress> = []
 }
 
 /// A rectangular block of the grid, drawn as a single `Canvas`.
@@ -163,13 +177,23 @@ enum CellPainter {
         context.translateBy(x: -origin.x, y: -origin.y)
 
         let painted = Set(contents.cells.map(\.address))
+        let edges = contents.overflowEdges
         paintBlankHairlines(
             rows: rows, columns: columns,
             hiddenRows: hiddenRows, hiddenColumns: hiddenColumns,
-            skipping: covered.union(painted), metrics: metrics, into: &context
+            skipping: covered.union(painted), openEdges: edges, metrics: metrics, into: &context
         )
+        // In passes, so text spilling over a neighbour lands on top of that
+        // neighbour's fill, and borders on top of the text.
+        let own = contents.cells.filter { !$0.textOnly }
+        for cell in own {
+            paintBackground(cell.cell, in: cell.frame, openEdge: edges.contains(cell.address), into: &context, scheme: scheme)
+        }
         for cell in contents.cells {
-            paint(cell.cell, in: cell.frame, zoom: metrics.zoom, scheme: scheme, into: &context)
+            paintText(cell.cell, in: cell.frame, overflow: cell.overflow, zoom: metrics.zoom, scheme: scheme, into: &context)
+        }
+        for cell in own {
+            paintBorders(cell.cell.style, in: cell.frame, zoom: metrics.zoom, scheme: scheme, into: &context)
         }
         // Last, so a merge covers the hairlines of the cells beneath it.
         for merge in contents.merges {
@@ -185,6 +209,7 @@ enum CellPainter {
         rows: Range<Int>, columns: Range<Int>,
         hiddenRows: Set<Int>, hiddenColumns: Set<Int>,
         skipping: Set<CellAddress>,
+        openEdges: Set<CellAddress>,
         metrics: SheetMetrics,
         into context: inout GraphicsContext
     ) {
@@ -193,7 +218,7 @@ enum CellPainter {
             for column in columns where !hiddenColumns.contains(column) {
                 let address = CellAddress(row: row, column: column)
                 guard !skipping.contains(address) else { continue }
-                addHairlines(of: metrics.frame(for: address), to: &path)
+                addHairlines(of: metrics.frame(for: address), openEdge: openEdges.contains(address), to: &path)
             }
         }
         guard !path.isEmpty else { return }
@@ -207,36 +232,48 @@ enum CellPainter {
     /// Both sit a half-width inside the cell rather than straddling its edge, so
     /// that a line on a tile boundary is drawn whole by the tile that owns it
     /// instead of half by each of two.
-    private static func addHairlines(of rect: CGRect, to path: inout Path) {
+    private static func addHairlines(of rect: CGRect, openEdge: Bool = false, to path: inout Path) {
         let inset = hairlineWidth / 2
-        path.move(to: CGPoint(x: rect.maxX - inset, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX - inset, y: rect.maxY - inset))
+        if openEdge {
+            path.move(to: CGPoint(x: rect.maxX, y: rect.maxY - inset))
+        } else {
+            path.move(to: CGPoint(x: rect.maxX - inset, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX - inset, y: rect.maxY - inset))
+        }
         path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - inset))
     }
 
+    /// A whole cell in one go, for merges, which nothing spills across.
     private static func paint(
         _ cell: Cell, in frame: CGRect, zoom: Double, scheme: ColorScheme,
         into context: inout GraphicsContext
     ) {
         guard frame.width > 0, frame.height > 0 else { return }
-        let style = cell.style
+        paintBackground(cell, in: frame, openEdge: false, into: &context, scheme: scheme)
+        paintText(cell, in: frame, overflow: nil, zoom: zoom, scheme: scheme, into: &context)
+        paintBorders(cell.style, in: frame, zoom: zoom, scheme: scheme, into: &context)
+    }
 
-        if let fill = style.fillColor(for: scheme) {
+    private static func paintBackground(
+        _ cell: Cell, in frame: CGRect, openEdge: Bool, into context: inout GraphicsContext, scheme: ColorScheme
+    ) {
+        guard frame.width > 0, frame.height > 0 else { return }
+        if let fill = cell.style.fillColor(for: scheme) {
             context.fill(Path(frame), with: .color(fill))
         }
-        paintText(cell, in: frame, zoom: zoom, scheme: scheme, into: &context)
-
         var hairlines = Path()
-        addHairlines(of: frame, to: &hairlines)
+        addHairlines(of: frame, openEdge: openEdge, to: &hairlines)
         context.stroke(hairlines, with: .color(.gridLine), lineWidth: hairlineWidth)
-
-        paintBorders(style, in: frame, zoom: zoom, scheme: scheme, into: &context)
     }
 
     // MARK: - Text
 
+    /// `overflow` is the stretch of the row the text may run across. The
+    /// text is still aligned to its own cell — Excel's centred title stays
+    /// centred on its cell however far it spills — but it is measured, cut
+    /// short and clipped against the larger stretch.
     private static func paintText(
-        _ cell: Cell, in frame: CGRect, zoom: Double, scheme: ColorScheme,
+        _ cell: Cell, in frame: CGRect, overflow: CGRect?, zoom: Double, scheme: ColorScheme,
         into context: inout GraphicsContext
     ) {
         let style = cell.style
@@ -274,17 +311,28 @@ enum CellPainter {
         guard box.width > 0, box.height > 0 else { return }
 
         let wraps = style.wrapsText || style.isTextStacked
+        // The width the text has, out to the far edge of its overflow.
+        var room = box.width
+        if let overflow, !wraps {
+            let reach = overflow.insetBy(dx: 6 * zoom, dy: 0)
+            switch horizontal {
+            case .trailing: room = box.maxX - reach.minX
+            case .center: room = 2 * min(box.midX - reach.minX, reach.maxX - box.midX)
+            default: room = reach.maxX - box.minX
+            }
+            room = max(room, box.width)
+        }
         var resolved = context.resolve(make(string))
         var measured = resolved.measure(in: CGSize(
             width: wraps ? box.width : unbounded, height: unbounded
         ))
-        if !wraps, measured.width > box.width {
-            let shortened = elided(string, to: box.width, make: make, in: context)
+        if !wraps, measured.width > room {
+            let shortened = elided(string, to: room, make: make, in: context)
             resolved = context.resolve(make(shortened))
             measured = resolved.measure(in: CGSize(width: unbounded, height: unbounded))
         }
 
-        let width = min(measured.width, box.width)
+        let width = min(measured.width, room)
         let x: Double
         switch horizontal {
         case .trailing: x = box.maxX - width
@@ -303,7 +351,7 @@ enum CellPainter {
             // A font taller than the row, a rotated run, or wrapped text with
             // more lines than fit all draw outside the cell otherwise — over the
             // neighbours, which reads as corrupt rather than as clipped.
-            layer.clip(to: Path(frame))
+            layer.clip(to: Path(overflow.map { $0.union(frame) } ?? frame))
             if style.rotationDegrees != 0 {
                 // Rotation turns the glyphs, not the box they are aligned in,
                 // which is how Excel places a rotated run: the box is laid out

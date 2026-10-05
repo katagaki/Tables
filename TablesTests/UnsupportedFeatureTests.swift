@@ -446,6 +446,35 @@ struct UnsupportedFeatureTests {
         #expect(report.lost.contains(.pivotTables))
     }
 
+    @Test("A part typed by a specific .xml default is kept, with an override of its own")
+    func specificXMLDefaultTypesAPart() throws {
+        let app = Part(
+            "docProps/app.xml",
+            "<?xml version=\"1.0\"?><Properties xmlns=\"http://schemas.openxmlformats.org/officeDocument/2006/extended-properties\"/>"
+        )
+        let extended = "application/vnd.openxmlformats-officedocument.extended-properties+xml"
+        var data = try package(
+            sheets: [""], extraParts: [app],
+            rootRelationships: "<Relationship Id=\"rId9\" "
+                + "Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties\" "
+                + "Target=\"docProps/app.xml\"/>"
+        )
+        // As one generator writes it: the `.xml` default names a real type.
+        var entries = try ZipArchive.entries(in: data)
+        let types = String(decoding: try #require(entries["[Content_Types].xml"]), as: UTF8.self)
+            .replacingOccurrences(of: "Extension=\"xml\" ContentType=\"application/xml\"",
+                                  with: "Extension=\"xml\" ContentType=\"\(extended)\"")
+        entries["[Content_Types].xml"] = Data(types.utf8)
+        data = try ZipArchive.archive(entries: entries.sorted { $0.key < $1.key }.map { ($0.key, $0.value) })
+
+        let (workbook, written) = try roundTrip(data)
+        #expect(written["docProps/app.xml"] != nil)
+        #expect(try text(written, "[Content_Types].xml").contains(
+            "<Override PartName=\"/docProps/app.xml\" ContentType=\"\(extended)\"/>"
+        ))
+        #expect(!workbook.unsupportedFeatures.lost.contains(.documentProperties))
+    }
+
     // MARK: - Reporting
 
     @Test("The report names what is kept and what is not, and nothing else")

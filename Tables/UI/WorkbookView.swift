@@ -47,7 +47,7 @@ struct WorkbookView: View {
         .onChange(of: document.workbook) { old, new in history.record(from: old, to: new) }
         .onChange(of: state.activeSheetID) { _, _ in
             // CSV holds one sheet; export whichever one the user is looking at.
-            document.csvExportSheetIndex = state.activeIndex(in: document.workbook)
+            document.csvExport.sheetIndex = state.activeIndex(in: document.workbook)
         }
         #if os(iOS)
         .toolbar { undoToolbar }

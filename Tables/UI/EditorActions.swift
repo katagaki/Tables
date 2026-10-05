@@ -294,6 +294,7 @@ extension EditorState {
     func resizeRow(_ row: Int, to height: Double, in workbook: inout Workbook) {
         let index = activeIndex(in: workbook)
         workbook.sheets[index].rowHeights[row] = max(Worksheet.minimumRowHeight, height)
+        workbook.sheets[index].fittedRows.remove(row)
         finishStructuralEdit(in: workbook)
     }
 

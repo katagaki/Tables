@@ -364,4 +364,31 @@ struct StyleFidelityTests {
         #expect(read.rowHeights[0] == 15)
         #expect(read.height(ofRow: 0) == 15)
     }
+
+    @Test("A height Excel fitted to large text is used, and written back as fitted")
+    func fittedHeights() throws {
+        let sheet = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>\
+        <row r="1" ht="15"><c r="A1" t="inlineStr"><is><t>x</t></is></c></row>\
+        <row r="2" ht="59.4"><c r="A2" t="inlineStr"><is><t>Title</t></is></c></row>\
+        </sheetData></worksheet>
+        """
+        let data = try packaged(sheet: sheet, styles: styleSheet())
+        var workbook = try XLSXReader.workbook(from: data)
+        // Excel's own small default stays ours; the tall fitted row is kept.
+        #expect(workbook.sheets[0].rowHeights[0] == nil)
+        #expect(workbook.sheets[0].height(ofRow: 1) == 59.4)
+
+        let written = String(decoding: try ZipArchive.entries(in: XLSXWriter.data(from: workbook))["xl/worksheets/sheet1.xml"]!, as: UTF8.self)
+        #expect(written.contains("<row r=\"2\" ht=\"59.4\">"))
+
+        // Resizing it by hand makes it the user's height.
+        workbook.sheets[0].insertRows(1, at: 0)
+        #expect(workbook.sheets[0].fittedRows == [2])
+        workbook.sheets[0].rowHeights[2] = 40
+        workbook.sheets[0].fittedRows.remove(2)
+        let resized = String(decoding: try ZipArchive.entries(in: XLSXWriter.data(from: workbook))["xl/worksheets/sheet1.xml"]!, as: UTF8.self)
+        #expect(resized.contains("<row r=\"3\" ht=\"40\" customHeight=\"1\""))
+    }
 }

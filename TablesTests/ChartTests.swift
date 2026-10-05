@@ -314,6 +314,9 @@ struct ChartTests {
         let workbook = try XLSXReader.workbook(from: data)
         #expect(workbook.sheets[0].charts.count == 1)
         #expect(workbook.sheets[0].preservedDrawingAnchors.count == 2)
+        // The picture knows its image, so it can be drawn rather than stood in for.
+        #expect(workbook.sheets[0].preservedDrawingAnchors.compactMap(\.picture).map(\.target) == ["xl/media/image1.png"])
+        #expect(workbook.sheets[0].preservedDrawingAnchors.first { $0.isChart }?.picture == nil)
         #expect(workbook.unsupportedFeatures.preserved.contains(.chartsAndImages))
         #expect(workbook.unsupportedFeatures.lost.isEmpty)
 
@@ -1067,5 +1070,46 @@ struct ChartTests {
         #expect(moved.from.row == 7 && moved.to.row == 13)
         let inside = placement.shifted(.insert(index: 6, count: 3), axis: .row)
         #expect(inside.from.row == 4 && inside.to.row == 10)
+    }
+
+    @Test("A cropped picture reads its crop as fractions of the image")
+    func pictureCrop() throws {
+        let cropped = Self.pictureAnchor.replacingOccurrences(
+            of: "<a:stretch>", with: "<a:srcRect l=\"6589\" t=\"13099\" r=\"6742\" b=\"13099\"/><a:stretch>"
+        )
+        let data = try package(
+            anchors: cropped,
+            drawingRelationships: "<Relationship Id=\"rIdImage\" Type=\"\(Self.relationships)/image\" Target=\"../media/image1.png\"/>",
+            extraParts: [("xl/media/image1.png", "PNGDATA", nil)]
+        )
+        let picture = try #require(XLSXReader.workbook(from: data).sheets[0].preservedDrawingAnchors.first?.picture)
+        #expect(abs(picture.cropLeft - 0.06589) < 1e-9)
+        #expect(abs(picture.cropBottom - 0.13099) < 1e-9)
+    }
+
+    @Test("A shape linking to a place in the workbook is kept, link and all")
+    func shapeWithInWorkbookLinkSurvives() throws {
+        let button = """
+        <xdr:twoCellAnchor editAs="absolute"><xdr:from><xdr:col>1</xdr:col><xdr:colOff>0</xdr:colOff>\
+        <xdr:row>1</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:to><xdr:col>3</xdr:col><xdr:colOff>0</xdr:colOff>\
+        <xdr:row>3</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to><xdr:sp macro="" textlink=""><xdr:nvSpPr>\
+        <xdr:cNvPr id="9" name="Next Button"><a:hlinkClick r:id="rIdNext"/></xdr:cNvPr><xdr:cNvSpPr/></xdr:nvSpPr>\
+        <xdr:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:sp><xdr:clientData/></xdr:twoCellAnchor>
+        """
+        let data = try package(
+            anchors: button,
+            drawingRelationships: "<Relationship Id=\"rIdNext\" Type=\"\(Self.relationships)/hyperlink\" Target=\"#'Data'!A1\"/>",
+            extraParts: []
+        )
+        let workbook = try XLSXReader.workbook(from: data)
+        #expect(workbook.sheets[0].preservedDrawingAnchors.count == 1)
+        #expect(!workbook.unsupportedFeatures.lost.contains(.chartsAndImages))
+
+        let written = try ZipArchive.entries(in: XLSXWriter.data(from: workbook))
+        try expectConsistentPackage(written)
+        let relationships = try text(written, "xl/drawings/_rels/drawing1.xml.rels")
+        #expect(relationships.contains("Target=\"#&apos;Data&apos;!A1\""))
+        #expect(!relationships.contains("TargetMode"))
+        #expect(try text(written, "xl/drawings/drawing1.xml").contains("Next Button"))
     }
 }

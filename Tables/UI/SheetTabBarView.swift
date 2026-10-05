@@ -41,6 +41,10 @@ struct SheetTabBarView: View {
                 // this the control is an unlabelled glyph to VoiceOver.
                 .accessibilityLabel("SheetTabBar.AddSheet")
 
+                // Beside the add button rather than after the tabs: at the
+                // trailing end, a long tab name ran on underneath it.
+                if !hiddenSheets.isEmpty { hiddenSheetsMenu }
+
                 ScrollView(.horizontal) {
                     HStack(spacing: tabSpacing) {
                         ForEach(workbook.visibleSheets) { sheet in
@@ -55,7 +59,6 @@ struct SheetTabBarView: View {
                 // scroll view clips to its bounds by default.
                 .scrollClipDisabled(draggingSheetID != nil)
 
-                if !hiddenSheets.isEmpty { hiddenSheetsMenu }
             }
         }
         .padding(.horizontal, 12)

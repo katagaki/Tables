@@ -77,7 +77,7 @@ enum XLSXWriter {
                 where !drawingRelationships.contains(where: { $0.id == relationship.id }) {
                     drawingRelationships.append(.init(
                         id: relationship.id, type: relationship.type,
-                        target: relationship.isExternal
+                        target: !relationship.isPackagePart
                             ? relationship.target : relativePath(from: sheetDrawing.path, to: relationship.target),
                         targetMode: relationship.isExternal ? "External" : nil
                     ))
@@ -430,7 +430,8 @@ enum XLSXWriter {
         for row in interestingRows {
             var attributes = "r=\"\(row + 1)\""
             if let height = sheet.rowHeights[row] {
-                attributes += " ht=\"\(format(height))\" customHeight=\"1\""
+                attributes += " ht=\"\(format(height))\""
+                if !sheet.fittedRows.contains(row) { attributes += " customHeight=\"1\"" }
             }
             if sheet.hiddenRows.contains(row) { attributes += " hidden=\"1\"" }
 

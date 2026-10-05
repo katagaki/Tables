@@ -1,3 +1,4 @@
+import Synchronization
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -14,8 +15,11 @@ struct TablesDocument: FileDocument {
     ]
 
     var workbook: Workbook
-    /// CSV holds a single sheet, so exporting picks one. Tracks the user's choice.
-    var csvExportSheetIndex = 0
+    /// CSV holds a single sheet, so exporting picks one: whichever the user
+    /// is looking at. Held by reference, because looking at a sheet is not an
+    /// edit — written through the document, it marked the file changed and
+    /// saved it just for being opened.
+    let csvExport = CSVExportChoice()
 
     /// What the opened file used that Tables cannot edit. Empty for anything we
     /// authored ourselves and for CSV, which has no such features to begin with.
@@ -69,6 +73,17 @@ struct TablesDocument: FileDocument {
 
     /// Saving as delimited text writes whichever sheet the user picked.
     private var exportSheet: Worksheet {
-        workbook.sheet(at: csvExportSheetIndex)
+        workbook.sheet(at: csvExport.sheetIndex)
+    }
+}
+
+/// The sheet a delimited-text save writes. Read when the document is saved,
+/// which happens off the main actor, hence the lock.
+final class CSVExportChoice: Sendable {
+    private let index = Mutex(0)
+
+    var sheetIndex: Int {
+        get { index.withLock { $0 } }
+        set { index.withLock { $0 = newValue } }
     }
 }

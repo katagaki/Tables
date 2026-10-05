@@ -365,6 +365,20 @@ struct PreservedDrawingAnchor: Hashable, Sendable {
     var placement: ChartPlacement?
     /// Whether the fragment holds a chart rather than a picture or a shape.
     var isChart: Bool
+    /// The image the fragment shows, when it is a picture we can draw.
+    var picture: DrawingPicture?
+}
+
+/// A picture on a sheet's drawing: which image part it shows, and how much
+/// of each side of the image it crops away.
+struct DrawingPicture: Hashable, Sendable {
+    /// The image part's path in the package.
+    var target: String
+    /// The fractions of the image cut from each edge — DrawingML's `srcRect`.
+    var cropLeft = 0.0
+    var cropTop = 0.0
+    var cropRight = 0.0
+    var cropBottom = 0.0
 }
 
 struct PreservedDrawingRelationship: Hashable, Sendable {
@@ -374,4 +388,11 @@ struct PreservedDrawingRelationship: Hashable, Sendable {
     /// external one.
     var target: String
     var isExternal: Bool
+
+    /// A place in this workbook — `#'Sheet 2'!A1`, the target of a shape's
+    /// in-workbook link — rather than a part of the package.
+    var isLocation: Bool { !isExternal && target.hasPrefix("#") }
+
+    /// Whether the target is a part the package must carry.
+    var isPackagePart: Bool { !isExternal && !isLocation }
 }

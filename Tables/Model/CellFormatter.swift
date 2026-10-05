@@ -86,13 +86,34 @@ enum CellFormatter {
         return sections
     }
 
+    /// A format's text section, with the same tokens the numeric sections
+    /// honour: `_x` reserves the width of `x` and `*x` repeats it to fill the
+    /// cell — neither drawn — `\x` is a literal, and `[…]` a colour or
+    /// condition. Accounting formats end in `_(@_)`, which is just the text.
     private static func apply(textSection: String, to text: String) -> String {
         var result = ""
         var inQuotes = false
-        for character in textSection {
-            if character == "\"" { inQuotes.toggle(); continue }
-            if inQuotes { result.append(character); continue }
-            if character == "@" { result += text } else if character != "*" { result.append(character) }
+        let characters = Array(textSection)
+        var index = 0
+        while index < characters.count {
+            let character = characters[index]
+            if character == "\"" {
+                inQuotes.toggle()
+            } else if inQuotes {
+                result.append(character)
+            } else {
+                switch character {
+                case "@": result += text
+                case "_", "*": index += 1
+                case "\\":
+                    index += 1
+                    if index < characters.count { result.append(characters[index]) }
+                case "[":
+                    while index < characters.count, characters[index] != "]" { index += 1 }
+                default: result.append(character)
+                }
+            }
+            index += 1
         }
         return result.isEmpty ? text : result
     }

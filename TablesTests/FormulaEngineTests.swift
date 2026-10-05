@@ -202,6 +202,11 @@ struct NumberFormatTests {
     @Test("Preset codes render as expected")
     func presets() {
         #expect(CellFormatter.displayText(for: .number(1234.5), format: "General") == "1234.5")
+        // Excel's accounting format: the text section's `_(` and `_)` reserve
+        // room for a parenthesis and draw nothing.
+        let accounting = #"_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)"#
+        #expect(CellFormatter.displayText(for: .text("Carretera"), format: accounting) == "Carretera")
+        #expect(CellFormatter.displayText(for: .text("x"), format: #"0;0;0;\[@\]"#) == "[x]")
         #expect(CellFormatter.displayText(for: .number(1234.5), format: "0") == "1235")
         #expect(CellFormatter.displayText(for: .number(1234.5), format: "0.00") == "1234.50")
         #expect(CellFormatter.displayText(for: .number(1234.5), format: "#,##0") == "1,235")

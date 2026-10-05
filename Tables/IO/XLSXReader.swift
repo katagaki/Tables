@@ -131,7 +131,7 @@ enum XLSXReader {
                 .compactMap { PackagePreservation.packagePath(of: $0, relativeTo: PackagePreservation.directory(of: path)) }
         }
         let anchorTargets = workbook.sheets.flatMap(\.preservedDrawingAnchors).flatMap(\.relationships)
-            .filter { !$0.isExternal }.map(\.target)
+            .filter(\.isPackagePart).map(\.target)
 
         var report = UnsupportedFeatureReport()
         var preserved = PackagePreservation.plan(
@@ -145,7 +145,7 @@ enum XLSXReader {
         for index in workbook.sheets.indices {
             let anchors = workbook.sheets[index].preservedDrawingAnchors
             let survivors = anchors.filter { anchor in
-                anchor.relationships.allSatisfy { $0.isExternal || preserved.parts[$0.target] != nil }
+                anchor.relationships.allSatisfy { !$0.isPackagePart || preserved.parts[$0.target] != nil }
             }
             if survivors.count < anchors.count { drawingLost = true }
             keptAnchor = keptAnchor || !survivors.isEmpty
@@ -463,9 +463,15 @@ enum XLSXReader {
             if rowElement.attribute("hidden") == "1" { sheet.hiddenRows.insert(rowIndex) }
             // `ht` is already in points, the same unit as our geometry, and the
             // resize floor is an interaction limit that must not rewrite a file.
-            if rowElement.attribute("customHeight") == "1",
-               let height = rowElement.attribute("ht").flatMap(Double.init), height > 0 {
-                sheet.rowHeights[rowIndex] = height
+            if let height = rowElement.attribute("ht").flatMap(Double.init), height > 0 {
+                if rowElement.attribute("customHeight") == "1" {
+                    sheet.rowHeights[rowIndex] = height
+                } else if height > Worksheet.defaultRowHeight {
+                    // Excel fitted the row to large or wrapped text. Anything
+                    // shorter than our own default is just Excel's smaller one.
+                    sheet.rowHeights[rowIndex] = height
+                    sheet.fittedRows.insert(rowIndex)
+                }
             }
 
             for cellElement in rowElement.children(named: "c") {
@@ -793,7 +799,8 @@ enum XLSXReader {
         /// Where a relationship lands inside the package, or `nil` when it
         /// points outside it — an external hyperlink has no part to keep.
         static func packagePath(of entry: RelationshipEntry, relativeTo directory: String) -> String? {
-            guard entry.targetMode != "External" else { return nil }
+            // A `#` target is a place in the workbook a link jumps to.
+            guard entry.targetMode != "External", !entry.target.hasPrefix("#") else { return nil }
             return absolutePath(entry.target, relativeTo: directory)
         }
 
@@ -831,12 +838,19 @@ enum XLSXReader {
             var defaults: [String: String] = [:]
             var overrides: [String: String] = [:]
 
+            /// Every `.xml` part matches the `.xml` default, which is almost
+            /// always the generic `application/xml` and says nothing. Some
+            /// generators point it at a real type instead — the document's
+            /// extended properties, say — and then it does type the part.
+            private var specificXMLDefault: String? {
+                guard let type = defaults["xml"], type != "application/xml", type != "text/xml" else { return nil }
+                return type
+            }
+
             func declaresType(for path: String) -> Bool {
                 if overrides["/" + path] != nil { return true }
                 let ext = fileExtension(of: path)
-                // Every `.xml` part matches the generic default, which says
-                // nothing useful; without an override we cannot type it.
-                guard ext != "xml" else { return false }
+                guard ext != "xml" else { return specificXMLDefault != nil }
                 return defaults[ext] != nil
             }
 
@@ -846,6 +860,12 @@ enum XLSXReader {
                     return
                 }
                 let ext = fileExtension(of: path)
+                // We write the generic `.xml` default ourselves, so a part
+                // typed by a specific one needs an override of its own.
+                if ext == "xml", let type = specificXMLDefault {
+                    package.contentTypeOverrides["/" + path] = type
+                    return
+                }
                 if let fallback = defaults[ext] { package.contentTypeDefaults[ext] = fallback }
             }
 

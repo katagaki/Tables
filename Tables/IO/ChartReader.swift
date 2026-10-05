@@ -485,16 +485,43 @@ enum DrawingReader {
             let kept = relationships.compactMap { entry -> PreservedDrawingRelationship? in
                 guard let id = entry.id, named.contains(id) else { return nil }
                 let isExternal = entry.targetMode == "External"
+                let isLocation = !isExternal && entry.target.hasPrefix("#")
                 return PreservedDrawingRelationship(
                     id: id, type: entry.type,
-                    target: isExternal ? entry.target : Plan.absolutePath(entry.target, relativeTo: directory),
+                    target: isExternal || isLocation
+                        ? entry.target : Plan.absolutePath(entry.target, relativeTo: directory),
                     isExternal: isExternal
                 )
             }
             result.anchors.append(PreservedDrawingAnchor(
                 xml: xml, relationships: kept, largestShapeID: largestShapeID,
-                placement: placement, isChart: isChart
+                placement: placement, isChart: isChart, picture: picture(in: anchor, relationships: kept)
             ))
+        }
+        return result
+    }
+
+    /// The image a picture anchor shows. Pictures inside groups and
+    /// alternate content are left as placeholders, as are hidden ones.
+    private static func picture(
+        in anchor: XMLElement, relationships: [PreservedDrawingRelationship]
+    ) -> DrawingPicture? {
+        guard let picture = anchor.firstChild(named: "pic"),
+              picture.firstDescendant(atPath: "nvPicPr/cNvPr")?.attribute("hidden") != "1",
+              let fill = picture.firstChild(named: "blipFill"),
+              let id = fill.firstChild(named: "blip")?.attribute("embed"),
+              let target = relationships.first(where: { $0.id == id && $0.isPackagePart })?.target
+        else { return nil }
+        var result = DrawingPicture(target: target)
+        if let crop = fill.firstChild(named: "srcRect") {
+            // Thousandths of a percent of the image's own size.
+            func edge(_ name: String) -> Double {
+                min(max((crop.attribute(name).flatMap(Double.init) ?? 0) / 100_000, -1), 1)
+            }
+            result.cropLeft = edge("l")
+            result.cropTop = edge("t")
+            result.cropRight = edge("r")
+            result.cropBottom = edge("b")
         }
         return result
     }

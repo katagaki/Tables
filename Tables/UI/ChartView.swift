@@ -1,4 +1,5 @@
 import Charts
+import ImageIO
 import SwiftUI
 
 /// Draws a `Chart` with Swift Charts.
@@ -568,6 +569,63 @@ extension ChartView {
 /// Stands in for a drawing object we keep but cannot draw — a picture, a
 /// shape, a chart type outside the model — so the user can see where it is
 /// and knows it is still there.
+/// A picture kept from the file, drawn from its own image part with the crop
+/// the file gives it. Pictures are the one kind of kept object we can show
+/// as they are, rather than as a placeholder.
+struct PreservedPictureView: View {
+    let picture: DrawingPicture
+    let data: Data
+
+    var body: some View {
+        if let image = PictureCache.shared.image(for: picture, data: data) {
+            Image(decorative: image, scale: 1)
+                .resizable()
+                .allowsHitTesting(false)
+        } else {
+            PreservedDrawingPlaceholder(isChart: false)
+        }
+    }
+}
+
+/// Decoded, cropped pictures, so scrolling does not decode them again.
+@MainActor
+final class PictureCache {
+    static let shared = PictureCache()
+    /// Every workbook names its images `xl/media/image1.png` and so on, so
+    /// the bytes are part of the key, not just the path.
+    private struct Key: Hashable {
+        var picture: DrawingPicture
+        var data: Data
+    }
+
+    private var images: [Key: CGImage] = [:]
+    private var failed: Set<Key> = []
+
+    func image(for picture: DrawingPicture, data: Data) -> CGImage? {
+        let key = Key(picture: picture, data: data)
+        if let image = images[key] { return image }
+        guard !failed.contains(key) else { return nil }
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let full = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            failed.insert(key)
+            return nil
+        }
+        let width = Double(full.width)
+        let height = Double(full.height)
+        // Negative crops pad the image out instead; drawing it whole is the
+        // nearest we come to that.
+        let crop = CGRect(
+            x: width * max(0, picture.cropLeft),
+            y: height * max(0, picture.cropTop),
+            width: width * (1 - max(0, picture.cropLeft) - max(0, picture.cropRight)),
+            height: height * (1 - max(0, picture.cropTop) - max(0, picture.cropBottom))
+        ).integral
+        let image = crop.width > 0 && crop.height > 0 ? full.cropping(to: crop) ?? full : full
+        images[key] = image
+        return image
+    }
+}
+
 struct PreservedDrawingPlaceholder: View {
     var isChart: Bool
     var zoom: Double = 1

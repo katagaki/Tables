@@ -52,6 +52,7 @@ extension Workbook {
         var probe = sheet
         probe.columnWidths = before.columnWidths
         probe.rowHeights = before.rowHeights
+        probe.fittedRows = before.fittedRows
         if probe == before { return .sheetLayout(sheet.id) }
 
         probe = sheet
