@@ -12,7 +12,7 @@ enum FormulaFunctions {
         var all: [String: FunctionSpec] = [:]
         for table in [
             mathFunctions, trigonometryFunctions, arithmeticFunctions, statisticalFunctions, descriptiveFunctions, distributionFunctions, subtotalFunctions, logicalFunctions, informationFunctions, textFunctions, textExtendedFunctions,
-            dateFunctions, lookupFunctions,
+            dateFunctions, dateExtendedFunctions, lookupFunctions,
         ] {
             all.merge(table) { existing, _ in existing }
         }

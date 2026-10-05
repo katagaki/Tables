@@ -391,3 +391,66 @@ struct TextFunctionTests {
         #expect(evaluate("=BAHTTEXT(21.25)") == .text("ยี่สิบเอ็ดบาทยี่สิบห้าสตางค์"))
     }
 }
+
+@Suite("Dates and times")
+struct DateFunctionTests {
+    @Test("Reading dates and times from text")
+    func parsing() {
+        #expect(evaluate("=DATEVALUE(\"8/22/2011\")") == .number(40777))
+        #expect(evaluate("=DATEVALUE(\"22-MAY-2011\")") == .number(40685))
+        #expect(close(evaluate("=TIMEVALUE(\"2:24 AM\")"), 0.1))
+        #expect(close(evaluate("=TIMEVALUE(\"22-Aug-2011 6:35 AM\")"), 0.274305556, tolerance: 1e-8))
+        #expect(evaluate("=DATEVALUE(40777)") == .error(.valueError))
+        #expect(evaluate("=DAYS(\"3/15/11\",\"2/1/11\")") == .number(42))
+    }
+
+    @Test("Differences and 360-day years")
+    func differences() {
+        #expect(evaluate("=DATEDIF(DATE(2001,1,1),DATE(2003,1,1),\"Y\")") == .number(2))
+        #expect(evaluate("=DATEDIF(DATE(2001,6,1),DATE(2002,8,15),\"D\")") == .number(440))
+        #expect(evaluate("=DATEDIF(DATE(2001,6,1),DATE(2002,8,15),\"YD\")") == .number(75))
+        #expect(evaluate("=DATEDIF(DATE(2001,6,1),DATE(2002,8,15),\"MD\")") == .number(14))
+        #expect(evaluate("=DATEDIF(DATE(2001,6,1),DATE(2002,8,15),\"YM\")") == .number(2))
+        #expect(evaluate("=DATEDIF(DATE(2001,6,1),DATE(2002,8,15),\"M\")") == .number(14))
+        #expect(evaluate("=DATEDIF(DATE(2003,1,1),DATE(2001,1,1),\"Y\")") == .error(.numberError))
+        #expect(evaluate("=DAYS360(DATE(2011,1,30),DATE(2011,12,31))") == .number(330))
+        #expect(evaluate("=DAYS360(DATE(2011,2,28),DATE(2011,3,31))") == .number(30))
+        #expect(evaluate("=DAYS360(DATE(2011,1,15),DATE(2011,3,31),TRUE)") == .number(75))
+    }
+
+    @Test("Moving by months and counting weeks")
+    func months() {
+        #expect(evaluate("=EDATE(DATE(2011,1,31),1)") == .number(40602))
+        #expect(evaluate("=EOMONTH(DATE(2011,1,1),1)") == .number(40602))
+        #expect(evaluate("=EOMONTH(DATE(2011,1,1),-3)") == .number(40482))
+        #expect(evaluate("=WEEKNUM(DATE(2012,3,9))") == .number(10))
+        #expect(evaluate("=WEEKNUM(DATE(2012,3,9),2)") == .number(11))
+        #expect(evaluate("=ISOWEEKNUM(DATE(2012,3,9))") == .number(10))
+        #expect(evaluate("=ISOWEEKNUM(DATE(2021,1,1))") == .number(53))
+    }
+
+    @Test("Working days, with weekends and holidays")
+    func workdays() {
+        #expect(evaluate("=NETWORKDAYS(DATE(2012,10,1),DATE(2013,3,1))") == .number(110))
+        #expect(evaluate("=NETWORKDAYS(DATE(2012,10,1),DATE(2013,3,1),DATE(2012,11,22))") == .number(109))
+        #expect(evaluate("=NETWORKDAYS(DATE(2012,10,1),DATE(2013,3,1),{41235,41247,41295})") == .number(107))
+        #expect(evaluate("=NETWORKDAYS.INTL(DATE(2006,1,1),DATE(2006,1,31))") == .number(22))
+        #expect(evaluate("=NETWORKDAYS.INTL(DATE(2006,1,1),DATE(2006,2,1),7,{\"2006/1/2\",\"2006/1/16\"})")
+                == .number(22))
+        #expect(evaluate("=NETWORKDAYS.INTL(DATE(2006,1,1),DATE(2006,2,1),\"0010001\",{\"2006/1/2\",\"2006/1/16\"})")
+                == .number(20))
+        #expect(evaluate("=WORKDAY(DATE(2008,10,1),151)") == .number(39933))
+        #expect(evaluate("=WORKDAY(DATE(2008,10,1),151,{39778,39786,39834})") == .number(39938))
+        #expect(evaluate("=WORKDAY.INTL(DATE(2012,1,1),30,0)") == .error(.numberError))
+        #expect(evaluate("=WORKDAY.INTL(DATE(2012,1,1),90,11)") == .number(41013))
+        #expect(evaluate("=WORKDAY.INTL(DATE(2012,1,1),30,17)") == .number(40944))
+    }
+
+    @Test("Year fractions under each basis")
+    func yearFractions() {
+        #expect(close(evaluate("=YEARFRAC(DATE(2012,1,1),DATE(2012,7,30))"), 0.580555556, tolerance: 1e-8))
+        #expect(close(evaluate("=YEARFRAC(DATE(2012,1,1),DATE(2012,7,30),1)"), 0.576502732, tolerance: 1e-8))
+        #expect(close(evaluate("=YEARFRAC(DATE(2012,1,1),DATE(2012,7,30),3)"), 0.578082192, tolerance: 1e-8))
+        #expect(close(evaluate("=YEARFRAC(DATE(2012,7,30),DATE(2012,1,1),2)"), 211.0 / 360))
+    }
+}
