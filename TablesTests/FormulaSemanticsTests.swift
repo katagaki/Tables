@@ -158,3 +158,61 @@ struct ArrayAndReferenceTests {
         #expect(evaluate("=LEN(\"😀\")") == .number(2))
     }
 }
+
+@Suite("LET and LAMBDA")
+struct LambdaTests {
+    @Test("LET names values for the rest of the formula, in order")
+    func letBindings() {
+        #expect(evaluate("=LET(x,2,y,x*3,x+y)") == .number(8))
+        #expect(evaluate("=LET(r,A1:A3,ROW(r)+0)", with: ["A1": "1"]) == .number(1))
+        #expect(evaluate("=LET(r,A1:A3,SUM(r))", with: ["A1": "1", "A2": "2", "A3": "3"]) == .number(6))
+        #expect(evaluate("=LET(X,1,x+1)") == .number(2))
+        #expect(evaluate("=LET(x,1,2)") == .number(2))
+    }
+
+    @Test("A LAMBDA can be called straight away, held in LET, or named in the workbook")
+    func calling() {
+        #expect(evaluate("=LAMBDA(x,x*x)(4)") == .number(16))
+        #expect(evaluate("=LET(sq,LAMBDA(x,x*x),sq(5))") == .number(25))
+        #expect(evaluate("=LAMBDA(x,x)") == .error(.calc))
+        #expect(evaluate("=LAMBDA(x,y,ISOMITTED(y))(1)") == .boolean(true))
+        #expect(evaluate("=LAMBDA(x,x)(1,2)") == .error(.valueError))
+
+        var sheet = Worksheet(name: "Sheet 1")
+        sheet[CellAddress(a1: "A1")!] = Cell(formula: "Fact(5)")
+        var workbook = Workbook(sheets: [sheet], definedNames: [
+            DefinedName(name: "Fact", formula: "LAMBDA(n,IF(n<=1,1,n*Fact(n-1)))", scope: nil),
+        ])
+        workbook.recalculate()
+        #expect(workbook.sheets[0][CellAddress(a1: "A1")!].value == .number(120))
+    }
+
+    @Test("A LAMBDA sees the LET names around where it was written")
+    func closures() {
+        #expect(evaluate("=LET(k,10,f,LAMBDA(x,x+k),f(1))") == .number(11))
+    }
+
+    @Test("MAP, REDUCE, SCAN, BYROW, BYCOL and MAKEARRAY")
+    func helpers() {
+        #expect(evaluate("=SUM(MAP({1,2,3},LAMBDA(v,v*10)))") == .number(60))
+        #expect(evaluate("=SUM(MAP({1,2},{3,4},LAMBDA(a,b,a*b)))") == .number(11))
+        #expect(evaluate("=REDUCE(0,{1,2,3},LAMBDA(a,v,a+v))") == .number(6))
+        #expect(evaluate("=REDUCE(,{1,2,3},LAMBDA(a,v,a+v))") == .number(6))
+        #expect(evaluate("=INDEX(SCAN(0,{1,2,3},LAMBDA(a,v,a+v)),1,3)") == .number(6))
+        #expect(evaluate("=SUM(BYROW({1,2;3,4},LAMBDA(r,SUM(r))))") == .number(10))
+        #expect(evaluate("=INDEX(BYCOL({1,2;3,4},LAMBDA(c,SUM(c))),1,2)") == .number(6))
+        #expect(evaluate("=SUM(MAKEARRAY(2,3,LAMBDA(r,c,r*c)))") == .number(18))
+        #expect(evaluate("=INDEX(MAKEARRAY(2,3,LAMBDA(r,c,r*c)),2,3)") == .number(6))
+    }
+
+    @Test("Runaway recursion stops rather than crashing")
+    func recursionLimit() {
+        var sheet = Worksheet(name: "Sheet 1")
+        sheet[CellAddress(a1: "A1")!] = Cell(formula: "Forever(1)")
+        var workbook = Workbook(sheets: [sheet], definedNames: [
+            DefinedName(name: "Forever", formula: "LAMBDA(n,Forever(n+1))", scope: nil),
+        ])
+        workbook.recalculate()
+        #expect(workbook.sheets[0][CellAddress(a1: "A1")!].value == .error(.numberError))
+    }
+}

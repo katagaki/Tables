@@ -401,7 +401,7 @@ struct FormulaDialectTests {
         #expect(FormulaDialect.toFile("LET(x,2,y,x*3,x+y)")
                 == "_xlfn.LET(_xlpm.x,2,_xlpm.y,_xlpm.x*3,_xlpm.x+_xlpm.y)")
         #expect(FormulaDialect.toFile("LAMBDA(n,n+Rate)(4)") == "_xlfn.LAMBDA(_xlpm.n,_xlpm.n+Rate)(4)")
-        #expect(FormulaDialect.fromFile("_xlfn.LET(_xlpm.x,2,_xlpm.x+1)") == "_xlfn.LET(x,2,x+1)")
+        #expect(FormulaDialect.fromFile("_xlfn.LET(_xlpm.x,2,_xlpm.x+1)") == "LET(x,2,x+1)")
     }
 
     @Test("@ and # are stored as SINGLE and ANCHORARRAY")
