@@ -29,7 +29,13 @@ struct VBASourceToken: Hashable, Sendable {
 struct VBASyntaxError: LocalizedError, Hashable, Sendable {
     var message: String
     var line: Int
-    var errorDescription: String? { String(format: String(localized: "Macro.SyntaxError"), line, message) }
+    /// The module the line is in, once known.
+    var module: String?
+
+    var errorDescription: String? {
+        guard let module else { return String(format: String(localized: "Macro.SyntaxError"), line, message) }
+        return String(format: String(localized: "Macro.SyntaxError.InModule"), module, line, message)
+    }
 }
 
 enum VBALexer {

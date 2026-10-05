@@ -410,6 +410,7 @@ struct VBAInterpreterTests {
             _ = try VBAInterpreter(modules: [("Module1", .standard, "Sub Main()\n  x = (1 +\nEnd Sub")], host: nil)
         }
         #expect(error?.line == 2)
+        #expect(error?.module == "Module1")
     }
 
     @Test("File I/O parses, and fails only when it runs")

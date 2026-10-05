@@ -113,19 +113,20 @@ final class VBAInterpreter {
     private var statementCount = 0
     private static let maximumCallDepth = 400
 
-    init(project: VBAProject, host: (any VBAHost)?) throws {
-        self.host = host
-        for module in project.modules {
-            let syntax = try VBAParser.parse(module: module.name, source: module.source)
-            modules.append(Module(syntax: syntax, kind: module.kind))
-        }
+    convenience init(project: VBAProject, host: (any VBAHost)?) throws {
+        try self.init(modules: project.modules.map { ($0.name, $0.kind, $0.source) }, host: host)
     }
 
     init(modules sources: [(name: String, kind: VBAProject.Module.Kind, source: String)], host: (any VBAHost)?) throws {
         self.host = host
         for source in sources {
-            modules.append(Module(syntax: try VBAParser.parse(module: source.name, source: source.source),
-                                  kind: source.kind))
+            do {
+                modules.append(Module(syntax: try VBAParser.parse(module: source.name, source: source.source),
+                                      kind: source.kind))
+            } catch var error as VBASyntaxError {
+                error.module = source.name
+                throw error
+            }
         }
     }
 
