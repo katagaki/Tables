@@ -405,12 +405,17 @@ struct VBAInterpreterTests {
     }
 
     @Test("Syntax errors name their line")
-    func syntaxErrors() {
+    func syntaxErrors() throws {
         let error = #expect(throws: VBASyntaxError.self) {
             _ = try VBAInterpreter(modules: [("Module1", .standard, "Sub Main()\n  x = (1 +\nEnd Sub")], host: nil)
         }
         #expect(error?.line == 2)
         #expect(error?.module == "Module1")
+        // Messages come from the string catalog, in whatever language the
+        // device uses, with the offending token filled in.
+        let message = try #require(error?.message)
+        #expect(!message.hasPrefix("Macro."))
+        #expect(message.contains(String(localized: "Macro.EndOfLine")))
     }
 
     @Test("File I/O parses, and fails only when it runs")

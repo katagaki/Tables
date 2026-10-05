@@ -32,6 +32,11 @@ struct VBASyntaxError: LocalizedError, Hashable, Sendable {
     /// The module the line is in, once known.
     var module: String?
 
+    /// A message from the string catalog, with its arguments filled in.
+    static func text(_ key: String, _ arguments: CVarArg...) -> String {
+        String(format: String(localized: String.LocalizationValue(key)), arguments: arguments)
+    }
+
     var errorDescription: String? {
         guard let module else { return String(format: String(localized: "Macro.SyntaxError"), line, message) }
         return String(format: String(localized: "Macro.SyntaxError.InModule"), module, line, message)
@@ -94,7 +99,7 @@ enum VBALexer {
                 index += 1
                 while true {
                     guard let next = peek(), next != "\n" else {
-                        throw VBASyntaxError(message: "Unterminated string", line: line)
+                        throw VBASyntaxError(message: VBASyntaxError.text("Macro.Syntax.UnterminatedString"), line: line)
                     }
                     index += 1
                     if next == "\"" {
@@ -123,7 +128,7 @@ enum VBALexer {
                 }
                 while let next = peek(), "&%^".contains(next) { index += 1 }
                 guard let value = UInt64(digits, radix: radix) else {
-                    throw VBASyntaxError(message: "Malformed number", line: line)
+                    throw VBASyntaxError(message: VBASyntaxError.text("Macro.Syntax.MalformedNumber"), line: line)
                 }
                 // `&HFFFF` is an Integer and so -1; wider literals are Longs.
                 let signed: Int
@@ -165,7 +170,7 @@ enum VBALexer {
                     text.append(next)
                     index += 1
                 }
-                guard peek() == "]" else { throw VBASyntaxError(message: "Unterminated [", line: line) }
+                guard peek() == "]" else { throw VBASyntaxError(message: VBASyntaxError.text("Macro.Syntax.UnterminatedBracket"), line: line) }
                 index += 1
                 emit(.identifier("Evaluate"))
                 emit(.symbol("("))
@@ -186,7 +191,7 @@ enum VBALexer {
                 index += 1
                 continue
             }
-            throw VBASyntaxError(message: "Unexpected character “\(character)”", line: line)
+            throw VBASyntaxError(message: VBASyntaxError.text("Macro.Syntax.UnexpectedCharacter", String(character)), line: line)
         }
         emitNewline()
         tokens.append(VBASourceToken(token: .end, line: line, followsSpace: true))
@@ -257,7 +262,7 @@ enum VBALexer {
             index += 1
         }
         if !isFloating, !forcesFloating, let value = Int(text) { return .integer(value) }
-        guard let value = Double(text) else { throw VBASyntaxError(message: "Malformed number", line: line) }
+        guard let value = Double(text) else { throw VBASyntaxError(message: VBASyntaxError.text("Macro.Syntax.MalformedNumber"), line: line) }
         return .double(value)
     }
 

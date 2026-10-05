@@ -14,7 +14,7 @@ struct VBAParser {
     static func parseStatements(_ source: String) throws -> [VBAStatement] {
         var parser = VBAParser(tokens: try VBALexer.tokenize(source))
         let body = try parser.parseBlock(until: [])
-        guard parser.current == .end else { throw parser.error("Unexpected “\(parser.describe(parser.current))”") }
+        guard parser.current == .end else { throw parser.error(VBASyntaxError.text("Macro.Syntax.Unexpected", parser.describe(parser.current))) }
         return body
     }
 
@@ -72,16 +72,16 @@ struct VBAParser {
     }
 
     private mutating func expect(_ keyword: String) throws {
-        guard accept(keyword) else { throw error("Expected \(keyword), found “\(describe(current))”") }
+        guard accept(keyword) else { throw error(VBASyntaxError.text("Macro.Syntax.ExpectedFound", keyword, describe(current))) }
     }
 
     private mutating func expectSymbol(_ symbol: String) throws {
-        guard acceptSymbol(symbol) else { throw error("Expected “\(symbol)”, found “\(describe(current))”") }
+        guard acceptSymbol(symbol) else { throw error(VBASyntaxError.text("Macro.Syntax.ExpectedFound", "“\(symbol)”", describe(current))) }
     }
 
     private mutating func identifier() throws -> String {
         guard case .identifier(let name) = current else {
-            throw error("Expected a name, found “\(describe(current))”")
+            throw error(VBASyntaxError.text("Macro.Syntax.ExpectedName", describe(current)))
         }
         advance()
         return name
@@ -111,7 +111,7 @@ struct VBAParser {
             if accept("Option") {
                 if accept("Explicit") { module.optionExplicit = true }
                 else if accept("Base") {
-                    guard case .integer(let base) = current else { throw error("Expected 0 or 1") }
+                    guard case .integer(let base) = current else { throw error(VBASyntaxError.text("Macro.Syntax.OptionBase")) }
                     module.optionBase = base
                     advance()
                 } else if accept("Compare") {
@@ -138,7 +138,7 @@ struct VBAParser {
                 module.procedures.append(try parseProcedure(isPrivate: isPrivate, isStatic: isStatic, line: startLine))
             } else if accept("Declare") {
                 accept("PtrSafe")
-                guard accept("Sub") || accept("Function") else { throw error("Expected Sub or Function") }
+                guard accept("Sub") || accept("Function") else { throw error(VBASyntaxError.text("Macro.Syntax.ExpectedSubOrFunction")) }
                 module.externalProcedures.insert(try identifier().lowercased())
                 skipToEndOfLine()
             } else if accept("Type") {
@@ -157,7 +157,7 @@ struct VBAParser {
                     module.variables.append((declaration, isPrivate))
                 }
             } else {
-                throw error("Only declarations can appear outside a procedure, found “\(describe(current))”")
+                throw error(VBASyntaxError.text("Macro.Syntax.DeclarationsOnly", describe(current)))
             }
         }
         return module
@@ -238,7 +238,7 @@ struct VBAParser {
                 try expect("Type")
                 break
             }
-            guard current != .end else { throw error("Type \(name) has no End Type") }
+            guard current != .end else { throw error(VBASyntaxError.text("Macro.Syntax.MissingEnd", "Type \(name)", "End Type")) }
             fields.append(try parseDeclarator())
         }
         return VBAUserType(name: name, fields: fields)
@@ -253,7 +253,7 @@ struct VBAParser {
                 try expect("Enum")
                 break
             }
-            guard current != .end else { throw error("Enum \(name) has no End Enum") }
+            guard current != .end else { throw error(VBASyntaxError.text("Macro.Syntax.MissingEnd", "Enum \(name)", "End Enum")) }
             let member = try identifier()
             members.append((member, acceptSymbol("=") ? try parseExpression() : nil))
         }
@@ -312,7 +312,7 @@ struct VBAParser {
         while true {
             skipNewlines()
             if current == .end {
-                guard terminators.isEmpty else { throw error("Expected \(terminators[0]) before the end of the module") }
+                guard terminators.isEmpty else { throw error(VBASyntaxError.text("Macro.Syntax.ExpectedBeforeEnd", terminators[0])) }
                 return statements
             }
             if terminators.contains(where: atTerminator) { return statements }
@@ -404,7 +404,7 @@ struct VBAParser {
         if accept("Exit") {
             let word = try identifier()
             guard let kind = VBAExitKind.allCases.first(where: { $0.rawValue.caseInsensitiveCompare(word) == .orderedSame })
-            else { throw error("Cannot Exit \(word)") }
+            else { throw error(VBASyntaxError.text("Macro.Syntax.CannotExit", word)) }
             return statement(.exit(kind))
         }
         if accept("GoTo") { return statement(.goTo(try labelName())) }
@@ -581,7 +581,7 @@ struct VBAParser {
                 if accept("Is") {
                     guard case .symbol(let comparison) = current,
                           ["=", "<>", "<", ">", "<=", ">="].contains(comparison) else {
-                        throw error("Expected a comparison after Case Is")
+                        throw error(VBASyntaxError.text("Macro.Syntax.ExpectedCaseComparison"))
                     }
                     advance()
                     conditions.append(.comparison(comparison, try parseExpression()))
@@ -786,7 +786,7 @@ struct VBAParser {
     /// After a dot any word is a member name, keywords included: `.End`, `.Select`, `.Print`.
     private mutating func memberName() throws -> String {
         guard case .identifier(let name) = current else {
-            throw error("Expected a member name, found “\(describe(current))”")
+            throw error(VBASyntaxError.text("Macro.Syntax.ExpectedMember", describe(current)))
         }
         advance()
         return name
@@ -840,16 +840,16 @@ struct VBAParser {
                 while acceptSymbol(".") { className = try identifier() }
                 return .typeOfIs(subject, className)
             case "addressof":
-                throw error("AddressOf is not supported")
+                throw error(VBASyntaxError.text("Macro.Syntax.AddressOf"))
             default:
                 if Self.reservedWords.contains(name.lowercased()) {
-                    throw error("Unexpected “\(name)”")
+                    throw error(VBASyntaxError.text("Macro.Syntax.Unexpected", name))
                 }
                 advance()
                 return .identifier(name)
             }
         default:
-            throw error("Unexpected “\(describe(token))”")
+            throw error(VBASyntaxError.text("Macro.Syntax.Unexpected", describe(token)))
         }
     }
 
