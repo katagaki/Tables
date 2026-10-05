@@ -11,7 +11,16 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 from openpyxl.utils import get_column_letter as L
 
-DEVICE, LANG, OUT = sys.argv[1], sys.argv[2], sys.argv[3]
+# The output directory is emptied before it is written, so it is only accepted
+# where capture.sh puts it: one folder per device and language under the
+# samples root, never anywhere else on disk.
+SAMPLES_ROOT = os.path.realpath("/tmp/tables-screenshots-samples")
+if len(sys.argv) != 4 or sys.argv[1] not in ("iPhone", "iPad") or sys.argv[2] not in ("en", "ja"):
+    sys.exit(__doc__)
+DEVICE, LANG = sys.argv[1], sys.argv[2]
+OUT = os.path.join(SAMPLES_ROOT, f"{DEVICE}-{LANG}")
+if os.path.realpath(sys.argv[3]) != OUT:
+    sys.exit(f"The output directory must be {OUT}")
 JA = LANG == "ja"
 shutil.rmtree(OUT, ignore_errors=True)
 os.makedirs(OUT)
