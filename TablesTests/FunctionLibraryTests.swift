@@ -454,3 +454,78 @@ struct DateFunctionTests {
         #expect(close(evaluate("=YEARFRAC(DATE(2012,7,30),DATE(2012,1,1),2)"), 211.0 / 360))
     }
 }
+
+@Suite("Lookup, reference and array functions")
+struct ArrayFunctionTests {
+    private let grid = ["A1": "1", "A2": "2", "A3": "3", "B1": "x", "B2": "y", "B3": "z", "C1": "=SUM(A1:A3)"]
+
+    @Test("OFFSET, INDIRECT and ADDRESS")
+    func references() {
+        #expect(evaluate("=SUM(OFFSET(A1,1,0,2,1))", with: grid) == .number(5))
+        #expect(evaluate("=OFFSET(A1,2,1)", with: grid) == .text("z"))
+        #expect(evaluate("=ROWS(OFFSET(A1,0,0,3,2))", with: grid) == .number(3))
+        #expect(evaluate("=OFFSET(A1,-1,0)", with: grid) == .error(.referenceError))
+        #expect(evaluate("=INDIRECT(\"B2\")", with: grid) == .text("y"))
+        #expect(evaluate("=SUM(INDIRECT(\"A1:A\"&3))", with: grid) == .number(6))
+        #expect(evaluate("=INDIRECT(\"R2C1\",FALSE)", with: grid) == .number(2))
+        #expect(evaluate("=INDIRECT(\"nonsense!!\")", with: grid) == .error(.referenceError))
+        #expect(evaluate("=ADDRESS(2,3)") == .text("$C$2"))
+        #expect(evaluate("=ADDRESS(2,3,2)") == .text("C$2"))
+        #expect(evaluate("=ADDRESS(2,3,2,FALSE)") == .text("R2C[3]"))
+        #expect(evaluate("=ADDRESS(2,3,1,FALSE,\"[Book1]Sheet1\")") == .text("'[Book1]Sheet1'!R2C3"))
+        #expect(evaluate("=ADDRESS(2,3,1,TRUE,\"EXCEL SHEET\")") == .text("'EXCEL SHEET'!$C$2"))
+        #expect(evaluate("=FORMULATEXT(C1)", with: grid) == .text("=SUM(A1:A3)"))
+        #expect(evaluate("=FORMULATEXT(A1)", with: grid) == .error(.notAvailable))
+        #expect(evaluate("=COLUMNS(A1:C9)") == .number(3))
+        #expect(evaluate("=ROWS({1;2;3})") == .number(3))
+    }
+
+    @Test("LOOKUP and XMATCH")
+    func lookups() {
+        #expect(evaluate("=LOOKUP(2.5,A1:A3,B1:B3)", with: grid) == .text("y"))
+        #expect(evaluate("=LOOKUP(3,{1,2,3;\"a\",\"b\",\"c\"})") == .text("c"))
+        #expect(evaluate("=XMATCH(\"y\",B1:B3)", with: grid) == .number(2))
+        #expect(evaluate("=XMATCH(2.5,A1:A3,1)", with: grid) == .number(3))
+        #expect(evaluate("=XMATCH(2.5,A1:A3,-1)", with: grid) == .number(2))
+        #expect(evaluate("=XMATCH(\"^[yz]$\",B1:B3,3)", with: grid) == .number(2))
+    }
+
+    @Test("Filtering, sorting and de-duplicating")
+    func reshaping() {
+        #expect(evaluate("=TEXTJOIN(\",\",,FILTER(B1:B3,A1:A3>1))", with: grid) == .text("y,z"))
+        #expect(evaluate("=FILTER(B1:B3,A1:A3>5)", with: grid) == .error(.calc))
+        #expect(evaluate("=FILTER(B1:B3,A1:A3>5,\"none\")", with: grid) == .text("none"))
+        #expect(evaluate("=TEXTJOIN(\",\",,SORT({3;1;2}))") == .text("1,2,3"))
+        #expect(evaluate("=TEXTJOIN(\",\",,SORT({3;1;2},1,-1))") == .text("3,2,1"))
+        #expect(evaluate("=TEXTJOIN(\",\",,SORT({\"b\",2;\"a\",2;\"c\",1},{2,1},{1,1}))") == .text("c,1,a,2,b,2"))
+        #expect(evaluate("=TEXTJOIN(\",\",,SORTBY({\"x\";\"y\";\"z\"},{3;1;2}))") == .text("y,z,x"))
+        #expect(evaluate("=TEXTJOIN(\",\",,UNIQUE({\"a\";\"A\";\"b\";\"a\"}))") == .text("a,b"))
+        #expect(evaluate("=TEXTJOIN(\",\",,UNIQUE({\"a\";\"b\";\"a\"},,TRUE))") == .text("b"))
+    }
+
+    @Test("Taking, dropping, choosing and stacking")
+    func slicing() {
+        let block = "{1,2,3;4,5,6;7,8,9}"
+        #expect(evaluate("=SUM(TAKE(\(block),2))") == .number(21))
+        #expect(evaluate("=SUM(TAKE(\(block),-1,-2))") == .number(17))
+        #expect(evaluate("=SUM(DROP(\(block),1,1))") == .number(28))
+        #expect(evaluate("=DROP(\(block),3)") == .error(.calc))
+        #expect(evaluate("=SUM(CHOOSEROWS(\(block),1,-1))") == .number(30))
+        #expect(evaluate("=SUM(CHOOSECOLS(\(block),2))") == .number(15))
+        #expect(evaluate("=CHOOSECOLS(\(block),4)") == .error(.valueError))
+        #expect(evaluate("=INDEX(EXPAND({1,2},2,3,0),2,3)") == .number(0))
+        #expect(evaluate("=INDEX(VSTACK({1,2},{3}),2,2)") == .error(.notAvailable))
+        #expect(evaluate("=SUM(HSTACK({1;2},{3;4}))") == .number(10))
+        #expect(evaluate("=TEXTJOIN(\",\",,TOCOL(\(block),,TRUE))") == .text("1,4,7,2,5,8,3,6,9"))
+        #expect(evaluate("=TEXTJOIN(\",\",,TOROW({1,#N/A;3,4},2))") == .text("1,3,4"))
+        #expect(evaluate("=INDEX(WRAPROWS({1,2,3,4,5},2,0),3,2)") == .number(0))
+        #expect(evaluate("=INDEX(WRAPCOLS({1,2,3,4,5},2),2,3)") == .error(.notAvailable))
+        #expect(evaluate("=INDEX(TRANSPOSE({1,2,3}),3,1)") == .number(3))
+    }
+
+    @Test("TRIMRANGE trims blank edges off a reference")
+    func trimming() {
+        #expect(evaluate("=ROWS(TRIMRANGE(A1:B10))", with: grid) == .number(3))
+        #expect(evaluate("=ROWS(TRIMRANGE(A1:B10,1))", with: grid) == .number(10))
+    }
+}

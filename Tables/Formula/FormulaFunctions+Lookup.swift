@@ -138,7 +138,7 @@ enum FormulaLookup {
     }
 
     /// Whether two values are of a kind that can be ordered against each other.
-    private static func comparable(_ lhs: CellValue, _ rhs: CellValue) -> Bool {
+    static func comparable(_ lhs: CellValue, _ rhs: CellValue) -> Bool {
         switch (lhs, rhs) {
         case (.number, .number), (.text, .text), (.boolean, .boolean): return true
         default: return false
@@ -201,25 +201,39 @@ enum FormulaLookup {
         let keys = try vector(lookup)
         let length = vertical ? returned.count : (returned.first?.count ?? 0)
         guard length == keys.count else { throw .valueError }
-        let matchMode = try call.integer(4, default: 0)
-        let searchMode = try call.integer(5, default: 1)
-        guard [-1, 0, 1, 2].contains(matchMode), [-2, -1, 1, 2].contains(searchMode) else { throw .valueError }
+        let position = try matchPosition(
+            needle, in: keys, matchMode: try call.integer(4, default: 0), searchMode: try call.integer(5, default: 1))
+        return (position, vertical)
+    }
 
+    /// The match modes `XLOOKUP` and `XMATCH` share: exact (0), exact or next
+    /// smaller (−1), exact or next larger (1), wildcard (2) and regular
+    /// expression (3); searching first to last (1), last to first (−1), or by
+    /// binary search over ascending (2) or descending (−2) data.
+    static func matchPosition(_ needle: CellValue, in keys: [CellValue], matchMode: Int, searchMode: Int) throws(CellError) -> Int? {
+        guard [-1, 0, 1, 2, 3].contains(matchMode), [-2, -1, 1, 2].contains(searchMode) else { throw .valueError }
         if abs(searchMode) == 2 {
-            // Binary search over sorted data.
             let descending = searchMode == -2
             if let found = approximate(needle, in: keys, descending: descending),
                FormulaComparison.equal(keys[found], needle) {
-                return (found, vertical)
+                return found
             }
-            guard matchMode == -1 || matchMode == 1 else { return (nil, vertical) }
+            guard matchMode == -1 || matchMode == 1 else { return nil }
         }
 
         let order = searchMode == -1 ? Array(keys.indices.reversed()) : Array(keys.indices)
-        if let exact = order.first(where: { exactMatch(keys[$0], needle, wildcards: matchMode == 2) }) {
-            return (exact, vertical)
+        if matchMode == 3 {
+            guard case .text(let pattern) = needle else { return nil }
+            let expression = try FormulaText.regex(pattern, insensitive: true)
+            return order.first { index in
+                let text = (try? keys[index].coercedText()) ?? ""
+                return expression.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
+            }
         }
-        guard matchMode == -1 || matchMode == 1 else { return (nil, vertical) }
+        if let exact = order.first(where: { exactMatch(keys[$0], needle, wildcards: matchMode == 2) }) {
+            return exact
+        }
+        guard matchMode == -1 || matchMode == 1 else { return nil }
         // The nearest smaller (−1) or larger (1) value.
         var best: Int?
         for index in order where comparable(keys[index], needle) {
@@ -232,6 +246,6 @@ enum FormulaLookup {
                 best = index
             }
         }
-        return (best, vertical)
+        return best
     }
 }
