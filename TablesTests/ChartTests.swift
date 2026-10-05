@@ -922,6 +922,88 @@ struct ChartTests {
         #expect(reopened.sheets[0].charts.first?.kind == .bar)
     }
 
+    // MARK: - User shapes
+
+    /// A text box over a chart as templates leave one: placed, but empty and
+    /// with neither fill nor line.
+    private static func userShapes(text: String) -> String {
+        """
+        <c:userShapes xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">\
+        <cdr:relSizeAnchor xmlns:cdr="http://schemas.openxmlformats.org/drawingml/2006/chartDrawing">\
+        <cdr:from><cdr:x>0.001</cdr:x><cdr:y>0.006</cdr:y></cdr:from><cdr:to><cdr:x>0.17</cdr:x><cdr:y>0.13</cdr:y></cdr:to>\
+        <cdr:sp macro="" textlink=""><cdr:nvSpPr><cdr:cNvPr id="2" name="TextBox 1"/><cdr:cNvSpPr txBox="1"/></cdr:nvSpPr>\
+        <cdr:spPr><a:xfrm xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:off x="9526" y="38862"/>\
+        <a:ext cx="1580322" cy="817548"/></a:xfrm><a:prstGeom xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" \
+        prst="rect"><a:avLst/></a:prstGeom></cdr:spPr><cdr:txBody>\
+        <a:bodyPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"/>\
+        <a:p xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">\(text)<a:endParaRPr lang="en-US"/></a:p>\
+        </cdr:txBody></cdr:sp></cdr:relSizeAnchor></c:userShapes>
+        """
+    }
+
+    private func workbookWithUserShapes(text: String = "") throws -> Workbook {
+        let chart = Self.excelColumnChart
+            .replacingOccurrences(of: "</c:chartSpace>", with: "<c:userShapes r:id=\"rId3\"/></c:chartSpace>")
+        let chartRelationships = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\
+        <Relationship Id="rId3" Type="\(ChartCompanion.userShapesType)" Target="../drawings/drawing2.xml"/>\
+        <Relationship Id="rId1" Type="\(ChartCompanion.styleType)" Target="style1.xml"/>\
+        </Relationships>
+        """
+        let data = try package(
+            anchors: Self.anchor(id: 2, relationship: "rIdChart", from: (4, 1), to: (10, 15)),
+            drawingRelationships: chartRelationship("rIdChart", "../charts/chart1.xml"),
+            extraParts: [
+                ("xl/charts/chart1.xml", chart, Self.chartType),
+                ("xl/charts/_rels/chart1.xml.rels", chartRelationships, nil),
+                ("xl/charts/style1.xml", Self.chartStyle, "application/vnd.ms-office.chartstyle+xml"),
+                ("xl/drawings/drawing2.xml", Self.userShapes(text: text),
+                 "application/vnd.openxmlformats-officedocument.drawingml.chartshapes+xml"),
+            ]
+        )
+        return try XLSXReader.workbook(from: data)
+    }
+
+    @Test("A chart under shapes that draw nothing is read, and the shapes are saved with it")
+    func emptyUserShapesAreKept() throws {
+        let workbook = try workbookWithUserShapes()
+        #expect(workbook.sheets[0].charts.count == 1)
+        #expect(workbook.sheets[0].preservedDrawingAnchors.isEmpty)
+
+        let (reopened, entries) = try roundTrip(workbook)
+        try expectConsistentPackage(entries)
+        #expect(try text(entries, "xl/charts/chart1.xml").contains("<c:userShapes r:id=\"rId3\"/>"))
+        let relationships = try text(entries, "xl/charts/_rels/chart1.xml.rels")
+        #expect(relationships.contains("Id=\"rId3\" Type=\"\(ChartCompanion.userShapesType)\""))
+        #expect(reopened.sheets[0].charts.count == 1)
+        // The shapes part lands clear of the sheet's own drawing.
+        let shapes = entries.filter { String(decoding: $0.value, as: UTF8.self).hasPrefix("<c:userShapes") }
+        #expect(shapes.count == 1)
+        #expect(shapes.keys.first?.hasPrefix("xl/drawings/") == true)
+    }
+
+    @Test("A chart rebuilt from the model still names its shapes")
+    func rebuiltChartKeepsUserShapes() throws {
+        var workbook = try workbookWithUserShapes()
+        workbook.sheets[0].charts[0].kind = .pie
+        let entries = try roundTrip(workbook).entries
+        try expectConsistentPackage(entries)
+        let xml = try text(entries, "xl/charts/chart1.xml")
+        #expect(xml.contains("<c:pieChart>"))
+        #expect(xml.contains("<c:userShapes r:id=\"rId3\"/>"))
+    }
+
+    @Test("A chart under shapes that show something is kept whole")
+    func visibleUserShapesKeepTheChartWhole() throws {
+        let workbook = try workbookWithUserShapes(text: "<a:r><a:t>Note</a:t></a:r>")
+        #expect(workbook.sheets[0].charts.isEmpty)
+        #expect(workbook.sheets[0].preservedDrawingAnchors.count == 1)
+        let entries = try roundTrip(workbook).entries
+        try expectConsistentPackage(entries)
+        #expect(try text(entries, "xl/drawings/drawing2.xml").contains("<a:t>Note</a:t>"))
+    }
+
     // MARK: - Excel 2016 charts
 
     /// A waterfall chart as Excel 2016 places one: a `cx:chart` in a choice

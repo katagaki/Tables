@@ -91,10 +91,13 @@ enum XLSXWriter {
                 parts.append((entry.path, ChartWriter.chartSpace(entry.chart, workbook: workbook).utf8Data))
                 guard !entry.companions.isEmpty else { continue }
                 var chartRelationships: [XLSXReader.PackagePreservation.RelationshipEntry] = []
-                for (index, companion) in entry.companions.enumerated() {
+                var used = Set(entry.companions.compactMap(\.companion.relationshipID))
+                for companion in entry.companions {
                     parts.append((companion.path, companion.companion.data))
+                    let id = companion.companion.relationshipID ?? XLSXWriter.freshRelationshipID(avoiding: used)
+                    used.insert(id)
                     chartRelationships.append(.init(
-                        id: "rId\(index + 1)", type: companion.companion.relationshipType,
+                        id: id, type: companion.companion.relationshipType,
                         target: relativePath(from: entry.path, to: companion.path), targetMode: nil
                     ))
                 }
@@ -126,7 +129,8 @@ enum XLSXWriter {
             var chart: Chart
             var path: String
             var relationshipID: String
-            /// The style and colour parts carried over with a chart from a file.
+            /// The style, colour and user shape parts carried over with a chart
+            /// from a file.
             var companions: [(companion: ChartCompanion, path: String)] = []
         }
 
@@ -165,7 +169,7 @@ enum XLSXWriter {
                     let id = XLSXWriter.freshRelationshipID(avoiding: used)
                     used.insert(id)
                     let companions = (chart.original?.companions ?? []).map { companion in
-                        (companion: companion, path: allocate("xl/charts/\(companion.stem)"))
+                        (companion: companion, path: allocate(companion.stem))
                     }
                     return ChartEntry(
                         chart: chart, path: allocate("xl/charts/chart"), relationshipID: id, companions: companions

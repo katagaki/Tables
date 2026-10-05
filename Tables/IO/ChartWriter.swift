@@ -46,6 +46,11 @@ enum ChartWriter {
         xml += chartElement(chart, workbook: workbook)
         xml += chartAreaShape(chart)
         if !chart.textStyle.isEmpty { xml += textBody(chart.textStyle) }
+        // Shapes kept from the file stay over a chart rebuilt from the model.
+        if let shapes = chart.original?.companions.first(where: { $0.relationshipType == ChartCompanion.userShapesType }),
+           let id = shapes.relationshipID {
+            xml += "<c:userShapes r:id=\"\(XMLLite.escape(id))\"/>"
+        }
         xml += "</c:chartSpace>"
         return xml
     }

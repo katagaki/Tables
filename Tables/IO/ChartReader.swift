@@ -22,10 +22,9 @@ enum ChartReader {
         guard root.name == "chartSpace",
               let chartElement = root.firstChild(named: "chart"),
               let plotArea = chartElement.firstChild(named: "plotArea") else { return nil }
-        // Shapes drawn over the chart and embedded source data are parts of
-        // their own that we do not write.
-        guard root.firstChild(named: "userShapes") == nil,
-              root.firstChild(named: "externalData") == nil,
+        // Embedded source data is a part of its own that we do not write.
+        // Shapes drawn over the chart are vetted with the chart's other parts.
+        guard root.firstChild(named: "externalData") == nil,
               chartElement.firstChild(named: "pivotFmts") == nil,
               root.firstChild(named: "pivotSource") == nil else { return nil }
 
@@ -431,9 +430,34 @@ enum DrawingReader {
 
     static let chartURI = "http://schemas.openxmlformats.org/drawingml/2006/chart"
     private static let chartCompanionTypes: Set<String> = [
-        "http://schemas.microsoft.com/office/2011/relationships/chartStyle",
-        "http://schemas.microsoft.com/office/2011/relationships/chartColorStyle",
+        ChartCompanion.styleType, ChartCompanion.colorsType, ChartCompanion.userShapesType,
     ]
+
+    /// Whether a chart's user shapes part draws nothing — empty text boxes
+    /// with no fill or line, as templates leave behind. Those we can show the
+    /// chart without and carry through untouched; anything visible would be
+    /// missing from what we draw, so such a chart is kept whole instead.
+    static func drawsNothing(userShapes data: Data) -> Bool {
+        guard let root = try? XMLLite.parse(data), root.name == "userShapes" else { return false }
+        for anchor in root.children {
+            guard ["relSizeAnchor", "absSizeAnchor"].contains(anchor.name) else { return false }
+            for content in anchor.children where !["from", "to", "ext"].contains(content.name) {
+                guard content.name == "sp", content.firstChild(named: "style") == nil else { return false }
+                let shape = content.firstChild(named: "spPr")
+                for property in shape?.children ?? [] where !["xfrm", "prstGeom", "noFill"].contains(property.name) {
+                    guard property.name == "ln", property.children.allSatisfy({ $0.name == "noFill" }),
+                          property.firstChild(named: "noFill") != nil else { return false }
+                }
+                if let body = content.firstChild(named: "txBody"), hasText(body) { return false }
+            }
+        }
+        return true
+    }
+
+    private static func hasText(_ element: XMLElement) -> Bool {
+        if element.name == "t", !element.text.trimmed.isEmpty { return true }
+        return element.children.contains(where: hasText)
+    }
 
     static func read(
         drawingPath: String, entries: [String: Data], sheet: Worksheet, context: ChartReader.Context
@@ -547,7 +571,13 @@ enum DrawingReader {
         // A chart that reaches anything beyond its style and colour companions
         // — pictures used as fills, shapes drawn over it — is kept whole.
         let companions = Plan.relationships(in: entries[Plan.relationshipsPath(for: path)])
-        guard companions.allSatisfy({ chartCompanionTypes.contains($0.type) }),
+        guard companions.allSatisfy({ companion in
+            guard chartCompanionTypes.contains(companion.type) else { return false }
+            guard companion.type == ChartCompanion.userShapesType else { return true }
+            let shapesPath = Plan.absolutePath(companion.target, relativeTo: Plan.directory(of: path))
+            return entries[Plan.relationshipsPath(for: shapesPath)] == nil
+                && entries[shapesPath].map(drawsNothing(userShapes:)) == true
+        }),
               var chart = ChartReader.chart(from: root, context: context) else { return nil }
 
         let properties = frame.firstChild(named: "nvGraphicFramePr")
@@ -560,7 +590,7 @@ enum DrawingReader {
             let companionPath = Plan.absolutePath(companion.target, relativeTo: Plan.directory(of: path))
             consumed.insert(companionPath)
             if let data = entries[companionPath] {
-                kept.append(ChartCompanion(relationshipType: companion.type, data: data))
+                kept.append(ChartCompanion(relationshipType: companion.type, data: data, relationshipID: companion.id))
             }
         }
         chart.original = ChartOriginal(

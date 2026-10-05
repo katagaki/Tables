@@ -331,21 +331,34 @@ final class ChartOriginal: Hashable, Sendable {
     func hash(into hasher: inout Hasher) { hasher.combine(ObjectIdentifier(self)) }
 }
 
-/// A part a chart relates to that only Excel reads: its chart style or its
-/// colour style. Carried through untouched.
+/// A part a chart relates to that we carry through untouched: its chart
+/// style, its colour style, or shapes drawn over it that draw nothing.
 struct ChartCompanion: Hashable, Sendable {
     var relationshipType: String
     var data: Data
+    /// The id the chart part names it by. The chart's XML says
+    /// `<c:userShapes r:id="…"/>`, so that one has to be written back as read.
+    var relationshipID: String?
 
     static let styleType = "http://schemas.microsoft.com/office/2011/relationships/chartStyle"
     static let colorsType = "http://schemas.microsoft.com/office/2011/relationships/chartColorStyle"
+    static let userShapesType = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/chartUserShapes"
 
-    /// The part's file stem and content type, which its type fixes.
-    var stem: String { relationshipType == Self.styleType ? "style" : "colors" }
+    /// Where the part goes in the package, less its number, and its content
+    /// type, which its type fixes.
+    var stem: String {
+        switch relationshipType {
+        case Self.styleType: "xl/charts/style"
+        case Self.userShapesType: "xl/drawings/drawing"
+        default: "xl/charts/colors"
+        }
+    }
     var contentType: String {
-        relationshipType == Self.styleType
-            ? "application/vnd.ms-office.chartstyle+xml"
-            : "application/vnd.ms-office.chartcolorstyle+xml"
+        switch relationshipType {
+        case Self.styleType: "application/vnd.ms-office.chartstyle+xml"
+        case Self.userShapesType: "application/vnd.openxmlformats-officedocument.drawingml.chartshapes+xml"
+        default: "application/vnd.ms-office.chartcolorstyle+xml"
+        }
     }
 }
 
