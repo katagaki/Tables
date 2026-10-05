@@ -20,10 +20,16 @@ struct WorkbookEntity: TransientAppEntity {
     @Property(title: "Intent.Workbook.File")
     var file: IntentFile
 
+    /// A bookmark to the file the workbook was read from, so Save Workbook
+    /// can write the changes back to it.
+    @Property(title: "Intent.Workbook.Source")
+    var source: String?
+
     init() {
         name = ""
         sheetNames = []
         file = IntentFile(data: Data(), filename: "Workbook.xlsx", type: .openXMLWorkbook)
+        source = nil
     }
 
     init(_ workbook: Workbook, name: String) throws {
@@ -44,9 +50,68 @@ struct WorkbookEntity: TransientAppEntity {
         try WorkbookAutomation.read(file.data, filename: file.filename)
     }
 
-    /// The same workbook after a change.
+    /// The same workbook after a change, still tied to its original file.
     func replacing(with workbook: Workbook) throws -> WorkbookEntity {
-        try WorkbookEntity(workbook, name: name)
+        var changed = try WorkbookEntity(workbook, name: name)
+        changed.source = source
+        return changed
+    }
+
+    /// The file the workbook was read from, when it can still be reached.
+    var sourceURL: URL? {
+        guard let source, let data = Data(base64Encoded: source) else { return nil }
+        var stale = false
+        return try? URL(resolvingBookmarkData: data, options: WorkbookFiles.bookmarkResolution,
+                        relativeTo: nil, bookmarkDataIsStale: &stale)
+    }
+}
+
+/// Reading and writing the files actions point at.
+enum WorkbookFiles {
+    #if os(macOS)
+    static let bookmarkCreation: URL.BookmarkCreationOptions = [.withSecurityScope]
+    static let bookmarkResolution: URL.BookmarkResolutionOptions = [.withSecurityScope]
+    #else
+    static let bookmarkCreation: URL.BookmarkCreationOptions = []
+    static let bookmarkResolution: URL.BookmarkResolutionOptions = []
+    #endif
+
+    static func bookmark(for url: URL) -> String? {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        return (try? url.bookmarkData(options: bookmarkCreation, includingResourceValuesForKeys: nil,
+                                      relativeTo: nil))?.base64EncodedString()
+    }
+
+    /// Writes data over a file through file coordination, so a copy open in
+    /// the editor sees the change rather than overwriting it later.
+    static func write(_ data: Data, to url: URL) throws {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        var coordinationError: NSError?
+        var writeError: Error?
+        NSFileCoordinator().coordinate(writingItemAt: url, options: .forReplacing, error: &coordinationError) { target in
+            do { try data.write(to: target, options: .atomic) } catch { writeError = error }
+        }
+        if let error = coordinationError ?? writeError { throw error }
+    }
+
+    /// The format a file's name asks for.
+    static func format(for url: URL) -> WorkbookAutomation.Format {
+        WorkbookAutomation.Format(rawValue: url.pathExtension.lowercased()) ?? .xlsx
+    }
+
+    /// A new file in the app's own documents folder, named after the workbook.
+    static func newDocumentURL(named name: String) -> URL {
+        let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let stem = name.isEmpty ? "Workbook" : name
+        var candidate = folder.appendingPathComponent(stem).appendingPathExtension("xlsx")
+        var number = 2
+        while FileManager.default.fileExists(atPath: candidate.path) {
+            candidate = folder.appendingPathComponent("\(stem) \(number)").appendingPathExtension("xlsx")
+            number += 1
+        }
+        return candidate
     }
 }
 
@@ -107,7 +172,9 @@ struct GetWorkbookIntent: AppIntent {
     func perform() async throws -> some IntentResult & ReturnsValue<WorkbookEntity> {
         let workbook = try WorkbookAutomation.read(file.data, filename: file.filename)
         let name = (file.filename as NSString).deletingPathExtension
-        return .result(value: try WorkbookEntity(workbook, name: name.isEmpty ? "Workbook" : name))
+        var entity = try WorkbookEntity(workbook, name: name.isEmpty ? "Workbook" : name)
+        entity.source = file.fileURL.flatMap(WorkbookFiles.bookmark)
+        return .result(value: entity)
     }
 }
 
@@ -498,5 +565,69 @@ struct DeleteSheetIntent: AppIntent {
         var book = try workbook.load()
         try WorkbookAutomation.deleteSheet(try WorkbookAutomation.sheetIndex(sheet, in: book), in: &book)
         return .result(value: try workbook.replacing(with: book))
+    }
+}
+
+// MARK: - Saving and opening
+
+struct SaveWorkbookIntent: AppIntent {
+    static let title: LocalizedStringResource = "Intent.Save.Title"
+    static let description = IntentDescription("Intent.Save.Description")
+
+    @Parameter(title: "Intent.Parameter.Workbook")
+    var workbook: WorkbookEntity
+
+    /// Where to save; the file the workbook came from when left out.
+    @Parameter(title: "Intent.Parameter.Destination",
+               supportedContentTypes: [.spreadsheet, .commaSeparatedText, .tabSeparatedText])
+    var destination: IntentFile?
+
+    @Parameter(title: "Intent.Parameter.Sheet")
+    var sheet: String?
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Intent.Save.Summary \(\.$workbook)") {
+            \.$destination
+            \.$sheet
+        }
+    }
+
+    func perform() async throws -> some IntentResult & ReturnsValue<IntentFile> {
+        guard let url = destination?.fileURL ?? workbook.sourceURL else { throw WorkbookAutomation.Failure.noSaveLocation }
+        let format = WorkbookFiles.format(for: url)
+        let data = try WorkbookAutomation.write(try workbook.load(), as: format, sheet: sheet)
+        try WorkbookFiles.write(data, to: url)
+        return .result(value: IntentFile(data: data, filename: url.lastPathComponent, type: format.type))
+    }
+}
+
+struct OpenInTablesIntent: AppIntent {
+    static let title: LocalizedStringResource = "Intent.OpenInTables.Title"
+    static let description = IntentDescription("Intent.OpenInTables.Description")
+    static let openAppWhenRun = true
+
+    @Parameter(title: "Intent.Parameter.Workbook")
+    var workbook: WorkbookEntity
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Intent.OpenInTables.Summary \(\.$workbook)")
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        // A workbook read from a file opens that file, with any changes the
+        // shortcut made saved into it first; one made in the shortcut is
+        // saved among the app's own documents.
+        let url: URL
+        if let source = workbook.sourceURL {
+            let format = WorkbookFiles.format(for: source)
+            try WorkbookFiles.write(try WorkbookAutomation.write(try workbook.load(), as: format), to: source)
+            url = source
+        } else {
+            url = WorkbookFiles.newDocumentURL(named: workbook.name)
+            try WorkbookFiles.write(workbook.file.data, to: url)
+        }
+        try await WorkbookOpener.open(url)
+        return .result()
     }
 }

@@ -389,6 +389,41 @@
         }
       }
     },
+    "Automation.Error.CannotOpen" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables couldn't open the workbook. Try again once Tables has finished launching."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables でワークブックを開けませんでした。Tables の起動が完了してからもう一度お試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables에서 통합 문서를 열 수 없습니다. Tables 실행이 끝난 뒤 다시 시도하십시오."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables 无法打开工作簿。请在 Tables 启动完成后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables 無法打開活頁簿。請在 Tables 啟動完成後再試一次。"
+          }
+        }
+      }
+    },
     "Automation.Error.InvalidCell" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -525,6 +560,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "活頁簿至少必須保留一個工作表。"
+          }
+        }
+      }
+    },
+    "Automation.Error.NoSaveLocation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This workbook didn't come from a file. Choose a destination to save it to."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このワークブックはファイルから読み込まれたものではありません。保存先を選んでください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 통합 문서는 파일에서 읽은 것이 아닙니다. 저장할 위치를 선택하십시오."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此工作簿并非来自文件。请选择存储位置。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此活頁簿並非來自檔案。請選擇儲存位置。"
           }
         }
       }
@@ -9594,6 +9664,111 @@
         }
       }
     },
+    "Intent.OpenInTables.Description" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opens a workbook in Tables. One read from a file opens that file, with the shortcut's changes saved into it; a new one is saved in Tables' documents."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables でワークブックを開きます。ファイルから読み込んだものは、ショートカットでの変更を保存したうえでそのファイルを開きます。新規のものは Tables の書類に保存されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables에서 통합 문서를 엽니다. 파일에서 읽은 통합 문서는 단축어의 변경 사항을 저장한 뒤 그 파일을 열고, 새 통합 문서는 Tables의 문서에 저장합니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Tables 中打开工作簿。从文件读取的工作簿会先存储快捷指令所做的更改，再打开该文件；新工作簿会存储在 Tables 的文稿中。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Tables 中打開活頁簿。從檔案讀取的活頁簿會先儲存捷徑所做的變更，再打開該檔案；新活頁簿會儲存在 Tables 的文件中。"
+          }
+        }
+      }
+    },
+    "Intent.OpenInTables.Summary ${workbook}" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open ${workbook} in Tables"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${workbook} を Tables で開く"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables에서 ${workbook} 열기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Tables 中打开 ${workbook}"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Tables 中打開 ${workbook}"
+          }
+        }
+      }
+    },
+    "Intent.OpenInTables.Title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open in Tables"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables で開く"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables에서 열기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Tables 中打开"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Tables 中打開"
+          }
+        }
+      }
+    },
     "Intent.Parameter.Ascending" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9730,6 +9905,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "條件"
+          }
+        }
+      }
+    },
+    "Intent.Parameter.Destination" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Destination"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存先"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "저장 위치"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "目标位置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "目的位置"
           }
         }
       }
@@ -10294,6 +10504,111 @@
         }
       }
     },
+    "Intent.Save.Description" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Writes a workbook back to the file it came from, or to a file you choose. The file's name decides whether it is saved as Excel, CSV or TSV."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ワークブックを元のファイル、または選んだファイルに書き込みます。Excel、CSV、TSV のどれで保存するかはファイル名で決まります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "통합 문서를 원래 파일이나 선택한 파일에 다시 씁니다. 파일 이름에 따라 Excel, CSV, TSV 중 어느 형식으로 저장할지 정해집니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将工作簿写回其来源文件或你选择的文件。文件名决定存储为 Excel、CSV 还是 TSV。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將活頁簿寫回其來源檔案或你選擇的檔案。檔名決定儲存為 Excel、CSV 還是 TSV。"
+          }
+        }
+      }
+    },
+    "Intent.Save.Summary ${workbook}" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save ${workbook}"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${workbook} を保存"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${workbook} 저장"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "存储 ${workbook}"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "儲存 ${workbook}"
+          }
+        }
+      }
+    },
+    "Intent.Save.Title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save Workbook"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ワークブックを保存"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "통합 문서 저장"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "存储工作簿"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "儲存活頁簿"
+          }
+        }
+      }
+    },
     "Intent.SetCell.Description" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10640,6 +10955,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "工作表"
+          }
+        }
+      }
+    },
+    "Intent.Workbook.Source" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Original File"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "元のファイル"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "원본 파일"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "原始文件"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "原始檔案"
           }
         }
       }

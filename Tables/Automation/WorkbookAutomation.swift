@@ -14,6 +14,7 @@ enum WorkbookAutomation {
         case invalidColumn(String)
         case lastSheet
         case outsideSheet(String)
+        case noSaveLocation
 
         var errorDescription: String? {
             switch self {
@@ -31,6 +32,8 @@ enum WorkbookAutomation {
                 return String(localized: "Automation.Error.LastSheet")
             case .outsideSheet(let text):
                 return String(format: String(localized: "Automation.Error.OutsideSheet"), text)
+            case .noSaveLocation:
+                return String(localized: "Automation.Error.NoSaveLocation")
             }
         }
     }
