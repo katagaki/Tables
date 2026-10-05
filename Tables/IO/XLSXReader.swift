@@ -85,6 +85,7 @@ enum XLSXReader {
         if sheets.allSatisfy(\.isHidden) { sheets[0].isHidden = false }
         var workbook = Workbook(sheets: sheets, definedNames: parseDefinedNames(workbookXML, sheets: sheets))
         workbook.themeAccentColors = theme.accentColors
+        adoptArrayFormulas(in: &workbook)
 
         // Drawings are read into the model — charts as charts, everything
         // else as anchors kept verbatim — and written afresh on save.
@@ -487,6 +488,17 @@ enum XLSXReader {
                 if let element = cellElement.firstChild(named: "f") {
                     cell.formula = formula(from: element, at: address, shared: &sharedFormulas)
                         .map(FormulaDialect.fromFile)
+                    // An array formula names the block it fills. Excel marks the
+                    // dynamic ones, which spill, with cell metadata; the rest are
+                    // the fixed blocks of Ctrl+Shift+Enter.
+                    if element.attribute("t") == "array", let ref = element.attribute("ref"),
+                       let block = CellRange(a1Range: ref)?.normalized {
+                        if cellElement.attribute("cm") != nil {
+                            sheet.spills[address] = block
+                        } else {
+                            cell.arrayExtent = ArrayExtent(rows: block.rowRange.count, columns: block.columnRange.count)
+                        }
+                    }
                 }
                 cell.value = decodeValue(cellElement, sharedStrings: sharedStrings)
                 if usesMacEpoch, case .number(let serial) = cell.value,
@@ -923,6 +935,38 @@ enum XLSXReader {
             rowDelta: address.row - master.origin.row,
             columnDelta: address.column - master.origin.column
         )
+    }
+
+    /// Brings formulas written before dynamic arrays into today's meaning, and
+    /// marks the cells array formulas filled.
+    ///
+    /// An ordinary formula from the file was calculated by Excel's old rules,
+    /// under which a range standing where one value belongs collapses to the
+    /// cell in line with the formula. Today's rules would spill it instead, so
+    /// each such place gets the `@` that keeps the old answer — what Excel
+    /// shows when it opens the same file.
+    private static func adoptArrayFormulas(in workbook: inout Workbook) {
+        let isRangeName = workbook.isRangeName
+        for index in workbook.sheets.indices {
+            let sheet = workbook.sheets[index]
+            var blocks = sheet.spills
+            for (address, cell) in sheet.cells {
+                guard let formula = cell.formula else { continue }
+                if let extent = cell.arrayExtent {
+                    blocks[address] = CellRange(start: address, end: CellAddress(
+                        row: address.row + extent.rows - 1, column: address.column + extent.columns - 1))
+                } else if sheet.spills[address] == nil {
+                    let converted = FormulaDialect.legacyToDynamic(formula, isRangeName: isRangeName)
+                    if converted != formula { workbook.sheets[index].cells[address]?.formula = converted }
+                }
+            }
+            for (anchor, block) in blocks {
+                for address in sheet.storedAddresses(in: block) where address != anchor {
+                    guard workbook.sheets[index].cells[address]?.formula == nil else { continue }
+                    workbook.sheets[index].cells[address]?.isSpilled = true
+                }
+            }
+        }
     }
 
     /// Days between the 1900 and 1904 epochs. Only date-formatted values are

@@ -210,11 +210,14 @@ struct FormulaEvaluator {
                 return .number(number / 100)
             }
 
-        case .binary(":", _, _), .spill, .intersect:
-            guard let reference = reference(node) else {
-                if case .intersect(let operand) = node { return .scalar(evaluate(operand).single) }
-                return .failure(.referenceError)
-            }
+        case .intersect(let operand):
+            // A range out of line with the formula has nothing to give.
+            guard let whole = reference(operand) else { return .scalar(evaluate(operand).single) }
+            guard let cell = intersection(of: whole) else { return .failure(.valueError) }
+            return materialize(cell)
+
+        case .binary(":", _, _), .spill:
+            guard let reference = reference(node) else { return .failure(.referenceError) }
             return materialize(reference)
 
         case .binary(let symbol, let lhs, let rhs):

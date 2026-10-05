@@ -7,21 +7,25 @@ enum XLSXWriter {
         let styles = StyleTable(workbook: workbook)
         let preserved = workbook.preservedPackage
         let drawings = DrawingPlan(workbook: workbook)
+        let formulas = FormulaPlan(workbook: workbook)
 
         var parts: [(path: String, data: Data)] = [
             (
                 "[Content_Types].xml",
-                contentTypes(workbook: workbook, drawings: drawings, preserved: preserved).utf8Data
+                contentTypes(workbook: workbook, drawings: drawings, preserved: preserved,
+                             hasMetadata: formulas.usesDynamicArrays).utf8Data
             ),
             ("_rels/.rels", rootRelationships(preserved: preserved).utf8Data),
             ("xl/workbook.xml", workbookPart(workbook).utf8Data),
             (
                 "xl/_rels/workbook.xml.rels",
-                workbookRelationships(workbook: workbook, drawings: drawings, preserved: preserved).utf8Data
+                workbookRelationships(workbook: workbook, drawings: drawings, preserved: preserved,
+                                      hasMetadata: formulas.usesDynamicArrays).utf8Data
             ),
             ("xl/styles.xml", styles.xml.utf8Data),
             ("xl/sharedStrings.xml", strings.xml.utf8Data),
         ]
+        if formulas.usesDynamicArrays { parts.append((FormulaPlan.metadataPath, FormulaPlan.metadataPart.utf8Data)) }
         for (index, sheet) in workbook.sheets.enumerated() {
             let preservedRelationships = preserved.sheetRelationshipParts[sheet.id]
             let sheetDrawing = drawings.sheets[sheet.id]
@@ -50,7 +54,7 @@ enum XLSXWriter {
                 )
             } else {
                 body = sheetPart(
-                    sheet, strings: strings, styles: styles,
+                    sheet, strings: strings, styles: styles, formulas: formulas.forms[sheet.id] ?? [:],
                     hasRelationshipsPart: preservedRelationships != nil, drawingRelationshipID: drawingID
                 )
             }
@@ -233,7 +237,9 @@ enum XLSXWriter {
 
     // MARK: - Package parts
 
-    private static func contentTypes(workbook: Workbook, drawings: DrawingPlan, preserved: PreservedPackage) -> String {
+    private static func contentTypes(
+        workbook: Workbook, drawings: DrawingPlan, preserved: PreservedPackage, hasMetadata: Bool
+    ) -> String {
         var xml = declaration
         xml += "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
         xml += "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>"
@@ -262,6 +268,9 @@ enum XLSXWriter {
         }
         xml += "<Override PartName=\"/xl/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml\"/>"
         xml += "<Override PartName=\"/xl/sharedStrings.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml\"/>"
+        if hasMetadata {
+            xml += "<Override PartName=\"/\(FormulaPlan.metadataPath)\" ContentType=\"\(FormulaPlan.metadataContentType)\"/>"
+        }
         for (name, type) in preserved.contentTypeOverrides.sorted(by: { $0.key < $1.key })
         where !generatedPartNames.contains(name) {
             xml += "<Override PartName=\"\(XMLLite.escape(name))\" ContentType=\"\(XMLLite.escape(type))\"/>"
@@ -273,7 +282,7 @@ enum XLSXWriter {
     /// Part names we always write an override for ourselves, so a preserved
     /// one naming the same part is skipped rather than duplicated.
     private static let generatedPartNames: Set<String> = [
-        "/xl/workbook.xml", "/xl/styles.xml", "/xl/sharedStrings.xml",
+        "/xl/workbook.xml", "/xl/styles.xml", "/xl/sharedStrings.xml", "/xl/metadata.xml",
     ]
 
     private static func rootRelationships(preserved: PreservedPackage) -> String {
@@ -286,7 +295,7 @@ enum XLSXWriter {
     }
 
     private static func workbookRelationships(
-        workbook: Workbook, drawings: DrawingPlan, preserved: PreservedPackage
+        workbook: Workbook, drawings: DrawingPlan, preserved: PreservedPackage, hasMetadata: Bool
     ) -> String {
         let sheetCount = workbook.sheets.count
         var xml = declaration
@@ -298,7 +307,11 @@ enum XLSXWriter {
         }
         xml += "<Relationship Id=\"rId\(sheetCount + 1)\" Type=\"\(relationshipNamespace)/styles\" Target=\"styles.xml\"/>"
         xml += "<Relationship Id=\"rId\(sheetCount + 2)\" Type=\"\(relationshipNamespace)/sharedStrings\" Target=\"sharedStrings.xml\"/>"
-        xml += relationshipEntries(preserved.workbookRelationships, startingAt: sheetCount + 3)
+        let carried = preserved.workbookRelationships.filter { $0.type != FormulaPlan.metadataRelationshipType }
+        xml += relationshipEntries(carried, startingAt: sheetCount + 3)
+        if hasMetadata {
+            xml += "<Relationship Id=\"rId\(sheetCount + 3 + carried.count)\" Type=\"\(FormulaPlan.metadataRelationshipType)\" Target=\"metadata.xml\"/>"
+        }
         xml += "</Relationships>"
         return xml
     }
@@ -379,7 +392,7 @@ enum XLSXWriter {
     ]
 
     private static func sheetPart(
-        _ sheet: Worksheet, strings: SharedStringTable, styles: StyleTable,
+        _ sheet: Worksheet, strings: SharedStringTable, styles: StyleTable, formulas: [CellAddress: FormulaPlan.Form] = [:],
         hasRelationshipsPart: Bool, drawingRelationshipID: String? = nil
     ) -> String {
         /// Fragments paired with their schema position, plus the order they
@@ -446,7 +459,7 @@ enum XLSXWriter {
             cells.sort { $0.address.column < $1.address.column }
             xml += "<row \(attributes)>"
             for (address, cell) in cells {
-                xml += cellPart(cell, at: address, strings: strings, styles: styles)
+                xml += cellPart(cell, at: address, strings: strings, styles: styles, formula: formulas[address])
             }
             xml += "</row>"
         }
@@ -489,15 +502,25 @@ enum XLSXWriter {
     }
 
     private static func cellPart(
-        _ cell: Cell, at address: CellAddress, strings: SharedStringTable, styles: StyleTable
+        _ cell: Cell, at address: CellAddress, strings: SharedStringTable, styles: StyleTable,
+        formula form: FormulaPlan.Form? = nil
     ) -> String {
         var attributes = "r=\"\(address.a1)\""
         let styleIndex = styles.index(for: cell.style)
         if styleIndex != 0 { attributes += " s=\"\(styleIndex)\"" }
 
         var body = ""
-        if let formula = cell.formula {
-            body += "<f>\(XMLLite.escape(FormulaDialect.toFile(formula)))</f>"
+        var isDynamic = false
+        switch form {
+        case .plain(let text)?:
+            body += "<f>\(XMLLite.escape(text))</f>"
+        case .array(let text, let block, let dynamic)?:
+            body += "<f t=\"array\" ref=\"\(block.a1)\">\(XMLLite.escape(text))</f>"
+            isDynamic = dynamic
+        case nil:
+            if let formula = cell.formula {
+                body += "<f>\(XMLLite.escape(FormulaDialect.toFile(formula)))</f>"
+            }
         }
 
         switch cell.value {
@@ -521,6 +544,9 @@ enum XLSXWriter {
             }
         }
 
+        // `cm` points at the metadata marking the formula as a dynamic array;
+        // the schema puts it after `t`.
+        if isDynamic { attributes += " cm=\"1\"" }
         return body.isEmpty ? "<c \(attributes)/>" : "<c \(attributes)>\(body)</c>"
     }
 

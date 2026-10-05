@@ -166,6 +166,123 @@ enum FormulaDialect {
         return false
     }
 
+    // MARK: - Implicit intersection
+
+    /// Rewrites a formula saved by Excel before dynamic arrays into the
+    /// equivalent dynamic-array formula, by putting `@` wherever the old
+    /// engine would have intersected a range with the formula's own row or
+    /// column. This is what Excel itself shows when it opens such a file.
+    ///
+    /// `isRangeName` says whether a defined name stands for more than one cell.
+    static func legacyToDynamic(_ formula: String, isRangeName: (String) -> Bool = { _ in false }) -> String {
+        guard let syntax = try? FormulaParser.parseSyntax(formula) else { return formula }
+        var edits: [Edit] = []
+        collectIntersections(syntax, context: .value, isRangeName: isRangeName, into: &edits)
+        return apply(edits, to: Array(formula))
+    }
+
+    /// The text to store for a formula in Excel's pre-dynamic-array form, or
+    /// nil when it means something that form cannot say and has to be stored
+    /// as a dynamic array.
+    static func legacyForm(_ formula: String, isRangeName: (String) -> Bool = { _ in false }) -> String? {
+        guard let syntax = try? FormulaParser.parseSyntax(formula) else { return formula }
+        let characters = Array(formula)
+        var edits: [Edit] = []
+        collectWrittenIntersections(syntax, characters: characters, into: &edits)
+        let stripped = apply(edits, to: characters)
+        return legacyToDynamic(stripped, isRangeName: isRangeName) == formula ? stripped : nil
+    }
+
+    private static func collectWrittenIntersections(
+        _ syntax: FormulaSyntax, characters: [Character], into edits: inout [Edit]
+    ) {
+        if !syntax.isGroup, case .intersect = syntax.node, characters[syntax.range.lowerBound] == "@" {
+            edits.append(Edit(range: syntax.range.lowerBound..<(syntax.range.lowerBound + 1), replacement: ""))
+        }
+        for child in syntax.children { collectWrittenIntersections(child, characters: characters, into: &edits) }
+    }
+
+    /// How the pre-dynamic-array engine evaluated an operand.
+    private enum LegacyContext {
+        /// One value was wanted, so a range was intersected down to one cell.
+        case value
+        /// A range was accepted as it was, but an expression was still worked
+        /// out one value at a time.
+        case reference
+        /// Everything was worked out as arrays, as `SUMPRODUCT` does.
+        case array
+    }
+
+    /// Parameters the old engine evaluated as whole arrays even without
+    /// Ctrl+Shift+Enter.
+    private static func isArrayParameter(_ name: String, _ index: Int) -> Bool {
+        switch name {
+        case "SUMPRODUCT", "MMULT", "MDETERM", "MINVERSE", "TRANSPOSE", "FREQUENCY", "TREND", "GROWTH", "LINEST",
+             "LOGEST", "SUMX2MY2", "SUMX2PY2", "SUMXMY2", "CORREL", "PEARSON", "RSQ", "SLOPE", "INTERCEPT",
+             "STEYX", "COVAR", "FORECAST", "PROB", "TTEST", "FTEST", "CHITEST":
+            return true
+        case "LOOKUP": return index >= 1
+        case "AGGREGATE": return index >= 2
+        default: return false
+        }
+    }
+
+    /// Arguments that are the result in a value position, so they inherit it.
+    private static func isResultParameter(_ name: String, _ index: Int, count: Int) -> Bool {
+        switch name {
+        case "IF": return index >= 1
+        case "IFERROR", "IFNA": return true
+        case "CHOOSE": return index >= 1
+        case "IFS": return index % 2 == 1
+        case "SWITCH": return index >= 2 && (index % 2 == 0 || index == count - 1)
+        default: return false
+        }
+    }
+
+    /// Functions whose answer can be a range, so `@` goes in front of the call.
+    private static let referenceFunctions: Set<String> = ["OFFSET", "INDIRECT"]
+
+    private static func collectIntersections(
+        _ syntax: FormulaSyntax, context: LegacyContext, isRangeName: (String) -> Bool, into edits: inout [Edit]
+    ) {
+        func mark() { edits.append(Edit(range: syntax.range.lowerBound..<syntax.range.lowerBound, replacement: "@")) }
+        func visitChildren(_ context: LegacyContext) {
+            for child in syntax.children {
+                collectIntersections(child, context: context, isRangeName: isRangeName, into: &edits)
+            }
+        }
+        if syntax.isGroup { return visitChildren(context) }
+        switch syntax.node {
+        case .range(_, let start, let end) where start != end:
+            if context == .value { mark() }
+        case .definedName(_, let name):
+            if context == .value, isRangeName(name) { mark() }
+        case .binary(":", _, _), .intersect, .spill, .array, .invoke, .sheetSpan:
+            break
+        case .binary, .unary, .postfixPercent:
+            visitChildren(context == .array ? .array : .value)
+        case .call(let name, let arguments):
+            if context == .value, referenceFunctions.contains(name) { mark() }
+            if context == .array { return visitChildren(.array) }
+            let spec = FormulaFunctions.registry[name]
+            for (index, child) in syntax.children.enumerated() {
+                let parameter: LegacyContext
+                if isArrayParameter(name, index) {
+                    parameter = .array
+                } else if context == .value, isResultParameter(name, index, count: arguments.count) {
+                    parameter = .value
+                } else if spec?.lifts.contains(index) == true {
+                    parameter = .value
+                } else {
+                    parameter = .reference
+                }
+                collectIntersections(child, context: parameter, isRangeName: isRangeName, into: &edits)
+            }
+        default:
+            break
+        }
+    }
+
     // MARK: - Splicing
 
     private struct Edit {

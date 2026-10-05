@@ -1,7 +1,8 @@
 import Foundation
 
-/// Recalculates every formula in a workbook, memoizing per-cell results and
-/// detecting circular references.
+/// Recalculates every formula in a workbook, memoizing per-cell results,
+/// detecting circular references, and spilling array results into the cells
+/// beside them.
 final class CalculationEngine: FormulaContext {
     /// What a recursion guard tracks: a cell, or a defined name being expanded.
     private enum Key: Hashable {
@@ -12,30 +13,98 @@ final class CalculationEngine: FormulaContext {
         case definedName(String, scope: Worksheet.ID?)
     }
 
+    private typealias SpillMap = [Int: [CellAddress: CellRange]]
+
     private let workbook: Workbook
     private var sheetIndicesByName: [String: Int] = [:]
-    private var cache: [Key: CellValue] = [:]
+    /// Each formula's whole result, array and all.
+    private var results: [Key: FormulaValue] = [:]
+    private var blockedSpills: [Key: Bool] = [:]
     private var evaluating: Set<Key> = []
     private var parseCache: [String: Result<FormulaNode, FormulaParseFailure>] = [:]
     private var activeSheetIndex = 0
+    /// Where arrays are taken to have spilled while this pass runs, so a cell
+    /// in a spilled range can be read before its formula has been.
+    private let hints: SpillMap
+    /// For each cell inside a hinted spill, the formula that spills into it.
+    private var owners: [Int: [CellAddress: CellAddress]] = [:]
 
     private struct FormulaParseFailure: Error { var message: String }
 
-    init(workbook: Workbook) {
+    private init(workbook: Workbook, hints: SpillMap) {
         self.workbook = workbook
+        self.hints = hints
         for (index, sheet) in workbook.sheets.enumerated() {
             sheetIndicesByName[sheet.name.lowercased()] = index
         }
+        for (sheet, spills) in hints {
+            var map: [CellAddress: CellAddress] = [:]
+            // Where two hinted spills overlap, the earlier formula owns the cell.
+            for (anchor, range) in spills.sorted(by: { $0.key < $1.key }) {
+                range.forEachAddress { address in
+                    if address != anchor, map[address] == nil { map[address] = anchor }
+                }
+            }
+            owners[sheet] = map
+        }
     }
 
-    /// Returns a copy of the workbook with every formula cell's cached value refreshed.
+    convenience init(workbook: Workbook) {
+        self.init(workbook: workbook, hints: Self.storedSpills(of: workbook))
+    }
+
+    private static func storedSpills(of workbook: Workbook) -> SpillMap {
+        var map: SpillMap = [:]
+        for (index, sheet) in workbook.sheets.enumerated() where !sheet.spills.isEmpty {
+            map[index] = sheet.spills
+        }
+        return map
+    }
+
+    /// Returns a copy of the workbook with every formula cell's cached value
+    /// refreshed and every array spilled.
+    ///
+    /// Spilling is settled by repetition: a pass that discovers a new or
+    /// resized spill runs again with it known, so formulas reading the
+    /// spilled cells see them. A sheet without arrays takes one pass.
     static func recalculated(_ workbook: Workbook) -> Workbook {
+        var hints = storedSpills(of: workbook)
+        var engine = CalculationEngine(workbook: workbook, hints: hints)
+        for _ in 0..<4 {
+            engine.evaluateAllFormulas()
+            let actual = engine.actualSpills()
+            if actual == hints { break }
+            hints = actual
+            engine = CalculationEngine(workbook: workbook, hints: hints)
+        }
+        engine.evaluateAllFormulas()
+        return engine.apply(to: workbook)
+    }
+
+    /// Evaluates a formula body in the context of a sheet without storing anything.
+    static func preview(formula body: String, in workbook: Workbook, sheetIndex: Int) -> CellValue {
         let engine = CalculationEngine(workbook: workbook)
-        var result = workbook
+        engine.activeSheetIndex = sheetIndex
+        return engine.evaluate(body: body, sheetIndex: sheetIndex, at: nil).single
+    }
+
+    private func evaluateAllFormulas() {
         for (sheetIndex, sheet) in workbook.sheets.enumerated() {
-            engine.activeSheetIndex = sheetIndex
+            activeSheetIndex = sheetIndex
             for (address, cell) in sheet.cells where cell.formula != nil {
-                let value = engine.value(at: address, sheetIndex: sheetIndex)
+                _ = value(at: address, sheetIndex: sheetIndex)
+            }
+        }
+    }
+
+    // MARK: - Writing results back
+
+    private func apply(to workbook: Workbook) -> Workbook {
+        var result = workbook
+        let layouts = actualSpills()
+        for (sheetIndex, sheet) in workbook.sheets.enumerated() {
+            for (address, cell) in sheet.cells where cell.formula != nil {
+                let value = value(at: address, sheetIndex: sheetIndex)
                 // Most of a recalculation lands on the value already there.
                 // Writing it back anyway would copy the sheet's whole cell
                 // dictionary for nothing and tell the view every cell moved.
@@ -44,15 +113,131 @@ final class CalculationEngine: FormulaContext {
                 updated.value = value
                 result.sheets[sheetIndex].cells[address] = updated
             }
+
+            let spills = layouts[sheetIndex] ?? [:]
+            var covered: [CellAddress: CellValue] = [:]
+            for (anchor, range) in spills {
+                range.forEachAddress { address in
+                    guard address != anchor else { return }
+                    covered[address] = spilledValue(sheetIndex: sheetIndex, owner: anchor, at: address)
+                }
+            }
+            for (address, cell) in sheet.cells where cell.isSpilled && covered[address] == nil {
+                var cleared = cell
+                cleared.value = .empty
+                cleared.isSpilled = false
+                result.sheets[sheetIndex][address] = cleared
+            }
+            for (address, value) in covered {
+                var cell = sheet[address]
+                guard cell.formula == nil, !(cell.isSpilled && cell.value == value) else { continue }
+                cell.value = value
+                cell.isSpilled = true
+                result.sheets[sheetIndex][address] = cell
+                // The grid grows to hold a spill, as Excel's would already be big enough.
+                if address.row >= result.sheets[sheetIndex].rowCount {
+                    result.sheets[sheetIndex].rowCount = min(Worksheet.maximumRowCount, address.row + 1)
+                }
+                if address.column >= result.sheets[sheetIndex].columnCount {
+                    result.sheets[sheetIndex].columnCount = min(Worksheet.maximumColumnCount, address.column + 1)
+                }
+            }
+            if result.sheets[sheetIndex].spills != spills { result.sheets[sheetIndex].spills = spills }
         }
         return result
     }
 
-    /// Evaluates a formula body in the context of a sheet without storing anything.
-    static func preview(formula body: String, in workbook: Workbook, sheetIndex: Int) -> CellValue {
-        let engine = CalculationEngine(workbook: workbook)
-        engine.activeSheetIndex = sheetIndex
-        return engine.evaluate(body: body, sheetIndex: sheetIndex, at: nil)
+    // MARK: - Spilling
+
+    /// Where every formula evaluated so far spills, by sheet.
+    private func actualSpills() -> SpillMap {
+        var map: SpillMap = [:]
+        for key in results.keys {
+            guard case .cell(let sheet, let address) = key,
+                  let range = spillRange(sheetIndex: sheet, anchor: address) else { continue }
+            map[sheet, default: [:]][address] = range
+        }
+        return map
+    }
+
+    /// The block a formula's result occupies, or nil when it is a single value
+    /// or has no room to spill.
+    private func spillRange(sheetIndex: Int, anchor: CellAddress) -> CellRange? {
+        guard let cell = workbook.sheets[sheetIndex].cells[anchor], cell.formula != nil,
+              let result = results[.cell(sheet: sheetIndex, address: anchor)] else { return nil }
+        if let extent = cell.arrayExtent {
+            return CellRange(start: anchor, end: CellAddress(row: anchor.row + extent.rows - 1,
+                                                             column: anchor.column + extent.columns - 1))
+        }
+        guard result.isArray else { return nil }
+        let range = CellRange(start: anchor, end: CellAddress(row: anchor.row + result.rowCount - 1,
+                                                              column: anchor.column + result.columnCount - 1))
+        return isBlocked(sheetIndex: sheetIndex, anchor: anchor, range: range) ? nil : range
+    }
+
+    /// Whether anything stands in a spill's way: a formula, a value someone
+    /// typed, a merged region, an earlier formula's spill, or the sheet's edge.
+    private func isBlocked(sheetIndex: Int, anchor: CellAddress, range: CellRange) -> Bool {
+        let key = Key.cell(sheet: sheetIndex, address: anchor)
+        if let known = blockedSpills[key] { return known }
+        let sheet = workbook.sheets[sheetIndex]
+        var blocked = range.end.row >= Worksheet.maximumRowCount || range.end.column >= Worksheet.maximumColumnCount
+        if !blocked {
+            blocked = sheet.storedAddresses(in: range).contains { address in
+                guard address != anchor, let cell = sheet.cells[address] else { return false }
+                return cell.formula != nil || (!cell.isSpilled && !cell.value.isEmpty)
+            }
+        }
+        if !blocked {
+            blocked = sheet.mergedRanges.contains { merge in
+                let box = merge.normalized
+                return box.start.row <= range.end.row && box.end.row >= range.start.row
+                    && box.start.column <= range.end.column && box.end.column >= range.start.column
+            }
+        }
+        if !blocked, let owned = owners[sheetIndex], !owned.isEmpty {
+            func takenByEarlier(_ address: CellAddress) -> Bool {
+                guard let owner = owned[address] else { return false }
+                return owner != anchor && owner < anchor
+            }
+            if range.cellCount <= owned.count {
+                var found = false
+                range.forEachAddress { if !found, takenByEarlier($0) { found = true } }
+                blocked = found
+            } else {
+                blocked = owned.keys.contains { range.contains($0) && takenByEarlier($0) }
+            }
+        }
+        blockedSpills[key] = blocked
+        return blocked
+    }
+
+    /// The value a spilled-into cell shows, read from the formula spilling there.
+    private func spilledValue(sheetIndex: Int, owner: CellAddress, at address: CellAddress) -> CellValue {
+        guard let cell = workbook.sheets[sheetIndex].cells[owner], cell.formula != nil else { return .empty }
+        let result = formulaResult(sheetIndex: sheetIndex, address: owner, formula: cell.formula ?? "")
+        let row = address.row - owner.row
+        let column = address.column - owner.column
+        guard row >= 0, column >= 0 else { return .empty }
+        if let extent = cell.arrayExtent {
+            guard row < extent.rows, column < extent.columns else { return .empty }
+            return Self.fitted(result, row: row, column: column)
+        }
+        guard let range = spillRange(sheetIndex: sheetIndex, anchor: owner), range.contains(address) else {
+            return .empty
+        }
+        return result.rows[row][column]
+    }
+
+    /// A legacy array formula's value at a position in its fixed block: a
+    /// single row or column repeats, and anything past the result is `#N/A`.
+    private static func fitted(_ result: FormulaValue, row: Int, column: Int) -> CellValue {
+        if case .lambda = result { return .error(.calc) }
+        let rows = result.rows
+        let r = rows.count == 1 ? 0 : row
+        let c = (rows.first?.count ?? 0) == 1 ? 0 : column
+        guard r < rows.count, c < rows[r].count else { return .error(.notAvailable) }
+        return rows[r][c]
     }
 
     // MARK: - FormulaContext
@@ -69,7 +254,21 @@ final class CalculationEngine: FormulaContext {
     func bounds(forSheetNamed name: String?) -> (rows: Int, columns: Int)? {
         guard let index = resolveSheetIndex(name) else { return nil }
         let sheet = workbook.sheets[index]
-        return (sheet.rowCount, sheet.columnCount)
+        var rows = sheet.rowCount
+        var columns = sheet.columnCount
+        // A spill can run past the grid until the grid grows to hold it.
+        for range in (hints[index] ?? [:]).values {
+            rows = max(rows, range.end.row + 1)
+            columns = max(columns, range.end.column + 1)
+        }
+        return (rows, columns)
+    }
+
+    func spillRange(anchoredAt address: CellAddress, sheetName: String?) -> CellRange? {
+        guard let index = resolveSheetIndex(sheetName),
+              workbook.sheets[index].cells[address]?.formula != nil else { return nil }
+        _ = value(at: address, sheetIndex: index)
+        return spillRange(sheetIndex: index, anchor: address)
     }
 
     func resolveDefinedName(_ name: String, sheetName: String?) -> FormulaValue? {
@@ -121,8 +320,7 @@ final class CalculationEngine: FormulaContext {
 
     func cell(at address: CellAddress, sheetName: String?) -> Cell? {
         guard let index = resolveSheetIndex(sheetName) else { return nil }
-        let sheet = workbook.sheets[index]
-        return sheet.contains(address) ? sheet[address] : Cell()
+        return workbook.sheets[index][address]
     }
 
     func isRowHidden(_ row: Int, sheetName: String?) -> Bool {
@@ -152,15 +350,28 @@ final class CalculationEngine: FormulaContext {
     private func value(at address: CellAddress, sheetIndex: Int) -> CellValue {
         guard workbook.sheets.indices.contains(sheetIndex) else { return .error(.referenceError) }
         let sheet = workbook.sheets[sheetIndex]
-        guard sheet.contains(address) else { return .empty }
+        let cell = sheet.cells[address]
 
+        if let cell, let formula = cell.formula {
+            let result = formulaResult(sheetIndex: sheetIndex, address: address, formula: formula)
+            if cell.arrayExtent != nil { return Self.fitted(result, row: 0, column: 0) }
+            if case .lambda = result { return .error(.calc) }
+            guard result.isArray else { return result.single }
+            return spillRange(sheetIndex: sheetIndex, anchor: address) == nil ? .error(.spill) : result.rows[0][0]
+        }
+        // A cell another formula spills into, unless someone typed over it.
+        if let owner = owners[sheetIndex]?[address], cell == nil || cell?.isSpilled == true || cell?.isBlank == true {
+            return spilledValue(sheetIndex: sheetIndex, owner: owner, at: address)
+        }
+        guard let cell, sheet.contains(address), !cell.isSpilled else { return .empty }
+        return cell.value
+    }
+
+    /// A formula cell's whole result, computed once.
+    private func formulaResult(sheetIndex: Int, address: CellAddress, formula: String) -> FormulaValue {
         let key = Key.cell(sheet: sheetIndex, address: address)
-        if let cached = cache[key] { return cached }
-
-        let cell = sheet[address]
-        guard let formula = cell.formula else { return cell.value }
-
-        guard !evaluating.contains(key) else { return .error(.circularReference) }
+        if let cached = results[key] { return cached }
+        guard !evaluating.contains(key) else { return .failure(.circularReference) }
         evaluating.insert(key)
         defer { evaluating.remove(key) }
 
@@ -169,21 +380,21 @@ final class CalculationEngine: FormulaContext {
         let result = evaluate(body: formula, sheetIndex: sheetIndex, at: address)
         activeSheetIndex = previousSheet
 
-        cache[key] = result
+        results[key] = result
         return result
     }
 
     /// `address` is the cell the formula lives in, which `ROW()` and `COLUMN()`
     /// report when called with no argument.
-    private func evaluate(body: String, sheetIndex: Int, at address: CellAddress?) -> CellValue {
+    private func evaluate(body: String, sheetIndex: Int, at address: CellAddress?) -> FormulaValue {
         switch parsed(body) {
         case .failure:
-            return .error(.nameError)
+            return .failure(.nameError)
         case .success(let node):
             let previousSheet = activeSheetIndex
             activeSheetIndex = sheetIndex
             defer { activeSheetIndex = previousSheet }
-            return FormulaEvaluator(context: self, currentAddress: address).evaluate(node).single
+            return FormulaEvaluator(context: self, currentAddress: address).evaluate(node)
         }
     }
 

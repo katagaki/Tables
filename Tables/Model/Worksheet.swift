@@ -5,6 +5,13 @@ struct Cell: Hashable, Sendable {
     var value: CellValue = .empty
     var formula: String?
     var style: CellStyle = .default
+    /// Set on a cell holding part of a neighbour's spilled array. The value is
+    /// that formula's, not the cell's own: it does not block the spill, and it
+    /// is cleared when the spill shrinks away.
+    var isSpilled = false
+    /// For a legacy array formula, entered with Ctrl+Shift+Enter in Excel, the
+    /// fixed block its result fills, counted from this cell.
+    var arrayExtent: ArrayExtent?
 
     var isBlank: Bool { value.isEmpty && formula == nil }
     var isEmptyEntirely: Bool { isBlank && style.isDefault }
@@ -20,6 +27,12 @@ struct Cell: Hashable, Sendable {
         case .error(let error): return error.rawValue
         }
     }
+}
+
+/// The size of a legacy array formula's block.
+struct ArrayExtent: Hashable, Sendable {
+    var rows: Int
+    var columns: Int
 }
 
 /// A single sheet of a workbook. Row and column counts are explicit, Numbers-style:
@@ -113,6 +126,10 @@ struct Worksheet: Identifiable, Hashable, Sendable {
     var tabColorHex: String?
     /// Worksheet children we do not understand, in the order the file had them.
     var preservedElements: [PreservedElement] = []
+    /// Where each array formula spilled at the last recalculation, by the
+    /// address of the formula. Recalculation starts from this so that cells
+    /// reading a spilled range see it on the first pass.
+    var spills: [CellAddress: CellRange] = [:]
 
     /// A chart sheet holds one chart and no cells — Excel's "Move Chart to New
     /// Sheet". It is still a sheet: it takes a tab and a position, and
