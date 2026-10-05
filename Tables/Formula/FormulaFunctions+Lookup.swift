@@ -19,17 +19,14 @@ extension FormulaFunctions {
         "COLUMN": FunctionSpec(0...1, lifts: .none) { call throws(CellError) in
             try FormulaLookup.position(call, rows: false)
         },
-        "INDEX": FunctionSpec(2...4, lifts: .only([1, 2]), reference: { call throws(CellError) in
-            guard let whole = call.reference(0) else { throw .valueError }
-            let (row, column) = try FormulaLookup.indexPosition(call, rows: whole.rowCount, columns: whole.columnCount)
-            let start = whole.range.start
-            let rows = row == 0 ? whole.range.rowRange : (start.row + row - 1)...(start.row + row - 1)
-            let columns = column == 0 ? whole.range.columnRange
-                : (start.column + column - 1)...(start.column + column - 1)
-            return FormulaReference(sheet: whole.sheet, range: CellRange(
-                start: CellAddress(row: rows.lowerBound, column: columns.lowerBound),
-                end: CellAddress(row: rows.upperBound, column: columns.upperBound)))
+        "INDEX": FunctionSpec(2...4, lifts: .only([1, 2, 3]), reference: { call throws(CellError) in
+            try FormulaLookup.indexReference(call)
         }, value: { call throws(CellError) in
+            // A union is indexed area by area, so it goes through the reference.
+            if let areas = call.areas(0), areas.count > 1 {
+                return call.evaluator.materialize(try FormulaLookup.indexReference(call))
+            }
+            if !call.isMissing(3), try call.integer(3) != 1 { throw .referenceError }
             let array = try call.matrix(0)
             let (row, column) = try FormulaLookup.indexPosition(
                 call, rows: array.count, columns: array.first?.count ?? 0)
@@ -110,10 +107,24 @@ enum FormulaLookup {
         } else if call.isMissing(2), columns == 1 {
             column = 1
         }
-        if !call.isMissing(3), try call.integer(3) != 1 { throw .referenceError }
         guard row >= 0, column >= 0 else { throw .valueError }
         guard row <= rows, column <= columns else { throw .referenceError }
         return (row, column)
+    }
+
+    /// `INDEX` on a reference: the cell, row or column of the chosen area.
+    static func indexReference(_ call: FunctionCall) throws(CellError) -> FormulaReference {
+        guard let areas = call.areas(0) else { throw .valueError }
+        let area = try call.integer(3, default: 1)
+        guard area >= 1, area <= areas.count else { throw .referenceError }
+        let whole = areas[area - 1]
+        let (row, column) = try indexPosition(call, rows: whole.rowCount, columns: whole.columnCount)
+        let start = whole.range.start
+        let rows = row == 0 ? whole.range.rowRange : (start.row + row - 1)...(start.row + row - 1)
+        let columns = column == 0 ? whole.range.columnRange : (start.column + column - 1)...(start.column + column - 1)
+        return FormulaReference(sheet: whole.sheet, range: CellRange(
+            start: CellAddress(row: rows.lowerBound, column: columns.lowerBound),
+            end: CellAddress(row: rows.upperBound, column: columns.upperBound)))
     }
 
     /// A one-dimensional range as a list. Two-dimensional ones are refused.

@@ -32,6 +32,9 @@ indirect enum FormulaNode: Hashable, Sendable {
     /// inside the table itself. The specifier is the text between the outer
     /// brackets, escapes and all.
     case structured(table: String?, specifier: String)
+    /// `(A1:A3,C1:C3)`: several references taken together, as `SUM` and
+    /// `AREAS` read them.
+    case union([FormulaNode])
 }
 
 struct FormulaParseError: Error, Sendable {
@@ -175,6 +178,18 @@ struct FormulaParser {
     /// grammar has not already taken the colon itself.
     private mutating func parseRangeOperand() throws -> FormulaSyntax {
         let first = index
+        var syntax = try parseColonChain()
+        // A space between two references is the intersection operator.
+        while startsIntersection(after: syntax.node) {
+            let right = try parseColonChain()
+            syntax = FormulaSyntax(node: .binary(" ", syntax.node, right.node), range: span(from: first),
+                                   children: [syntax, right])
+        }
+        return syntax
+    }
+
+    private mutating func parseColonChain() throws -> FormulaSyntax {
+        let first = index
         var syntax = try parseSuffixed()
         while current == .colon {
             index += 1
@@ -183,6 +198,31 @@ struct FormulaParser {
                                    children: [syntax, right])
         }
         return syntax
+    }
+
+    /// Whether whitespace and then another reference follow a reference. In
+    /// any other position two operands side by side are a syntax error, so
+    /// reading them as an intersection cannot change a formula that parsed.
+    private func startsIntersection(after node: FormulaNode) -> Bool {
+        guard index > 0, index < tokens.count, offsets[index - 1].upperBound < offsets[index].lowerBound else {
+            return false
+        }
+        switch node {
+        case .reference, .range, .definedName, .structured, .union, .spill, .intersect, .binary(":", _, _),
+             .binary(" ", _, _), .call:
+            break
+        default:
+            return false
+        }
+        switch tokens[index] {
+        case .identifier, .quotedName, .bracket: return true
+        // A whole-row reference such as `2:3`.
+        case .number: return peek(1) == .colon
+        case .leftParenthesis:
+            if case .call = node { return false }
+            return true
+        default: return false
+        }
     }
 
     /// A primary followed by any number of `#` spill markers or call parentheses.
@@ -233,6 +273,16 @@ struct FormulaParser {
             return leaf(.structured(table: nil, specifier: specifier), from: first)
         case .leftParenthesis:
             let inner = try parseExpression(minimumPrecedence: 0)
+            // A comma inside plain parentheses joins references into a union.
+            if current == .comma {
+                var parts = [inner]
+                while current == .comma {
+                    index += 1
+                    parts.append(try parseExpression(minimumPrecedence: 0))
+                }
+                try expect(.rightParenthesis, "“)”")
+                return FormulaSyntax(node: .union(parts.map(\.node)), range: span(from: first), children: parts)
+            }
             try expect(.rightParenthesis, "“)”")
             return FormulaSyntax(node: inner.node, range: span(from: first), children: [inner], isGroup: true)
         case .leftBrace:

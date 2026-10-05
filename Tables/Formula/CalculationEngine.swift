@@ -503,6 +503,8 @@ final class CalculationEngine: FormulaContext {
             return visit(lhs, bound) || visit(rhs, bound)
         case .array(let rows):
             return rows.contains { $0.contains { visit($0, bound) } }
+        case .union(let parts):
+            return parts.contains { visit($0, bound) }
         default:
             return false
         }

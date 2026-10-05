@@ -233,7 +233,14 @@ final class FunctionCall {
     func isReference(_ index: Int) -> Bool {
         if reference(index) != nil { return true }
         if index < nodes.count, case .sheetSpan = nodes[index] { return true }
+        if index < nodes.count, case .union = nodes[index] { return evaluator.areas(nodes[index]) != nil }
         return false
+    }
+
+    /// The areas an argument names: one for a plain reference, several for a union.
+    func areas(_ index: Int) -> [FormulaReference]? {
+        guard index < nodes.count else { return nil }
+        return evaluator.areas(nodes[index])
     }
 
     /// One value. A multi-cell reference gives the cell in line with the

@@ -300,7 +300,7 @@ enum FormulaDialect {
             // `#This Row` already name one cell.
             let lowered = specifier.lowercased()
             if context == .value, !lowered.hasPrefix("@"), !lowered.contains("#this row") { mark() }
-        case .binary(":", _, _), .intersect, .spill, .array, .invoke, .sheetSpan:
+        case .binary(":", _, _), .binary(" ", _, _), .union, .intersect, .spill, .array, .invoke, .sheetSpan:
             break
         case .binary, .unary, .postfixPercent:
             visitChildren(context == .array ? .array : .value)

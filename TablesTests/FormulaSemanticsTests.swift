@@ -216,3 +216,37 @@ struct LambdaTests {
         #expect(workbook.sheets[0][CellAddress(a1: "A1")!].value == .error(.numberError))
     }
 }
+
+@Suite("Union and intersection")
+struct ReferenceOperatorTests {
+    private let grid = ["A1": "1", "A2": "2", "A3": "3", "B1": "10", "B2": "20", "B3": "30", "C1": "100", "C2": "200"]
+
+    @Test("A comma in parentheses joins references; a space intersects them")
+    func parsing() throws {
+        let a1a2 = FormulaNode.range(sheet: nil, start: CellAddress(a1: "A1")!, end: CellAddress(a1: "A2")!)
+        let c1 = FormulaNode.reference(sheet: nil, address: CellAddress(a1: "C1")!)
+        #expect(try FormulaParser.parse("SUM((A1:A2,C1))") == .call("SUM", [.union([a1a2, c1])]))
+        #expect(try FormulaParser.parse("SUM(A1:A2,C1)") == .call("SUM", [a1a2, c1]))
+        #expect(try FormulaParser.parse("A1:A2 C1") == .binary(" ", a1a2, c1))
+        #expect(try FormulaParser.parse("A1 + C1") == .binary("+", .reference(sheet: nil, address: CellAddress(a1: "A1")!), c1))
+    }
+
+    @Test("Unions feed aggregates, AREAS, INDEX and SUBTOTAL")
+    func unions() {
+        #expect(evaluate("=SUM((A1:A3,C1:C2))", with: grid) == .number(306))
+        #expect(evaluate("=AREAS((A1:A3,C1:C2,B1))", with: grid) == .number(3))
+        #expect(evaluate("=INDEX((A1:A3,C1:C2),2,1,2)", with: grid) == .number(200))
+        #expect(evaluate("=SUBTOTAL(9,(A1,B1))", with: grid) == .number(11))
+        #expect(evaluate("=MAX((A1:A3,B1:B3))", with: grid) == .number(30))
+        #expect(evaluate("=ROWS((A1:A3,C1:C2))", with: grid) == .error(.referenceError))
+    }
+
+    @Test("Intersections pick the shared cells, or #NULL! when there are none")
+    func intersections() {
+        #expect(evaluate("=A1:C3 B2:B3", with: grid) == .number(20))
+        #expect(evaluate("=SUM(A1:C2 B1:C3)", with: grid) == .number(330))
+        #expect(evaluate("=A1:A3 C1:C3", with: grid) == .error(.nullError))
+        #expect(evaluate("=SUM(A:A 2:3)", with: grid) == .number(5))
+        #expect(FormulaDialect.legacyToDynamic("A:A 2:2") == "A:A 2:2")
+    }
+}

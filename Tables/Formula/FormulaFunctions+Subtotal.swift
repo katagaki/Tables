@@ -55,26 +55,28 @@ enum FormulaSubtotal {
     ) throws(CellError) -> [CellValue] {
         var result: [CellValue] = []
         for index in start...(end ?? (call.count - 1)) where !call.isMissing(index) {
-            guard let reference = call.reference(index) else {
+            guard let areas = call.areas(index) else {
                 // An array from a calculation has no rows to hide or formulas
                 // to recognise; only its errors can be passed over.
                 let values = try call.matrix(index).flatMap { $0 }
                 result += skippingErrors ? values.filter { !$0.isError } : values
                 continue
             }
-            let values = call.value(index).rows
-            let start = reference.range.start
-            for (rowOffset, row) in values.enumerated() {
-                let rowIndex = start.row + rowOffset
-                if skippingHidden, call.context.isRowHidden(rowIndex, sheetName: reference.sheet) { continue }
-                for (columnOffset, value) in row.enumerated() {
-                    if skippingErrors, value.isError { continue }
-                    if skippingNested {
-                        let address = CellAddress(row: rowIndex, column: start.column + columnOffset)
-                        if let formula = call.context.cell(at: address, sheetName: reference.sheet)?.formula?.uppercased(),
-                           formula.contains("SUBTOTAL(") || formula.contains("AGGREGATE(") { continue }
+            for reference in areas {
+                let values = call.evaluator.materialize(reference).rows
+                let start = reference.range.start
+                for (rowOffset, row) in values.enumerated() {
+                    let rowIndex = start.row + rowOffset
+                    if skippingHidden, call.context.isRowHidden(rowIndex, sheetName: reference.sheet) { continue }
+                    for (columnOffset, value) in row.enumerated() {
+                        if skippingErrors, value.isError { continue }
+                        if skippingNested {
+                            let address = CellAddress(row: rowIndex, column: start.column + columnOffset)
+                            if let formula = call.context.cell(at: address, sheetName: reference.sheet)?.formula?.uppercased(),
+                               formula.contains("SUBTOTAL(") || formula.contains("AGGREGATE(") { continue }
+                        }
+                        result.append(value)
                     }
-                    result.append(value)
                 }
             }
         }

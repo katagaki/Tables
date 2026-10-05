@@ -73,15 +73,21 @@ extension FormulaFunctions {
             return .text(text)
         },
         "AREAS": FunctionSpec(1...1, lifts: .none) { call throws(CellError) in
-            guard call.reference(0) != nil else { throw .valueError }
-            return .number(1)
+            guard let areas = call.areas(0) else { throw .valueError }
+            return .number(Double(areas.count))
         },
         "ROWS": FunctionSpec(1...1, lifts: .none) { call throws(CellError) in
-            if let reference = call.reference(0) { return .number(Double(reference.rowCount)) }
+            if let areas = call.areas(0) {
+                guard areas.count == 1 else { throw .referenceError }
+                return .number(Double(areas[0].rowCount))
+            }
             return .number(Double(try call.matrix(0).count))
         },
         "COLUMNS": FunctionSpec(1...1, lifts: .none) { call throws(CellError) in
-            if let reference = call.reference(0) { return .number(Double(reference.columnCount)) }
+            if let areas = call.areas(0) {
+                guard areas.count == 1 else { throw .referenceError }
+                return .number(Double(areas[0].columnCount))
+            }
             return .number(Double(try call.matrix(0).first?.count ?? 0))
         },
         "FORMULATEXT": FunctionSpec(1...1, lifts: .none) { call throws(CellError) in

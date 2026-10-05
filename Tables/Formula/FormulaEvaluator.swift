@@ -227,6 +227,18 @@ struct FormulaEvaluator {
             guard let reference = reference(node) else { return .failure(.referenceError) }
             return materialize(reference)
 
+        case .binary(" ", _, _):
+            // References that do not overlap have nothing in common.
+            guard let reference = reference(node) else { return .failure(.nullError) }
+            return materialize(reference)
+
+        case .union:
+            guard let areas = areas(node) else { return .failure(.valueError) }
+            if areas.count == 1 { return materialize(areas[0]) }
+            // Several areas read as one run of values, which is how the
+            // functions that accept unions use them.
+            return .block([areas.flatMap { materialize($0).flattened }])
+
         case .binary(let symbol, let lhs, let rhs):
             return FormulaValue.lift([evaluate(lhs), evaluate(rhs)]) { values in
                 FormulaOperators.apply(symbol, values[0], values[1])
@@ -296,6 +308,18 @@ struct FormulaEvaluator {
             return sheet == nil ? context.structuredReference(table: name, specifier: "", at: currentAddress) : nil
         case .structured(let table, let specifier):
             return context.structuredReference(table: table, specifier: specifier, at: currentAddress)
+        case .binary(" ", let lhs, let rhs):
+            guard let first = reference(lhs), let second = reference(rhs),
+                  sameSheet(first.sheet, second.sheet) else { return nil }
+            let top = max(first.range.start.row, second.range.start.row)
+            let bottom = min(first.range.end.row, second.range.end.row)
+            let left = max(first.range.start.column, second.range.start.column)
+            let right = min(first.range.end.column, second.range.end.column)
+            guard top <= bottom, left <= right else { return nil }
+            return FormulaReference(sheet: first.sheet ?? second.sheet, range: CellRange(
+                start: CellAddress(row: top, column: left), end: CellAddress(row: bottom, column: right)))
+        case .union(let parts) where parts.count == 1:
+            return reference(parts[0])
         case .binary(":", let lhs, let rhs):
             // The smallest range covering both ends, which must share a sheet.
             guard let first = reference(lhs), let second = reference(rhs),
@@ -321,6 +345,20 @@ struct FormulaEvaluator {
         default:
             return nil
         }
+    }
+
+    /// Every area a node names: one for a plain reference, several for a
+    /// union. Nil when any part is not a reference.
+    func areas(_ node: FormulaNode) -> [FormulaReference]? {
+        if case .union(let parts) = node {
+            var result: [FormulaReference] = []
+            for part in parts {
+                guard let found = areas(part) else { return nil }
+                result += found
+            }
+            return result
+        }
+        return reference(node).map { [$0] }
     }
 
     /// The one cell of `reference` in line with the formula's own cell: same
