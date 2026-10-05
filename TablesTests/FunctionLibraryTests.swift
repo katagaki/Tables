@@ -331,3 +331,63 @@ struct SubtotalTests {
         #expect(hidden("B5") == .number(25))
     }
 }
+
+@Suite("Text")
+struct TextFunctionTests {
+    @Test("Splitting text around delimiters")
+    func splitting() {
+        #expect(evaluate("=TEXTBEFORE(\"Red riding hood's, red hood\",\"hood\")") == .text("Red riding "))
+        #expect(evaluate("=TEXTBEFORE(\"Red riding hood's, red hood\",\"hood\",-1)") == .text("Red riding hood's, red "))
+        #expect(evaluate("=TEXTBEFORE(\"Red riding hood's, red hood\",\"HOOD\",1,1)") == .text("Red riding "))
+        #expect(evaluate("=TEXTAFTER(\"Red riding hood's, red hood\",\"hood\")") == .text("'s, red hood"))
+        #expect(evaluate("=TEXTAFTER(\"a-b_c\",{\"-\",\"_\"},2)") == .text("c"))
+        #expect(evaluate("=TEXTAFTER(\"abc\",\"x\")") == .error(.notAvailable))
+        #expect(evaluate("=TEXTAFTER(\"abc\",\"x\",,,,\"none\")") == .text("none"))
+        #expect(evaluate("=TEXTBEFORE(\"abc\",\"x\",1,0,1)") == .text("abc"))
+        #expect(evaluate("=INDEX(TEXTSPLIT(\"a,b;c\",\",\",\";\"),2,1)") == .text("c"))
+        #expect(evaluate("=INDEX(TEXTSPLIT(\"a,b;c\",\",\",\";\"),2,2)") == .error(.notAvailable))
+        #expect(evaluate("=TEXTJOIN(\"|\",,TEXTSPLIT(\"a,,b\",\",\",,TRUE))") == .text("a|b"))
+        #expect(evaluate("=TEXTJOIN(\"|\",,TEXTSPLIT(\"a,b;c\",\",\",\";\",,,\"-\"))") == .text("a|b|c|-"))
+    }
+
+    @Test("Regular expressions")
+    func regex() {
+        #expect(evaluate("=REGEXTEST(\"abc123\",\"[0-9]+\")") == .boolean(true))
+        #expect(evaluate("=REGEXTEST(\"ABC\",\"abc\",1)") == .boolean(true))
+        #expect(evaluate("=REGEXEXTRACT(\"tel 555-1234\",\"[0-9]{3}-[0-9]{4}\")") == .text("555-1234"))
+        #expect(evaluate("=TEXTJOIN(\",\",,REGEXEXTRACT(\"a1b22c333\",\"[0-9]+\",1))") == .text("1,22,333"))
+        #expect(evaluate("=TEXTJOIN(\",\",,REGEXEXTRACT(\"John Smith\",\"(\\w+) (\\w+)\",2))") == .text("John,Smith"))
+        #expect(evaluate("=REGEXREPLACE(\"John Smith\",\"(\\w+) (\\w+)\",\"$2, $1\")") == .text("Smith, John"))
+        #expect(evaluate("=REGEXREPLACE(\"a1b2c3\",\"[0-9]\",\"#\",2)") == .text("a1b#c3"))
+        #expect(evaluate("=REGEXEXTRACT(\"abc\",\"[0-9]\")") == .error(.notAvailable))
+        #expect(evaluate("=REGEXTEST(\"a\",\"(\")") == .error(.valueError))
+    }
+
+    @Test("Formatting numbers as text")
+    func numbers() {
+        #expect(evaluate("=FIXED(1234.567,1)") == .text("1,234.6"))
+        #expect(evaluate("=FIXED(1234.567,-1)") == .text("1,230"))
+        #expect(evaluate("=FIXED(-1234.567,-1,TRUE)") == .text("-1230"))
+        #expect(evaluate("=FIXED(44.332)") == .text("44.33"))
+        #expect(evaluate("=DOLLAR(1234.567,2)") == .text("$1,234.57"))
+        #expect(evaluate("=DOLLAR(-1234.567,-2)") == .text("($1,200)"))
+        #expect(evaluate("=NUMBERVALUE(\"2.500,27\",\",\",\".\")") == .number(2500.27))
+        #expect(evaluate("=NUMBERVALUE(\"3.5%\")") == .number(0.035))
+        #expect(evaluate("=VALUETOTEXT(\"a\",1)") == .text("\"a\""))
+        #expect(evaluate("=ARRAYTOTEXT({1,\"a\";TRUE,2})") == .text("1, a, TRUE, 2"))
+        #expect(evaluate("=ARRAYTOTEXT({1,\"a\";TRUE,2},1)") == .text("{1,\"a\";TRUE,2}"))
+    }
+
+    @Test("Characters, cleaning and width")
+    func characters() {
+        #expect(evaluate("=UNICHAR(66)") == .text("B"))
+        #expect(evaluate("=UNICODE(\"€\")") == .number(8364))
+        #expect(evaluate("=CLEAN(CHAR(9)&\"Monthly\"&CHAR(10))") == .text("Monthly"))
+        #expect(evaluate("=T(\"x\")&T(1)") == .text("x"))
+        #expect(evaluate("=ASC(\"ＥＸＣＥＬ\")") == .text("EXCEL"))
+        #expect(evaluate("=DBCS(\"EXCEL\")") == .text("ＥＸＣＥＬ"))
+        #expect(evaluate("=LENB(\"abc\")") == .number(3))
+        #expect(evaluate("=BAHTTEXT(1234)") == .text("หนึ่งพันสองร้อยสามสิบสี่บาทถ้วน"))
+        #expect(evaluate("=BAHTTEXT(21.25)") == .text("ยี่สิบเอ็ดบาทยี่สิบห้าสตางค์"))
+    }
+}
