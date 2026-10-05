@@ -867,3 +867,37 @@ struct GroupingTests {
         #expect(evaluate("=ENCODEURL(\"a b&c\")") == .text("a%20b%26c"))
     }
 }
+
+@Suite("Exponential smoothing forecasts")
+struct ForecastTests {
+    /// Twelve quarters of a rising series with a repeating four-quarter pattern.
+    private var seasonal: [String: String] {
+        var cells: [String: String] = [:]
+        let pattern = [5.0, -2, 3, -6]
+        for index in 0..<12 {
+            cells["A\(index + 1)"] = String(index + 1)
+            cells["B\(index + 1)"] = String(100 + 2 * Double(index) + pattern[index % 4])
+        }
+        return cells
+    }
+
+    @Test("A clean seasonal series is found and continued")
+    func seasonalSeries() {
+        #expect(evaluate("=FORECAST.ETS.SEASONALITY(B1:B12,A1:A12)", with: seasonal) == .number(4))
+        // Quarter 13 continues the trend (100 + 24) with the first quarter's lift (+5).
+        #expect(close(evaluate("=FORECAST.ETS(13,B1:B12,A1:A12)", with: seasonal), 129, tolerance: 0.02))
+        #expect(close(evaluate("=FORECAST.ETS(14,B1:B12,A1:A12)", with: seasonal), 124, tolerance: 0.02))
+        #expect(evaluate("=FORECAST.ETS.STAT(B1:B12,A1:A12,8)", with: seasonal) == .number(1))
+        if case .number(let width) = evaluate("=FORECAST.ETS.CONFINT(13,B1:B12,A1:A12)", with: seasonal) {
+            #expect(width >= 0)
+        } else {
+            Issue.record("No confidence interval")
+        }
+    }
+
+    @Test("Bad timelines and targets are refused")
+    func errors() {
+        #expect(evaluate("=FORECAST.ETS(5,{1,2,3},{1,2,2.7})") == .error(.numberError))
+        #expect(evaluate("=FORECAST.ETS(0,B1:B12,A1:A12)", with: seasonal) == .error(.numberError))
+    }
+}
