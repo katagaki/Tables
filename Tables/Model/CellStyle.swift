@@ -384,8 +384,11 @@ struct CellStyle: Hashable, Sendable {
     var borderColor: Color { Color(argbHex: borderColorHex) ?? .secondary }
 
     /// Leading padding the indent steps add, in points at 100% zoom. OOXML
-    /// defines a step as about three characters, so it tracks the font size.
-    var indentPoints: Double { Double(indent) * fontSize * 1.5 }
+    /// defines a step as three spaces of the workbook's default font, not the
+    /// cell's, so it is the same whatever size the cell's text is: about ten
+    /// pixels in Excel's 11pt Calibri.
+    var indentPoints: Double { Double(indent) * Self.indentStepPoints }
+    static let indentStepPoints: Double = 7.5
 
     /// True when the cell's glyphs should be stacked one above the next.
     var isTextStacked: Bool { textRotation == CellStyle.stackedTextRotation }

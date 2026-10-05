@@ -278,15 +278,16 @@ struct StyleFidelityTests {
         #expect(stacked.isTextStacked)
     }
 
-    @Test("Indent padding scales with the font, and zero indent adds nothing")
+    @Test("Indent padding counts steps of the default font, and zero indent adds nothing")
     func indentPadding() {
         var style = CellStyle.default
         #expect(style.indentPoints == 0)
         style.indent = 2
-        #expect(style.indentPoints > 0)
-        let smaller = style.indentPoints
+        #expect(style.indentPoints == CellStyle.indentStepPoints * 2)
+        // Three spaces of 11pt Calibri, not three characters of the cell's text.
+        let small = style.indentPoints
         style.fontSize *= 2
-        #expect(style.indentPoints == smaller * 2)
+        #expect(style.indentPoints == small)
     }
 
     @Test("A nonsense rotation or indent is ignored rather than stored")
