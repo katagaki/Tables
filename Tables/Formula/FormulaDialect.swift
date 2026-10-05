@@ -43,6 +43,11 @@ enum FormulaDialect {
         "XLOOKUP", "XMATCH",
     ]
 
+    /// Functions that take a LAMBDA, to which a function may be passed by name.
+    static let lambdaTakingFunctions: Set<String> = [
+        "GROUPBY", "PIVOTBY", "MAP", "REDUCE", "SCAN", "BYROW", "BYCOL", "MAKEARRAY",
+    ]
+
     /// The handful that also carry `_xlws.`, after `_xlfn.`.
     static let worksheetFunctions: Set<String> = ["FILTER", "SORT"]
 
@@ -85,9 +90,10 @@ enum FormulaDialect {
                 return
             }
         case .definedName:
-            let word = String(characters[syntax.range])
-            if word.lowercased().hasPrefix("_xlpm.") {
-                edits.append(Edit(range: syntax.range.lowerBound..<(syntax.range.lowerBound + 6), replacement: ""))
+            let word = String(characters[syntax.range]).lowercased()
+            for prefix in ["_xlpm.", "_xleta."] where word.hasPrefix(prefix) {
+                edits.append(Edit(range: syntax.range.lowerBound..<(syntax.range.lowerBound + prefix.count),
+                                  replacement: ""))
             }
         default:
             break
@@ -135,6 +141,16 @@ enum FormulaDialect {
                     if case .definedName(nil, let variable) = argument { parameters.insert(variable.lowercased()) }
                 }
             }
+            // A function passed by name to one that takes a LAMBDA is stored
+            // with `_xleta.`; anywhere else the same word is a defined name.
+            if lambdaTakingFunctions.contains(name) {
+                for child in syntax.children where !child.isGroup {
+                    guard case .definedName(nil, let passed) = child.node, FormulaFunctions.isKnown(passed),
+                          !parameters.contains(passed.lowercased()),
+                          !String(characters[child.range]).hasPrefix("_") else { continue }
+                    edits.append(Edit(range: child.range.lowerBound..<child.range.lowerBound, replacement: "_xleta."))
+                }
+            }
         case .intersect:
             if characters[syntax.range.lowerBound] == "@", let operand = syntax.children.first {
                 edits.append(Edit(range: syntax.range,
@@ -151,6 +167,7 @@ enum FormulaDialect {
             if !String(characters[syntax.range]).lowercased().hasPrefix("_xlpm.") {
                 edits.append(Edit(range: syntax.range.lowerBound..<syntax.range.lowerBound, replacement: "_xlpm."))
             }
+
         default:
             break
         }

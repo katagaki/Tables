@@ -257,7 +257,18 @@ struct FormulaEvaluator {
             if let reference = context.definedNameReference(name, sheetName: sheet) {
                 return materialize(reference)
             }
-            return context.resolveDefinedName(name, sheetName: sheet) ?? .failure(.nameError)
+            if let value = context.resolveDefinedName(name, sheetName: sheet) { return value }
+            // A built-in function named without a call is a LAMBDA wrapping it,
+            // as in `GROUPBY(A2:A9, B2:B9, SUM)`.
+            if sheet == nil, let spec = FormulaFunctions.registry[name.uppercased()] {
+                let count = max(1, spec.arity.lowerBound)
+                let parameters = (1...count).map { "_eta\($0)" }
+                return .lambda(FormulaLambda(
+                    parameters: parameters,
+                    body: .call(name.uppercased(), parameters.map { .definedName(sheet: nil, name: $0) }),
+                    captured: [:]))
+            }
+            return .failure(.nameError)
         }
     }
 

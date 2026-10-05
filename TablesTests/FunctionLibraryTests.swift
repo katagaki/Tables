@@ -804,3 +804,66 @@ struct DatabaseFunctionTests {
         #expect(evaluate("=DGET(A1:A4,\"Name\",B1:B2)", with: data) == .error(.numberError))
     }
 }
+
+@Suite("GROUPBY and PIVOTBY")
+struct GroupingTests {
+    private let sales: [String: String] = [
+        "A1": "Region", "B1": "Product", "C1": "Sales",
+        "A2": "East", "B2": "Pen", "C2": "10",
+        "A3": "West", "B3": "Pen", "C3": "20",
+        "A4": "East", "B4": "Ink", "C4": "5",
+        "A5": "East", "B5": "Pen", "C5": "7",
+        "A6": "West", "B6": "Ink", "C6": "3",
+    ]
+
+    @Test("GROUPBY totals values by key, with headers and a grand total")
+    func groupBy() {
+        let sheet = evaluateSheet(sales.merging(["E1": "=GROUPBY(A1:A6,C1:C6,SUM)"]) { $1 })
+        #expect(sheet("E1") == .text("Region"))
+        #expect(sheet("F1") == .text("Sales"))
+        #expect(sheet("E2") == .text("East"))
+        #expect(sheet("F2") == .number(22))
+        #expect(sheet("E3") == .text("West"))
+        #expect(sheet("F3") == .number(23))
+        #expect(sheet("E4") == .text("Total"))
+        #expect(sheet("F4") == .number(45))
+    }
+
+    @Test("GROUPBY takes LAMBDAs, sort orders, filters and no totals")
+    func options() {
+        let sheet = evaluateSheet(sales.merging([
+            "E1": "=GROUPBY(A2:A6,C2:C6,LAMBDA(v,MAX(v)),0,0,-2)",
+            "H1": "=GROUPBY(B2:B6,C2:C6,COUNT,0,0,,A2:A6=\"East\")",
+        ]) { $1 })
+        #expect(sheet("E1") == .text("West"))
+        #expect(sheet("F1") == .number(20))
+        #expect(sheet("E2") == .text("East"))
+        #expect(sheet("E3") == .empty)
+        #expect(sheet("H1") == .text("Ink"))
+        #expect(sheet("I1") == .number(1))
+        #expect(sheet("I2") == .number(2))
+    }
+
+    @Test("PIVOTBY crosses row keys with column keys")
+    func pivotBy() {
+        let sheet = evaluateSheet(sales.merging(["E1": "=PIVOTBY(A2:A6,B2:B6,C2:C6,SUM)"]) { $1 })
+        #expect(sheet("F1") == .text("Ink"))
+        #expect(sheet("G1") == .text("Pen"))
+        #expect(sheet("H1") == .text("Total"))
+        #expect(sheet("E2") == .text("East"))
+        #expect(sheet("F2") == .number(5))
+        #expect(sheet("G2") == .number(17))
+        #expect(sheet("H2") == .number(22))
+        #expect(sheet("F3") == .number(3))
+        #expect(sheet("E4") == .text("Total"))
+        #expect(sheet("H4") == .number(45))
+    }
+
+    @Test("A function named without a call is stored with _xleta.")
+    func etaInFiles() {
+        #expect(FormulaDialect.toFile("GROUPBY(A1:A3,B1:B3,SUM)") == "_xlfn.GROUPBY(A1:A3,B1:B3,_xleta.SUM)")
+        #expect(FormulaDialect.fromFile("_xlfn.GROUPBY(A1:A3,B1:B3,_xleta.SUM)") == "GROUPBY(A1:A3,B1:B3,SUM)")
+        #expect(evaluate("=SUM(MAP({-1,2},ABS))") == .number(3))
+        #expect(evaluate("=ENCODEURL(\"a b&c\")") == .text("a%20b%26c"))
+    }
+}

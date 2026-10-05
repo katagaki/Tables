@@ -84,7 +84,7 @@ struct FormulaParser {
     /// the name a person types.
     static func strippingFilePrefixes(_ name: String) -> String {
         var result = name
-        for prefix in ["_xlfn.", "_xlws.", "_xlpm.", "_xlfn.", "_xlws."]
+        for prefix in ["_xlfn.", "_xlws.", "_xlpm.", "_xleta.", "_xlfn.", "_xlws."]
         where result.count > prefix.count && result.lowercased().hasPrefix(prefix) {
             result.removeFirst(prefix.count)
         }
