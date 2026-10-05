@@ -1,0 +1,165 @@
+import AppIntents
+import Foundation
+import Testing
+@testable import Tables
+
+@Suite("Workbook automation")
+struct WorkbookAutomationTests {
+    private func sample() throws -> Workbook {
+        var workbook = Workbook(sheets: [Worksheet(name: "Sales"), Worksheet(name: "Notes")])
+        let rows = [["Item", "Qty", "Price"], ["Pen", "10", "2"], ["Ink", "3", "5"], ["Pad", "7", "4"]]
+        for (row, line) in rows.enumerated() {
+            for (column, text) in line.enumerated() {
+                try WorkbookAutomation.setCell(text, at: CellAddress(row: row, column: column), sheet: 0, in: &workbook)
+            }
+        }
+        return workbook
+    }
+
+    @Test("Addresses, ranges, columns and sheets are checked before anything changes")
+    func validation() throws {
+        let workbook = try sample()
+        #expect(try WorkbookAutomation.sheetIndex("notes", in: workbook) == 1)
+        #expect(try WorkbookAutomation.sheetIndex(nil, in: workbook) == 0)
+        #expect(throws: WorkbookAutomation.Failure.sheetNotFound("Q3")) {
+            try WorkbookAutomation.sheetIndex("Q3", in: workbook)
+        }
+        #expect(throws: WorkbookAutomation.Failure.invalidCell("B0")) { try WorkbookAutomation.address("B0") }
+        #expect(throws: WorkbookAutomation.Failure.invalidRange("A1:")) {
+            try WorkbookAutomation.range("A1:", in: workbook.sheets[0])
+        }
+        #expect(try WorkbookAutomation.column("C") == 2)
+        #expect(try WorkbookAutomation.column("3") == 2)
+        let whole = try WorkbookAutomation.range("B:B", in: workbook.sheets[0])
+        #expect(whole.end.row == workbook.sheets[0].rowCount - 1)
+        #expect(WorkbookAutomation.Failure.sheetNotFound("Q3").errorDescription?.contains("Q3") == true)
+    }
+
+    @Test("Cells are set as if typed, formulas included, and rows append below the data")
+    func changing() throws {
+        var workbook = try sample()
+        try WorkbookAutomation.setCell("=B2*C2", at: CellAddress(a1: "D2")!, sheet: 0, in: &workbook)
+        #expect(workbook.sheets[0][CellAddress(a1: "D2")!].value == .number(20))
+        let row = try WorkbookAutomation.appendRow(["Cap", "1", "9"], sheet: 0, in: &workbook)
+        #expect(row == 5)
+        #expect(workbook.sheets[0][CellAddress(a1: "A5")!].value == .text("Cap"))
+        #expect(workbook.sheets[0][CellAddress(a1: "B5")!].value == .number(1))
+        try WorkbookAutomation.setCell("x", at: CellAddress(a1: "Z200")!, sheet: 1, in: &workbook)
+        #expect(workbook.sheets[1].rowCount >= 200)
+        WorkbookAutomation.clear(try WorkbookAutomation.range("A2:C2", in: workbook.sheets[0]), sheet: 0, in: &workbook)
+        #expect(workbook.sheets[0][CellAddress(a1: "A2")!].value == .empty)
+        #expect(workbook.sheets[0][CellAddress(a1: "D2")!].value == .number(0))
+    }
+
+    @Test("Sorting keeps the header and moves whole rows")
+    func sorting() throws {
+        var workbook = try sample()
+        try WorkbookAutomation.sort(try WorkbookAutomation.range("A1:C4", in: workbook.sheets[0]), by: 1,
+                                    ascending: false, hasHeader: true, sheet: 0, in: &workbook)
+        let rows = WorkbookAutomation.rows(try WorkbookAutomation.range("A1:C4", in: workbook.sheets[0]),
+                                           sheet: 0, in: workbook)
+        #expect(rows.map(\.first) == ["Item", "Pen", "Pad", "Ink"])
+        #expect(rows[3] == ["Ink", "3", "5"])
+    }
+
+    @Test("Finding rows and evaluating formulas")
+    func reading() throws {
+        let workbook = try sample()
+        #expect(WorkbookAutomation.findRows(where: 1, matches: ">5", sheet: 0, in: workbook).map(\.first)
+                == ["Pen", "Pad"])
+        #expect(WorkbookAutomation.findRows(where: 0, matches: "P*", sheet: 0, in: workbook).count == 2)
+        #expect(WorkbookAutomation.evaluate("=SUMPRODUCT(B2:B4,C2:C4)", sheet: 0, in: workbook) == .number(63))
+        #expect(WorkbookAutomation.evaluate("SUM(1,2)", sheet: 0, in: workbook) == .number(3))
+    }
+
+    @Test("Sheets are added, renamed and deleted, but the last one stays")
+    func sheets() throws {
+        var workbook = try sample()
+        #expect(WorkbookAutomation.addSheet(named: "Sales", in: &workbook) == "Sales 2")
+        #expect(WorkbookAutomation.renameSheet(1, to: "Memo", in: &workbook) == "Memo")
+        try WorkbookAutomation.deleteSheet(2, in: &workbook)
+        try WorkbookAutomation.deleteSheet(1, in: &workbook)
+        #expect(throws: WorkbookAutomation.Failure.lastSheet) { try WorkbookAutomation.deleteSheet(0, in: &workbook) }
+    }
+
+    @Test("Workbooks read from and write to Excel and delimited text")
+    func files() throws {
+        let workbook = try sample()
+        let xlsx = try WorkbookAutomation.write(workbook, as: .xlsx)
+        #expect(try WorkbookAutomation.read(xlsx, filename: "Book.xlsx").sheets.map(\.name) == ["Sales", "Notes"])
+        let csv = try WorkbookAutomation.write(workbook, as: .csv, sheet: "sales")
+        #expect(String(decoding: csv, as: UTF8.self).hasPrefix("Item,Qty,Price"))
+        let fromCSV = try WorkbookAutomation.read(csv, filename: "Orders.csv")
+        #expect(fromCSV.sheets[0].name == "Orders")
+        #expect(throws: WorkbookAutomation.Failure.unreadable) {
+            try WorkbookAutomation.read(Data([0x50, 0x4B, 1, 2]), filename: "Broken.xlsx")
+        }
+    }
+}
+
+@Suite("Shortcuts actions")
+struct ShortcutsActionTests {
+    @Test("Actions chain: open, set, append, read back and export")
+    func chaining() async throws {
+        var open = OpenWorkbookIntent()
+        let csv = Data("Item,Qty\nPen,10\n".utf8)
+        open.file = IntentFile(data: csv, filename: "Orders.csv", type: .commaSeparatedText)
+        let opened = try await open.perform().value
+
+        var set = SetCellIntent()
+        set.workbook = try #require(opened)
+        set.cell = "C2"
+        set.value = "=B2*2"
+        let changed = try await set.perform().value
+
+        var append = AppendRowIntent()
+        append.workbook = try #require(changed)
+        append.values = ["Ink", "3"]
+        let appended = try #require(try await append.perform().value)
+        #expect(appended.name == "Orders")
+        #expect(appended.sheetNames == ["Orders"])
+
+        var get = GetCellIntent()
+        get.workbook = appended
+        get.cell = "C2"
+        get.part = .value
+        #expect(try await get.perform().value == "20")
+        get.part = .formula
+        #expect(try await get.perform().value == "=B2*2")
+
+        var range = GetRangeIntent()
+        range.workbook = appended
+        range.range = "A1:B3"
+        range.layout = .rows
+        #expect(try await range.perform().value == ["Item\tQty", "Pen\t10", "Ink\t3"])
+
+        var export = ExportWorkbookIntent()
+        export.workbook = appended
+        export.format = .csv
+        let file = try #require(try await export.perform().value)
+        #expect(file.filename == "Orders.csv")
+        #expect(String(decoding: file.data, as: UTF8.self).contains("Ink,3"))
+    }
+
+    @Test("A bad argument stops the action with a message naming it")
+    func errors() async throws {
+        var create = CreateWorkbookIntent()
+        create.name = "Plan"
+        let workbook = try #require(try await create.perform().value)
+        var set = SetCellIntent()
+        set.workbook = workbook
+        set.cell = "Nowhere"
+        set.value = "1"
+        await #expect(throws: WorkbookAutomation.Failure.invalidCell("Nowhere")) { _ = try await set.perform() }
+        set.cell = "A1"
+        set.sheet = "Missing"
+        await #expect(throws: WorkbookAutomation.Failure.sheetNotFound("Missing")) { _ = try await set.perform() }
+    }
+
+    @Test("Formulas evaluate with or without a workbook")
+    func evaluation() async throws {
+        var evaluate = EvaluateFormulaIntent()
+        evaluate.formula = "=TEXTJOIN(\"-\",,SEQUENCE(3))"
+        #expect(try await evaluate.perform().value == "1-2-3")
+    }
+}
