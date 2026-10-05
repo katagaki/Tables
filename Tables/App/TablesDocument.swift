@@ -20,6 +20,9 @@ struct TablesDocument: FileDocument {
     /// edit — written through the document, it marked the file changed and
     /// saved it just for being opened.
     let csvExport = CSVExportChoice()
+    /// Whether the file is delimited text, which keeps values but no styling,
+    /// so formatting applied to it would be thrown away on save.
+    let isPlainText: Bool
 
     /// What the opened file used that Tables cannot edit. Empty for anything we
     /// authored ourselves and for CSV, which has no such features to begin with.
@@ -27,10 +30,12 @@ struct TablesDocument: FileDocument {
 
     init() {
         workbook = Workbook()
+        isPlainText = false
     }
 
     init(workbook: Workbook) {
         self.workbook = workbook
+        isPlainText = false
     }
 
     init(configuration: ReadConfiguration) throws {
@@ -43,16 +48,20 @@ struct TablesDocument: FileDocument {
 
         if configuration.contentType.conforms(to: .openXMLWorkbook) {
             workbook = try XLSXReader.workbook(from: data)
+            isPlainText = false
         } else if configuration.contentType.conforms(to: .commaSeparatedText)
                     || configuration.contentType.conforms(to: .tabSeparatedText)
                     || configuration.contentType.conforms(to: .text) {
             workbook = CSVCodec.workbook(from: data, sheetName: name)
+            isPlainText = true
         } else {
             // Fall back on content sniffing: ZIP packages start with "PK".
             if data.starts(with: [0x50, 0x4B]) {
                 workbook = try XLSXReader.workbook(from: data)
+                isPlainText = false
             } else {
                 workbook = CSVCodec.workbook(from: data, sheetName: name)
+                isPlainText = true
             }
         }
     }

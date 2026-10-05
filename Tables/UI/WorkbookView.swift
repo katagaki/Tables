@@ -37,6 +37,7 @@ struct WorkbookView: View {
         }
         .background(Color.sheetBackground)
         .onAppear {
+            state.allowsFormatting = !document.isPlainText
             if state.activeSheetID == nil {
                 state.activeSheetID = document.workbook.sheets.first?.id
                 state.refreshMetrics(in: document.workbook)
@@ -182,6 +183,51 @@ struct WorkbookView: View {
     /// macOS gets one horizontal toolbar holding everything.
     @ToolbarContentBuilder
     private var macToolbar: some ToolbarContent {
+        // Delimited text keeps no styling, so there is nothing to format.
+        if state.allowsFormatting {
+            formattingToolbar
+        }
+
+        ToolbarItemGroup {
+            toolbarToggle("sum", label: String(localized: "Toolbar.Sum"), isOn: false) {
+                state.insertAggregate("SUM", in: &document.workbook)
+            }
+            toolbarToggle(
+                "function", label: String(localized: "Toolbar.InsertFunction"),
+                isOn: state.presentedPanel == .functions
+            ) {
+                state.presentedPanel = .functions
+            }
+            toolbarToggle("tablecells", label: String(localized: "Toolbar.RowsAndColumns"),
+                          isOn: state.presentedPanel == .rowsAndColumns) {
+                state.presentedPanel = .rowsAndColumns
+            }
+        }
+
+        ToolbarItemGroup {
+            Menu {
+                InsertChartMenuItems(workbook: $document.workbook, state: state)
+            } label: {
+                Image(systemName: "chart.bar.xaxis")
+            }
+            .menuIndicator(.hidden)
+            .disabled(activeSheet.isChartSheet)
+            .help(String(localized: "Toolbar.InsertChart"))
+            .accessibilityLabel(String(localized: "Toolbar.InsertChart"))
+
+            if state.selectedChartID != nil {
+                toolbarToggle(
+                    "slider.horizontal.3", label: String(localized: "Toolbar.EditChart"),
+                    isOn: state.presentedPanel == .chart
+                ) {
+                    state.presentedPanel = .chart
+                }
+            }
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var formattingToolbar: some ToolbarContent {
         ToolbarItemGroup {
             toolbarToggle("bold", label: String(localized: "Toolbar.Bold"), isOn: currentStyle.isBold) {
                 state.toggleBold(in: &document.workbook)
@@ -220,40 +266,6 @@ struct WorkbookView: View {
                 isOn: state.presentedPanel == .format
             ) {
                 state.presentedPanel = .format
-            }
-            toolbarToggle("sum", label: String(localized: "Toolbar.Sum"), isOn: false) {
-                state.insertAggregate("SUM", in: &document.workbook)
-            }
-            toolbarToggle(
-                "function", label: String(localized: "Toolbar.InsertFunction"),
-                isOn: state.presentedPanel == .functions
-            ) {
-                state.presentedPanel = .functions
-            }
-            toolbarToggle("tablecells", label: String(localized: "Toolbar.RowsAndColumns"),
-                          isOn: state.presentedPanel == .rowsAndColumns) {
-                state.presentedPanel = .rowsAndColumns
-            }
-        }
-
-        ToolbarItemGroup {
-            Menu {
-                InsertChartMenuItems(workbook: $document.workbook, state: state)
-            } label: {
-                Image(systemName: "chart.bar.xaxis")
-            }
-            .menuIndicator(.hidden)
-            .disabled(activeSheet.isChartSheet)
-            .help(String(localized: "Toolbar.InsertChart"))
-            .accessibilityLabel(String(localized: "Toolbar.InsertChart"))
-
-            if state.selectedChartID != nil {
-                toolbarToggle(
-                    "slider.horizontal.3", label: String(localized: "Toolbar.EditChart"),
-                    isOn: state.presentedPanel == .chart
-                ) {
-                    state.presentedPanel = .chart
-                }
             }
         }
     }
@@ -346,9 +358,9 @@ struct WorkbookView: View {
 
         if press.modifiers.contains(.command) {
             switch press.characters.lowercased() {
-            case "b": state.toggleBold(in: &document.workbook); return .handled
-            case "i": state.toggleItalic(in: &document.workbook); return .handled
-            case "u": state.toggleUnderline(in: &document.workbook); return .handled
+            case "b" where state.allowsFormatting: state.toggleBold(in: &document.workbook); return .handled
+            case "i" where state.allowsFormatting: state.toggleItalic(in: &document.workbook); return .handled
+            case "u" where state.allowsFormatting: state.toggleUnderline(in: &document.workbook); return .handled
             case "c": state.copySelection(in: document.workbook); return .handled
             case "x": state.cutSelection(in: &document.workbook); return .handled
             case "v": state.paste(in: &document.workbook); return .handled

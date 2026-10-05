@@ -97,6 +97,7 @@ extension EditorState {
     }
 
     func clearFormatting(in workbook: inout Workbook) {
+        guard allowsFormatting else { return }
         let index = activeIndex(in: workbook)
         for address in selectedStoredAddresses(in: workbook.sheets[index]) {
             var cell = workbook.sheets[index][address]
@@ -148,6 +149,7 @@ extension EditorState {
     }
 
     func applyStyle(in workbook: inout Workbook, _ transform: (inout CellStyle) -> Void) {
+        guard allowsFormatting else { return }
         let index = activeIndex(in: workbook)
 
         // A cell the sheet never stored has the default style, so a change that

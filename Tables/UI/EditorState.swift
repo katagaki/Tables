@@ -59,6 +59,8 @@ final class EditorState {
     var pendingReferenceRange: CellRange?
 
     var presentedPanel: EditorPanel?
+    /// False for delimited text, which has nowhere to keep styling.
+    var allowsFormatting = true
     var errorMessage: String?
     var clipboard: [[Cell]]?
     /// Whether the toolbar's popover about parts of the file we cannot edit is up.

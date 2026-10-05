@@ -24,7 +24,7 @@ struct CellMenuBuilder {
     }
 
     func actions() -> [HeaderMenuAction] {
-        [
+        var actions = [
             // The way into the in-cell editor by touch, since the double tap
             // raises this menu.
             HeaderMenuAction(title: String(localized: "CellMenu.Edit"), symbol: "pencil") {
@@ -47,14 +47,19 @@ struct CellMenuBuilder {
                 target()
                 state.paste(in: &workbook.wrappedValue)
             },
-            .separator,
-            HeaderMenuAction(
-                title: String(localized: "CellMenu.ResetFormatting"), symbol: "paintbrush"
-            ) {
-                target()
-                state.clearFormatting(in: &workbook.wrappedValue)
-            },
         ]
+        if state.allowsFormatting {
+            actions += [
+                .separator,
+                HeaderMenuAction(
+                    title: String(localized: "CellMenu.ResetFormatting"), symbol: "paintbrush"
+                ) {
+                    target()
+                    state.clearFormatting(in: &workbook.wrappedValue)
+                },
+            ]
+        }
+        return actions
     }
 
     /// Points the selection at the cell this menu belongs to, unless it is
