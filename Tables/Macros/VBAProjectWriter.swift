@@ -279,7 +279,163 @@ struct VBADirectoryRecords {
     }
 }
 
+// MARK: - New projects
+
+extension VBAProject {
+    static let workbookClassID = "0{00020819-0000-0000-C000-000000000046}"
+    static let worksheetClassID = "0{00020820-0000-0000-C000-000000000046}"
+
+    /// The header a document module carries, binding it to the workbook or a
+    /// sheet through the class id of what it stands behind.
+    static func documentAttributes(name: String, classID: String) -> String {
+        [
+            "Attribute VB_Name = \"\(name)\"", "Attribute VB_Base = \"\(classID)\"",
+            "Attribute VB_GlobalNameSpace = False", "Attribute VB_Creatable = False",
+            "Attribute VB_PredeclaredId = True", "Attribute VB_Exposed = True",
+            "Attribute VB_TemplateDerived = False", "Attribute VB_Customizable = True",
+        ].map { $0 + "\r\n" }.joined()
+    }
+
+    static func classAttributes(name: String) -> String {
+        [
+            "Attribute VB_Name = \"\(name)\"", "Attribute VB_GlobalNameSpace = False",
+            "Attribute VB_Creatable = False", "Attribute VB_PredeclaredId = False", "Attribute VB_Exposed = False",
+        ].map { $0 + "\r\n" }.joined()
+    }
+
+    /// A project for a workbook that has none: a module behind the workbook
+    /// and each worksheet, as Excel makes, and one standard module to write
+    /// macros in. Gives the workbook and its sheets code names if they lack
+    /// them, since those are what bind the document modules.
+    static func newProject(for workbook: inout Workbook) throws -> VBAProject {
+        let workbookName = workbook.codeName ?? "ThisWorkbook"
+        workbook.codeName = workbookName
+        var taken = Set(workbook.sheets.compactMap { $0.codeName?.lowercased() } + [workbookName.lowercased()])
+        var modules = [Module(
+            name: workbookName, kind: .document, source: "",
+            attributes: documentAttributes(name: workbookName, classID: workbookClassID), streamName: workbookName
+        )]
+        var number = 1
+        for index in workbook.sheets.indices where !workbook.sheets[index].isChartSheet {
+            if workbook.sheets[index].codeName == nil {
+                while taken.contains("sheet\(number)") { number += 1 }
+                workbook.sheets[index].codeName = "Sheet\(number)"
+                taken.insert("sheet\(number)")
+            }
+            let name = workbook.sheets[index].codeName ?? "Sheet\(number)"
+            modules.append(Module(name: name, kind: .document, source: "",
+                                  attributes: documentAttributes(name: name, classID: worksheetClassID),
+                                  streamName: name))
+        }
+        var standard = "Module1"
+        var suffix = 1
+        while taken.contains(standard.lowercased()) {
+            suffix += 1
+            standard = "Module\(suffix)"
+        }
+        modules.append(Module(name: standard, kind: .standard, source: "Option Explicit\n",
+                              attributes: "Attribute VB_Name = \"\(standard)\"\r\n", streamName: standard))
+
+        let file = try blankContainer(modules: modules)
+        var project = try VBAProject(compoundFile: file)
+        // Written once more through the editing path, so a new project and an
+        // edited one are laid out by the same code.
+        project = try VBAProject(data: project.data())
+        return project
+    }
+
+    /// The streams of a project whose modules are all empty, laid out as
+    /// [MS-OVBA] §2.3 requires.
+    private static func blankContainer(modules: [Module]) throws -> CompoundFile {
+        func record(_ id: UInt16, _ payload: [UInt8]) -> [UInt8] {
+            let size = UInt32(payload.count)
+            return [UInt8(id & 0xFF), UInt8(id >> 8),
+                    UInt8(size & 0xFF), UInt8(size >> 8 & 0xFF), UInt8(size >> 16 & 0xFF), UInt8(size >> 24)] + payload
+        }
+        func unicode(_ text: String) -> [UInt8] { text.utf16.flatMap { [UInt8($0 & 0xFF), UInt8($0 >> 8)] } }
+        let encoding = String.Encoding.windowsCP1252
+
+        var dir: [UInt8] = []
+        dir += record(0x0001, [1, 0, 0, 0])                  // SYSKIND: 32-bit Windows
+        dir += record(0x0002, [0x09, 0x04, 0, 0])            // LCID: en-US
+        dir += record(0x0014, [0x09, 0x04, 0, 0])            // LCIDINVOKE
+        dir += record(0x0003, [0xE4, 0x04])                  // CODEPAGE: 1252
+        dir += record(0x0004, Array("VBAProject".utf8))      // NAME
+        dir += record(0x0005, []) + record(0x0040, [])       // DOCSTRING
+        dir += record(0x0006, []) + record(0x003D, [])       // HELPFILEPATH
+        dir += record(0x0007, [0, 0, 0, 0])                  // HELPCONTEXT
+        dir += record(0x0008, [0, 0, 0, 0])                  // LIBFLAGS
+        // VERSION, whose size field says 4 and which carries 6 bytes.
+        dir += [0x09, 0x00, 0x04, 0x00, 0x00, 0x00] + [0x01, 0x00, 0x00, 0x00] + [0x00, 0x00]
+        dir += record(0x000C, []) + record(0x003C, [])       // CONSTANTS
+        dir += record(0x000F, [UInt8(modules.count & 0xFF), UInt8(modules.count >> 8)])
+        dir += record(0x0013, [0xFF, 0xFF])                  // PROJECTCOOKIE
+        var vba = CompoundFile.Storage(name: "VBA")
+        for module in modules {
+            let name = [UInt8](module.name.data(using: encoding) ?? Data(module.name.utf8))
+            dir += record(0x0019, name) + record(0x0047, unicode(module.name))
+            dir += record(0x001A, name) + record(0x0032, unicode(module.name))
+            dir += record(0x001C, []) + record(0x0048, [])
+            dir += record(0x0031, [0, 0, 0, 0])
+            dir += record(0x001E, [0, 0, 0, 0])
+            dir += record(0x002C, [0xFF, 0xFF])
+            dir += record(module.kind == .standard ? 0x0021 : 0x0022, [])
+            dir += record(0x002B, [])
+            let text = module.attributes + module.source.replacingOccurrences(of: "\n", with: "\r\n")
+            vba.streams.append(.init(name: module.streamName,
+                                     data: VBACompression.compress(text.data(using: encoding) ?? Data(text.utf8))))
+        }
+        dir += record(0x0010, [])
+        vba.streams.append(.init(name: "dir", data: VBACompression.compress(Data(dir))))
+        vba.streams.append(.init(name: "_VBA_PROJECT", data: Data([0xCC, 0x61, 0xFF, 0xFF, 0x00, 0x00, 0x00])))
+
+        let projectID = "{\(UUID().uuidString)}"
+        var lines = ["ID=\"\(projectID)\""]
+        for module in modules {
+            switch module.kind {
+            case .document: lines.append("Document=\(module.name)/&H00000000")
+            case .classModule: lines.append("Class=\(module.name)")
+            default: lines.append("Module=\(module.name)")
+            }
+        }
+        // Unlocked, no password, visible.
+        lines += [
+            "Name=\"VBAProject\"", "HelpContextID=\"0\"", "VersionCompatible32=\"393222000\"",
+            "CMG=\"\(VBAProjectEncryption.hex(VBAProjectEncryption.encrypt([0, 0, 0, 0], projectID: projectID)))\"",
+            "DPB=\"\(VBAProjectEncryption.hex(VBAProjectEncryption.encrypt([0], projectID: projectID)))\"",
+            "GC=\"\(VBAProjectEncryption.hex(VBAProjectEncryption.encrypt([0xFF], projectID: projectID)))\"",
+            "", "[Host Extender Info]", "&H00000001={3832D640-CF90-11CF-8E43-00A0C911005A};VBE;&H00000000", "",
+            "[Workspace]",
+        ]
+        lines += modules.map { "\($0.name)=0, 0, 0, 0, C" }
+        lines.append("")
+
+        var root = CompoundFile.Storage(name: "Root Entry")
+        root.streams = [
+            .init(name: "PROJECT", data: lines.joined(separator: "\r\n").data(using: encoding) ?? Data()),
+            .init(name: "PROJECTwm", data: rewrittenNameMap(Data(), modules: modules.map(\.name), encoding: encoding)),
+        ]
+        root.storages = [vba]
+        return CompoundFile(root: root)
+    }
+}
+
 extension Workbook {
+    /// Gives a workbook without macros a new, empty project to write them
+    /// in. Only an `.xlsm` can keep it.
+    mutating func createMacroProject() throws {
+        guard !hasMacros else { return }
+        let project = try VBAProject.newProject(for: &self)
+        let path = "xl/vbaProject.bin"
+        preservedPackage.parts[path] = try project.data()
+        // An override rather than the `bin` default, which printer settings
+        // may already claim for a type of their own.
+        preservedPackage.contentTypeOverrides["/" + path] = "application/vnd.ms-office.vbaProject"
+        preservedPackage.workbookRelationships.append(PreservedRelationship(
+            type: PreservedPackage.macroProjectRelationshipType, target: "vbaProject.bin", targetMode: nil
+        ))
+    }
+
     /// Replaces the macro project with an edited one. An edited project no
     /// longer matches its digital signature, so the signature goes with it.
     mutating func setMacroProject(_ data: Data) {
