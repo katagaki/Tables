@@ -210,7 +210,7 @@ enum FormulaMath {
         return significant(value / factor).rounded(rule) * factor
     }
 
-    enum MultipleRule { case up, down, towardZero, awayFromZero }
+    enum MultipleRule { case up, down, towardZero, awayFromZero, nearest }
 
     /// `value` rounded to a multiple of `step`.
     static func multiple(_ value: Double, of step: Double, rule: MultipleRule) -> Double {
@@ -222,6 +222,7 @@ enum FormulaMath {
         case .down: rounded = (quotient * (step > 0 ? 1 : -1)).rounded(.down) * (step > 0 ? 1 : -1)
         case .towardZero: rounded = quotient.rounded(.towardZero)
         case .awayFromZero: rounded = quotient.rounded(.awayFromZero)
+        case .nearest: rounded = quotient.rounded(.toNearestOrAwayFromZero)
         }
         return significant(rounded * step)
     }
