@@ -34,6 +34,8 @@ enum XLSXReader {
         var sheetFindings: [[(feature: UnsupportedFeature, elementName: String)]] = []
         /// The relationship id each sheet's `<drawing>` names, if it has one.
         var drawingIDs: [String?] = []
+        /// And its `<legacyDrawing>`, the VML drawing its notes are drawn in.
+        var legacyDrawingIDs: [String?] = []
         let sheetElements = workbookXML.firstChild(named: "sheets")?.children(named: "sheet") ?? []
 
         for (position, element) in sheetElements.enumerated() {
@@ -53,6 +55,7 @@ enum XLSXReader {
                 sheetPaths.append(path)
                 sheetFindings.append([])
                 drawingIDs.append(nil)
+                legacyDrawingIDs.append(nil)
                 continue
             }
             let sheetXML = try XMLLite.parse(payload)
@@ -71,6 +74,7 @@ enum XLSXReader {
             // The drawing is regenerated from the model on every save, so the
             // element naming it is too.
             drawingIDs.append(sheetXML.firstChild(named: "drawing")?.attribute("id"))
+            legacyDrawingIDs.append(sheetXML.firstChild(named: "legacyDrawing")?.attribute("id"))
             sheet.preservedElements.removeAll { $0.name == "drawing" }
             sheet.name = name
             sheet.isHidden = isHidden
@@ -134,10 +138,33 @@ enum XLSXReader {
         let anchorTargets = workbook.sheets.flatMap(\.preservedDrawingAnchors).flatMap(\.relationships)
             .filter(\.isPackagePart).map(\.target)
 
+        // Comments are read into the model and written afresh, so their parts
+        // and the relationships naming them are taken over too.
+        let persons = CommentParts.persons(
+            entries: entries, workbookRelationships: PackagePreservation.relationships(in: entries["xl/_rels/workbook.xml.rels"]))
+        var commentParts: Set<String> = persons.path.map { [$0] } ?? []
+        var commentRelationshipIDs: [Worksheet.ID: Set<String>] = [:]
+        var shapeTargets: [String] = []
+        for index in workbook.sheets.indices where !workbook.sheets[index].isChartSheet {
+            let found = CommentParts.read(sheetPath: sheetPaths[index], legacyDrawingID: legacyDrawingIDs[index],
+                                          entries: entries, persons: persons.names)
+            workbook.sheets[index].comments = found.comments
+            workbook.sheets[index].preservedVMLShapes = found.preservedShapes
+            workbook.sheets[index].preservedVMLRelationships = found.preservedShapeRelationships
+            commentParts.formUnion(found.parts)
+            commentRelationshipIDs[workbook.sheets[index].id] = found.relationshipIDs
+            shapeTargets += found.shapeTargets
+            if let legacy = legacyDrawingIDs[index], found.relationshipIDs.contains(legacy) {
+                workbook.sheets[index].preservedElements.removeAll { $0.name == "legacyDrawing" }
+            }
+        }
+
         var report = UnsupportedFeatureReport()
         var preserved = PackagePreservation.plan(
             entries: entries, sheets: workbook.sheets, sheetPaths: sheetPaths,
-            takenOver: drawingPaths.union(consumedParts), extraRoots: anchorTargets, report: &report
+            takenOver: drawingPaths.union(consumedParts).union(commentParts),
+            extraRoots: anchorTargets + shapeTargets,
+            droppedSheetRelationshipIDs: commentRelationshipIDs, report: &report
         )
         preserved.styleSheetElements = styleSheetElements
 
@@ -652,6 +679,16 @@ enum XLSXReader {
             return Data(("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n" + xml).utf8)
         }
 
+        /// A `_rels` part without the relationships with the given ids.
+        static func removingRelationships(withIDs ids: Set<String>, from payload: Data) -> Data {
+            guard !ids.isEmpty, let root = try? XMLLite.parse(payload) else { return payload }
+            let dropped = root.children(named: "Relationship").filter { ids.contains($0.attribute("Id") ?? "") }
+            guard !dropped.isEmpty else { return payload }
+            dropped.forEach(root.removeChild)
+            guard let xml = XMLLite.serialize(root) else { return payload }
+            return Data(("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n" + xml).utf8)
+        }
+
         /// `takenOver` names parts the model now holds — drawings and the
         /// charts read out of them — which count as generated, so whatever
         /// points at them stays valid. `extraRoots` are parts that something
@@ -659,6 +696,7 @@ enum XLSXReader {
         static func plan(
             entries: [String: Data], sheets: [Worksheet], sheetPaths: [String],
             takenOver: Set<String> = [], extraRoots: [String] = [],
+            droppedSheetRelationshipIDs: [Worksheet.ID: Set<String>] = [:],
             report: inout UnsupportedFeatureReport
         ) -> PreservedPackage {
             let types = contentTypes(entries["[Content_Types].xml"])
@@ -701,7 +739,9 @@ enum XLSXReader {
             for (index, sheet) in sheets.enumerated() {
                 let path = relationshipsPath(for: sheetPaths[index])
                 guard let original = entries[path] else { continue }
-                let payload = removingRelationships(ofTypes: droppedSheetRelationshipTypes, from: original)
+                let payload = removingRelationships(
+                    withIDs: droppedSheetRelationshipIDs[sheet.id] ?? [],
+                    from: removingRelationships(ofTypes: droppedSheetRelationshipTypes, from: original))
                 let targets = relationships(in: payload).compactMap {
                     packagePath(of: $0, relativeTo: directory(of: sheetPaths[index]))
                 }
