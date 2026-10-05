@@ -68,6 +68,10 @@ final class CalculationEngine: FormulaContext {
     /// resized spill runs again with it known, so formulas reading the
     /// spilled cells see them. A sheet without arrays takes one pass.
     static func recalculated(_ workbook: Workbook) -> Workbook {
+        withLargeStack { recalculatedInPlace(workbook) }
+    }
+
+    private static func recalculatedInPlace(_ workbook: Workbook) -> Workbook {
         var hints = storedSpills(of: workbook)
         var engine = CalculationEngine(workbook: workbook, hints: hints)
         for _ in 0..<4 {
@@ -83,9 +87,29 @@ final class CalculationEngine: FormulaContext {
 
     /// Evaluates a formula body in the context of a sheet without storing anything.
     static func preview(formula body: String, in workbook: Workbook, sheetIndex: Int) -> CellValue {
-        let engine = CalculationEngine(workbook: workbook)
-        engine.activeSheetIndex = sheetIndex
-        return engine.evaluate(body: body, sheetIndex: sheetIndex, at: nil).single
+        withLargeStack {
+            let engine = CalculationEngine(workbook: workbook)
+            engine.activeSheetIndex = sheetIndex
+            return engine.evaluate(body: body, sheetIndex: sheetIndex, at: nil).single
+        }
+    }
+
+    /// Evaluation recurses once per cell in a chain of references and several
+    /// times per LAMBDA call, so it runs on a thread whose stack is sized for
+    /// that rather than on whichever thread asked: a secondary thread's half
+    /// megabyte runs out a few hundred levels deep.
+    private static func withLargeStack<Result: Sendable>(_ body: @escaping @Sendable () -> Result) -> Result {
+        let outcome = LargeStackOutcome<Result>()
+        let finished = DispatchSemaphore(value: 0)
+        let thread = Thread {
+            outcome.value = body()
+            finished.signal()
+        }
+        thread.stackSize = 256 << 20
+        thread.qualityOfService = QualityOfService.userInitiated
+        thread.start()
+        finished.wait()
+        return outcome.value!
     }
 
     private func evaluateAllFormulas() {
@@ -413,6 +437,12 @@ final class CalculationEngine: FormulaContext {
         parseCache[body] = outcome
         return outcome
     }
+}
+
+/// Carries a result back from the evaluation thread, which hands it over
+/// before signalling and never touches it again.
+private final class LargeStackOutcome<Value>: @unchecked Sendable {
+    var value: Value?
 }
 
 extension Workbook {
