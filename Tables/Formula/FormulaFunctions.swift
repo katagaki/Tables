@@ -11,7 +11,7 @@ enum FormulaFunctions {
     static let registry: [String: FunctionSpec] = {
         var all: [String: FunctionSpec] = [:]
         for table in [
-            mathFunctions, trigonometryFunctions, arithmeticFunctions, statisticalFunctions, descriptiveFunctions, distributionFunctions, subtotalFunctions, logicalFunctions, informationFunctions, textFunctions, textExtendedFunctions,
+            mathFunctions, trigonometryFunctions, arithmeticFunctions, statisticalFunctions, descriptiveFunctions, distributionFunctions, subtotalFunctions, logicalFunctions, informationFunctions, informationExtendedFunctions, textFunctions, textExtendedFunctions,
             dateFunctions, dateExtendedFunctions, lookupFunctions, referenceFunctions, arrayFunctions,
         ] {
             all.merge(table) { existing, _ in existing }

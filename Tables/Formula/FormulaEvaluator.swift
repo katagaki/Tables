@@ -120,6 +120,8 @@ protocol FormulaContext: AnyObject {
     var sheetCount: Int { get }
     /// The range the formula in `address` spilled into, for `A1#`.
     func spillRange(anchoredAt address: CellAddress, sheetName: String?) -> CellRange?
+    /// A column's width in characters of the default font, for `CELL("width")`.
+    func columnWidth(_ column: Int, sheetName: String?) -> Double?
 }
 
 extension FormulaContext {
@@ -135,6 +137,7 @@ extension FormulaContext {
     func sheetNumber(named name: String?) -> Int? { name == nil ? 1 : nil }
     var sheetCount: Int { 1 }
     func spillRange(anchoredAt address: CellAddress, sheetName: String?) -> CellRange? { nil }
+    func columnWidth(_ column: Int, sheetName: String?) -> Double? { nil }
 }
 
 struct FormulaEvaluator {

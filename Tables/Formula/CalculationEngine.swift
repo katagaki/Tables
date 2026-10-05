@@ -358,6 +358,11 @@ final class CalculationEngine: FormulaContext {
 
     var sheetCount: Int { workbook.sheets.count }
 
+    func columnWidth(_ column: Int, sheetName: String?) -> Double? {
+        guard let index = resolveSheetIndex(sheetName) else { return nil }
+        return Worksheet.columnWidthCharacters(points: workbook.sheets[index].width(ofColumn: column))
+    }
+
     func sheetNames(from first: String, to last: String) -> [String]? {
         guard let start = sheetIndicesByName[first.lowercased()],
               let end = sheetIndicesByName[last.lowercased()] else { return nil }

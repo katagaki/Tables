@@ -529,3 +529,43 @@ struct ArrayFunctionTests {
         #expect(evaluate("=ROWS(TRIMRANGE(A1:B10,1))", with: grid) == .number(10))
     }
 }
+
+@Suite("Information")
+struct InformationFunctionTests {
+    @Test("Kinds of value and of error")
+    func kinds() {
+        #expect(evaluate("=ISNA(NA())") == .boolean(true))
+        #expect(evaluate("=ISERR(NA())") == .boolean(false))
+        #expect(evaluate("=ISERR(1/0)") == .boolean(true))
+        #expect(evaluate("=ISNONTEXT(A1)") == .boolean(true))
+        #expect(evaluate("=ISREF(A1)") == .boolean(true))
+        #expect(evaluate("=ISREF(1)") == .boolean(false))
+        #expect(evaluate("=ISFORMULA(A1)", with: ["A1": "=1+1"]) == .boolean(true))
+        #expect(evaluate("=ERROR.TYPE(1/0)") == .number(2))
+        #expect(evaluate("=ERROR.TYPE(1)") == .error(.notAvailable))
+        #expect(evaluate("=N(TRUE)+N(\"7\")+N(5)") == .number(6))
+        #expect(evaluate("=TYPE(\"a\")+TYPE({1,2})") == .number(66))
+        #expect(evaluate("=TYPE(LAMBDA(x,x))") == .number(128))
+    }
+
+    @Test("Sheets and cells")
+    func cells() {
+        #expect(evaluate("=SHEET()") == .number(1))
+        #expect(evaluate("=SHEETS()") == .number(1))
+        #expect(evaluate("=CELL(\"address\",B3)") == .text("$B$3"))
+        #expect(evaluate("=CELL(\"row\",B3)+CELL(\"col\",B3)") == .number(5))
+        #expect(evaluate("=CELL(\"contents\",A1)", with: ["A1": "hi"]) == .text("hi"))
+        #expect(evaluate("=CELL(\"type\",A1)", with: ["A1": "hi"]) == .text("l"))
+        #expect(evaluate("=CELL(\"type\",A2)", with: ["A1": "hi"]) == .text("b"))
+        #expect(evaluate("=CELL(\"format\",A1)", with: ["A1": "5"]) == .text("G"))
+        #expect(evaluate("=CELL(\"prefix\",A1)", with: ["A1": "hi"]) == .text("'"))
+        #expect(FormulaInformation.formatCode("0.00") == "F2")
+        #expect(FormulaInformation.formatCode("#,##0") == ",0")
+        #expect(FormulaInformation.formatCode("$#,##0.00_);($#,##0.00)") == "C2")
+        #expect(FormulaInformation.formatCode("0%") == "P0")
+        #expect(FormulaInformation.formatCode("0.00E+00") == "S2")
+        #expect(FormulaInformation.formatCode("d-mmm-yy") == "D1")
+        #expect(FormulaInformation.formatCode("h:mm AM/PM") == "D7")
+        #expect(evaluate("=INFO(\"recalc\")") == .text("Automatic"))
+    }
+}
