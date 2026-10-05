@@ -105,6 +105,49 @@ struct VBAProjectWriterTests {
         #expect(try interpreter.run("Twice", arguments: [.integer(21)]).asInteger() == 42)
     }
 
+    @Test("A renamed module keeps its code, under its new name everywhere the project lists it")
+    func renames() throws {
+        var project = try VBAProject(data: project())
+        try project.renameModule("Module1", to: "Reports")
+        #expect(throws: VBAProject.EditError.self) { try project.renameModule("Reports", to: "Old") }
+        try project.renameModule("ThisWorkbook", to: "Book")   // a document module: left alone
+        let data = try project.data()
+        let reread = try VBAProject(data: data)
+        #expect(reread.modules.map(\.name) == ["ThisWorkbook", "Reports", "Old"])
+        let reports = try #require(reread.module(named: "Reports"))
+        #expect(reports.source.contains("Sub Hello()"))
+        #expect(reports.attributes == "Attribute VB_Name = \"Reports\"\r\n")
+
+        let file = try CompoundFile(data: data)
+        #expect(file.stream(at: ["VBA", "Module1"]) == nil)
+        #expect(file.stream(at: ["VBA", "Reports"]) != nil)
+        let text = String(decoding: try #require(file.root.stream(named: "PROJECT")), as: UTF8.self)
+        #expect(text.contains("Module=Reports"))
+        #expect(text.contains("Reports=1, 2, 3, 4"))
+        #expect(!text.contains("Module1"))
+
+        // Renaming twice, and back again, before saving.
+        var twice = reread
+        try twice.renameModule("Reports", to: "Interim")
+        try twice.renameModule("Interim", to: "reports")
+        #expect(try VBAProject(data: twice.data()).modules.map(\.name) == ["ThisWorkbook", "reports", "Old"])
+    }
+
+    @Test("Class modules can be added, and instantiated once saved")
+    func addsClasses() throws {
+        var project = try VBAProject(data: project())
+        try project.addModule(named: "Counter", kind: .classModule)
+        project.setSource("Public Count As Long\nPublic Sub Bump()\nCount = Count + 1\nEnd Sub", ofModule: "Counter")
+        project.setSource("Function Run()\nDim c As New Counter\nc.Bump: c.Bump\nRun = c.Count\nEnd Function", ofModule: "Module1")
+        let data = try project.data()
+        let reread = try VBAProject(data: data)
+        #expect(reread.module(named: "Counter")?.kind == .classModule)
+        let text = String(decoding: try #require(try CompoundFile(data: data).root.stream(named: "PROJECT")), as: UTF8.self)
+        #expect(text.contains("Class=Counter"))
+        let interpreter = try VBAInterpreter(project: reread, host: nil)
+        #expect(try interpreter.run("Run").asInteger() == 2)
+    }
+
     @Test("Module names follow VBA's rules", arguments: [
         ("Report", true), ("Report_2", true), ("2Report", false), ("My Module", false), ("Module1", false),
         ("module1", false), ("VBAProject", false), (String(repeating: "a", count: 32), false), ("Données", false),

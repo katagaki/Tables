@@ -51,13 +51,32 @@ extension VBAProject {
         return "\(stem)\(number)"
     }
 
-    /// Adds an empty standard module.
-    mutating func addModule(named name: String) throws {
+    /// Adds an empty standard or class module.
+    mutating func addModule(named name: String, kind: Module.Kind = .standard) throws {
         if let problem = problem(withModuleName: name) { throw EditError(message: problem) }
+        let isClass = kind == .classModule
         modules.append(Module(
-            name: name, kind: .standard, source: "Option Explicit\n",
-            attributes: "Attribute VB_Name = \"\(name)\"\r\n", streamName: name
+            name: name, kind: isClass ? .classModule : .standard, source: "Option Explicit\n",
+            attributes: isClass ? Self.classAttributes(name: name) : "Attribute VB_Name = \"\(name)\"\r\n",
+            streamName: name
         ))
+    }
+
+    /// Renames a standard or class module. A document module's name is its
+    /// sheet's code name, and is changed with the sheet.
+    mutating func renameModule(_ name: String, to newName: String) throws {
+        guard let index = modules.firstIndex(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }),
+              modules[index].kind == .standard || modules[index].kind == .classModule else { return }
+        guard newName != modules[index].name else { return }
+        // Changing only the case of a name is allowed; any other clash is not.
+        if newName.caseInsensitiveCompare(name) != .orderedSame, let problem = problem(withModuleName: newName) {
+            throw EditError(message: problem)
+        }
+        modules[index].attributes = modules[index].attributes.replacingOccurrences(
+            of: "Attribute VB_Name = \"\(modules[index].name)\"", with: "Attribute VB_Name = \"\(newName)\""
+        )
+        modules[index].name = newName
+        modules[index].streamName = newName
     }
 
     /// Removes a standard or class module. The workbook's and sheets' own
@@ -77,7 +96,7 @@ extension VBAProject {
         }
         let directory = try VBADirectoryRecords(VBACompression.decompress(compressedDirectory))
         let original = Set(directory.moduleNames.map { $0.lowercased() })
-        let kept = Set(modules.map { $0.name.lowercased() })
+        let kept = Set(modules.compactMap { $0.storedName?.lowercased() })
 
         var moduleStreams: [(name: String, data: Data)] = []
         for module in modules {
@@ -92,22 +111,33 @@ extension VBAProject {
 
         let newDirectory = try directory.rewritten(modules: modules, encoding: encoding)
         let removed = original.subtracting(kept)
-        let removedStreams = Set(directory.streamNames.filter { removed.contains($0.key) }.values.map { $0.lowercased() })
+        var renamed: [String: String] = [:]
+        for module in modules {
+            guard let stored = module.storedName, original.contains(stored.lowercased()), stored != module.name else {
+                continue
+            }
+            renamed[stored.lowercased()] = module.name
+        }
+        // Streams of removed modules go, and so do renamed modules' old ones.
+        var staleStreams = Set(directory.streamNames.filter { removed.contains($0.key) }.values.map { $0.lowercased() })
+        for old in renamed.keys { if let stream = directory.streamNames[old] { staleStreams.insert(stream.lowercased()) } }
+        staleStreams.subtract(modules.map { $0.streamName.lowercased() })
 
         file.root.modifyStorage(named: "VBA") { vba in
             vba.streams.removeAll { stream in
                 let lowered = stream.name.lowercased()
-                return removedStreams.contains(lowered) || lowered.hasPrefix("__srp_")
+                return staleStreams.contains(lowered) || lowered.hasPrefix("__srp_")
             }
             for (name, data) in moduleStreams { vba.setStream(named: name, to: data) }
             vba.setStream(named: "dir", to: VBACompression.compress(newDirectory))
             vba.setStream(named: "_VBA_PROJECT", to: Data([0xCC, 0x61, 0xFF, 0xFF, 0x00, 0x00, 0x00]))
         }
 
-        let added = modules.filter { !original.contains($0.name.lowercased()) }
+        let added = modules.filter { module in module.storedName.map { !original.contains($0.lowercased()) } ?? true }
         if let project = file.root.stream(named: "PROJECT") {
             file.root.setStream(named: "PROJECT", to: Self.rewrittenProjectStream(
-                project, adding: added.map(\.name), removing: removed, encoding: encoding
+                project, adding: added.map { ($0.name, $0.kind) }, removing: removed, renaming: renamed,
+                encoding: encoding
             ))
         }
         if let names = file.root.stream(named: "PROJECTwm") {
@@ -118,25 +148,39 @@ extension VBAProject {
         return try file.data()
     }
 
-    /// The `PROJECT` stream lists modules as `Module=Name` lines, and the
-    /// editor's window positions under `[Workspace]` as `Name=…`.
-    static func rewrittenProjectStream(_ stream: Data, adding added: [String], removing removed: Set<String>,
-                                       encoding: String.Encoding) -> Data {
+    /// The `PROJECT` stream lists modules as `Module=Name` and `Class=Name`
+    /// lines, and the editor's window positions under `[Workspace]` as `Name=…`.
+    static func rewrittenProjectStream(
+        _ stream: Data, adding added: [(name: String, kind: Module.Kind)], removing removed: Set<String>,
+        renaming renamed: [String: String] = [:], encoding: String.Encoding
+    ) -> Data {
         let text = String(data: stream, encoding: encoding) ?? String(decoding: stream, as: UTF8.self)
-        var lines = text.components(separatedBy: "\r\n")
+        var lines: [String] = []
         var inWorkspace = false
-        lines.removeAll { line in
+        for line in text.components(separatedBy: "\r\n") {
             if line.hasPrefix("[") { inWorkspace = line.caseInsensitiveCompare("[Workspace]") == .orderedSame }
-            guard let equals = line.firstIndex(of: "=") else { return false }
-            let key = line[..<equals]
-            let value = line[line.index(after: equals)...].lowercased()
-            if inWorkspace { return removed.contains(String(key).lowercased()) }
-            return (key == "Module" || key == "Class") && removed.contains(value)
+            guard let equals = line.firstIndex(of: "=") else {
+                lines.append(line)
+                continue
+            }
+            let key = String(line[..<equals])
+            let value = String(line[line.index(after: equals)...])
+            if inWorkspace {
+                guard !removed.contains(key.lowercased()) else { continue }
+                lines.append(renamed[key.lowercased()].map { $0 + "=" + value } ?? line)
+                continue
+            }
+            if key == "Module" || key == "Class" {
+                guard !removed.contains(value.lowercased()) else { continue }
+                lines.append(renamed[value.lowercased()].map { key + "=" + $0 } ?? line)
+                continue
+            }
+            lines.append(line)
         }
         // New modules go after the last module line, or the ID line if none.
         let anchor = lines.lastIndex { $0.hasPrefix("Module=") || $0.hasPrefix("Document=") || $0.hasPrefix("Class=") }
             ?? lines.firstIndex { $0.hasPrefix("ID=") } ?? -1
-        lines.insert(contentsOf: added.map { "Module=\($0)" }, at: anchor + 1)
+        lines.insert(contentsOf: added.map { ($0.kind == .classModule ? "Class=" : "Module=") + $0.name }, at: anchor + 1)
         return lines.joined(separator: "\r\n").data(using: encoding) ?? Data(lines.joined(separator: "\r\n").utf8)
     }
 
@@ -233,9 +277,20 @@ struct VBADirectoryRecords {
             }
         }
         for module in modules {
-            if let group = groups.first(where: { $0.name.caseInsensitiveCompare(module.name) == .orderedSame }) {
+            if let stored = module.storedName,
+               let group = groups.first(where: { $0.name.caseInsensitiveCompare(stored) == .orderedSame }) {
+                let isRenamed = stored != module.name
+                guard let name = module.name.data(using: encoding) else {
+                    throw VBAProject.EditError(message: String(format: String(localized: "Macros.Save.Unencodable"), module.name))
+                }
+                let unicode = module.name.utf16.flatMap { [UInt8($0 & 0xFF), UInt8($0 >> 8)] }
                 for record in group.records {
-                    out += record.id == 0x0031 ? Self.record(0x0031, [0, 0, 0, 0]) : record.bytes
+                    switch record.id {
+                    case 0x0031: out += Self.record(0x0031, [0, 0, 0, 0])
+                    case 0x0019 where isRenamed, 0x001A where isRenamed: out += Self.record(record.id, [UInt8](name))
+                    case 0x0047 where isRenamed, 0x0032 where isRenamed: out += Self.record(record.id, unicode)
+                    default: out += record.bytes
+                    }
                 }
             } else {
                 out += try Self.newModuleRecords(module, encoding: encoding)

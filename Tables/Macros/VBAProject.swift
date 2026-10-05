@@ -30,8 +30,11 @@ struct VBAProject: Hashable, Sendable {
         var attributes: String
         /// The stream under `VBA/` that holds the module.
         var streamName: String
+        /// The name the project file knows the module by, which differs from
+        /// `name` once it is renamed, and is nil for a module not yet saved.
+        var storedName: String?
 
-        var id: String { name }
+        var id: String { storedName ?? name }
     }
 
     var name: String
@@ -86,7 +89,7 @@ struct VBAProject: Hashable, Sendable {
             let (attributes, source) = Self.splitAttributes(text)
             let kind = kinds[entry.name.lowercased()] ?? (entry.isProcedural ? .standard : .classModule)
             return Module(name: entry.name, kind: kind, source: source, attributes: attributes,
-                          streamName: entry.streamName)
+                          streamName: entry.streamName, storedName: entry.name)
         }
     }
 
