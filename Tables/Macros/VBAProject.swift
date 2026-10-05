@@ -38,6 +38,10 @@ struct VBAProject: Hashable, Sendable {
     var modules: [Module]
     /// The Windows code page the project's text is stored in.
     var codePage: UInt32
+    /// The container the project was read from. Saving an edit writes the
+    /// changed modules back into it, keeping everything else it held —
+    /// references, UserForm designers, protection — as it was.
+    var file: CompoundFile?
 
     func module(named name: String) -> Module? {
         modules.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
@@ -63,6 +67,7 @@ struct VBAProject: Hashable, Sendable {
             throw FormatError(message: "The macro project has no VBA storage.")
         }
         let directory = try DirectoryStream(VBACompression.decompress(compressedDirectory))
+        self.file = file
         codePage = directory.codePage
         name = directory.projectName
 

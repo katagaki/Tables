@@ -7634,6 +7634,146 @@
         }
       }
     },
+    "Macros.ModuleName.InvalidCharacters" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A module name can only contain letters A to Z, digits and underscores."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "モジュール名に使えるのは A〜Z の英字、数字、アンダースコアだけです。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "모듈 이름에는 A부터 Z까지의 영문자, 숫자, 밑줄만 사용할 수 있습니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模块名称只能包含 A 到 Z 的字母、数字和下划线。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模組名稱只能包含 A 到 Z 的字母、數字和底線。"
+          }
+        }
+      }
+    },
+    "Macros.ModuleName.MustStartWithLetter" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A module name has to start with a letter from A to Z."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "モジュール名は A〜Z の英字で始める必要があります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "모듈 이름은 A부터 Z까지의 영문자로 시작해야 합니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模块名称必须以 A 到 Z 的字母开头。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模組名稱必須以 A 到 Z 的字母開頭。"
+          }
+        }
+      }
+    },
+    "Macros.ModuleName.Taken" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That name is already used in this project."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この名前はすでにこのプロジェクトで使われています。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 이름은 이미 이 프로젝트에서 사용 중입니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此项目中已使用该名称。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此專案中已使用該名稱。"
+          }
+        }
+      }
+    },
+    "Macros.ModuleName.TooLong" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A module name can be at most 31 characters long."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "モジュール名は 31 文字以内にしてください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "모듈 이름은 최대 31자까지 입력할 수 있습니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模块名称最多只能有 31 个字符。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模組名稱最多只能有 31 個字元。"
+          }
+        }
+      }
+    },
     "Macros.Prompt.DefaultTitle" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7735,6 +7875,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在執行 %@…"
+          }
+        }
+      }
+    },
+    "Macros.Save.Unencodable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ contains characters this workbook's macros cannot store. Excel keeps macro code in the workbook's original language encoding."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ に、このブックのマクロに保存できない文字が含まれています。Excel はマクロのコードをブック作成時の言語の文字コードで保存します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@에 이 통합 문서의 매크로에 저장할 수 없는 문자가 있습니다. Excel은 매크로 코드를 통합 문서의 원래 언어 인코딩으로 저장합니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 包含此工作簿的宏无法存储的字符。Excel 会以工作簿原始语言的编码存储宏代码。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 包含此活頁簿的巨集無法儲存的字元。Excel 會以活頁簿原始語言的編碼儲存巨集程式碼。"
           }
         }
       }
