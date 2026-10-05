@@ -164,3 +164,32 @@ struct DynamicArrayFileTests {
         #expect(cell(reloaded, "A2").value == .number(2))
     }
 }
+
+@Suite("Functions Tables cannot calculate")
+struct SavedResultTests {
+    @Test("A formula calling an unknown function keeps the value it was saved with")
+    func keepsSavedValue() {
+        var sheet = Worksheet(name: "Sheet1")
+        sheet[CellAddress(a1: "A1")!] = Cell(value: .number(42), formula: "WEBSERVICE(\"https://example.com\")")
+        sheet[CellAddress(a1: "A2")!] = Cell(formula: "A1+1")
+        sheet[CellAddress(a1: "A3")!] = Cell(formula: "NOSUCHTHING(1)")
+        var workbook = Workbook(sheets: [sheet])
+        workbook.recalculate()
+        #expect(cell(workbook, "A1").value == .number(42))
+        #expect(cell(workbook, "A2").value == .number(43))
+        #expect(cell(workbook, "A3").value == .error(.nameError))
+    }
+
+    @Test("A saved spill stays where it was")
+    func keepsSavedSpill() {
+        var sheet = Worksheet(name: "Sheet1")
+        sheet[CellAddress(a1: "A1")!] = Cell(value: .text("Date"), formula: "STOCKHISTORY(\"MSFT\",1)")
+        sheet[CellAddress(a1: "A2")!] = Cell(value: .number(45000), isSpilled: true)
+        sheet.spills[CellAddress(a1: "A1")!] = CellRange(start: CellAddress(a1: "A1")!, end: CellAddress(a1: "A2")!)
+        sheet[CellAddress(a1: "B1")!] = Cell(formula: "COUNT(A1#)")
+        var workbook = Workbook(sheets: [sheet])
+        workbook.recalculate()
+        #expect(cell(workbook, "A2").value == .number(45000))
+        #expect(cell(workbook, "B1").value == .number(1))
+    }
+}

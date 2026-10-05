@@ -395,6 +395,10 @@ final class CalculationEngine: FormulaContext {
     private func formulaResult(sheetIndex: Int, address: CellAddress, formula: String) -> FormulaValue {
         let key = Key.cell(sheet: sheetIndex, address: address)
         if let cached = results[key] { return cached }
+        if let saved = savedResult(sheetIndex: sheetIndex, address: address, formula: formula) {
+            results[key] = saved
+            return saved
+        }
         guard !evaluating.contains(key) else { return .failure(.circularReference) }
         evaluating.insert(key)
         defer { evaluating.remove(key) }
@@ -406,6 +410,76 @@ final class CalculationEngine: FormulaContext {
 
         results[key] = result
         return result
+    }
+
+    /// For a formula calling something Tables cannot calculate — a web or
+    /// cube function, an add-in, or one newer than this version — the result
+    /// the file was saved with, spill and all. Without one there is nothing
+    /// better than `#NAME?`, which is what evaluating it gives.
+    private func savedResult(sheetIndex: Int, address: CellAddress, formula: String) -> FormulaValue? {
+        let sheet = workbook.sheets[sheetIndex]
+        guard let cell = sheet.cells[address], !cell.value.isEmpty, cell.value != .error(.nameError),
+              case .success(let node) = parsed(formula), callsUnknownFunction(formula, node) else { return nil }
+        let block: CellRange?
+        if let extent = cell.arrayExtent {
+            block = CellRange(start: address, end: CellAddress(row: address.row + extent.rows - 1,
+                                                              column: address.column + extent.columns - 1))
+        } else {
+            block = hints[sheetIndex]?[address]
+        }
+        guard let block, !block.isSingleCell else { return .scalar(cell.value) }
+        return .block(block.rowRange.map { row in
+            block.columnRange.map { column in
+                let here = CellAddress(row: row, column: column)
+                return here == address ? cell.value : (sheet.cells[here]?.value ?? .empty)
+            }
+        })
+    }
+
+    private var unknownCallCache: [String: Bool] = [:]
+
+    private func callsUnknownFunction(_ formula: String, _ node: FormulaNode) -> Bool {
+        if let known = unknownCallCache[formula] { return known }
+        let names = Set(workbook.definedNames.map { $0.name.lowercased() })
+        let found = Self.unknownCalls(in: node, bound: [], definedNames: names)
+        unknownCallCache[formula] = found
+        return found
+    }
+
+    /// Whether anything in `node` calls a name that is neither a built-in
+    /// function, a defined name, nor a LET or LAMBDA name in reach.
+    private static func unknownCalls(in node: FormulaNode, bound: Set<String>, definedNames: Set<String>) -> Bool {
+        func visit(_ child: FormulaNode, _ bound: Set<String>) -> Bool {
+            unknownCalls(in: child, bound: bound, definedNames: definedNames)
+        }
+        switch node {
+        case .call(let name, let arguments):
+            let lowered = name.lowercased()
+            if !FormulaFunctions.isKnown(name), !bound.contains(lowered), !definedNames.contains(lowered) {
+                return true
+            }
+            var inner = bound
+            if name == "LET" {
+                for (index, argument) in arguments.enumerated() where index % 2 == 0 && index < arguments.count - 1 {
+                    if case .definedName(nil, let variable) = argument { inner.insert(variable.lowercased()) }
+                }
+            } else if name == "LAMBDA" {
+                for argument in arguments.dropLast() {
+                    if case .definedName(nil, let variable) = argument { inner.insert(variable.lowercased()) }
+                }
+            }
+            return arguments.contains { visit($0, inner) }
+        case .invoke(let target, let arguments):
+            return visit(target, bound) || arguments.contains { visit($0, bound) }
+        case .unary(_, let operand), .postfixPercent(let operand), .intersect(let operand), .spill(let operand):
+            return visit(operand, bound)
+        case .binary(_, let lhs, let rhs):
+            return visit(lhs, bound) || visit(rhs, bound)
+        case .array(let rows):
+            return rows.contains { $0.contains { visit($0, bound) } }
+        default:
+            return false
+        }
     }
 
     /// `address` is the cell the formula lives in, which `ROW()` and `COLUMN()`
