@@ -99,6 +99,12 @@ final class CalculationEngine: FormulaContext {
         }
     }
 
+    func sheetNames(from first: String, to last: String) -> [String]? {
+        guard let start = sheetIndicesByName[first.lowercased()],
+              let end = sheetIndicesByName[last.lowercased()] else { return nil }
+        return workbook.sheets[min(start, end)...max(start, end)].map(\.name)
+    }
+
     // MARK: - Evaluation
 
     private func resolveSheetIndex(_ name: String?) -> Int? {

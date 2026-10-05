@@ -263,3 +263,118 @@ struct EnginePositionFunctionTests {
         #expect(workbook.sheets[0][CellAddress(a1: "A1")!].value == .number(9))
     }
 }
+
+@Suite("Formula syntax")
+struct FormulaSyntaxTests {
+    @Test("Error literals can be written into a formula")
+    func errorLiterals() throws {
+        #expect(try FormulaParser.parse("#N/A") == .errorLiteral(.notAvailable))
+        #expect(try FormulaParser.parse("IF(A1=#div/0!,1,2)")
+                == .call("IF", [.binary("=", .reference(sheet: nil, address: CellAddress(a1: "A1")!),
+                                        .errorLiteral(.divideByZero)), .number(1), .number(2)]))
+        let workbook = makeWorkbook(["A1": "=ISERROR(#N/A)", "A2": "=#REF!"])
+        #expect(value(workbook, "A1") == .boolean(true))
+        #expect(value(workbook, "A2") == .error(.referenceError))
+    }
+
+    @Test("An empty argument parses as omitted rather than failing")
+    func missingArguments() throws {
+        #expect(try FormulaParser.parse("IF(A1,,2)")
+                == .call("IF", [.reference(sheet: nil, address: CellAddress(a1: "A1")!), .missing, .number(2)]))
+        #expect(try FormulaParser.parse("F(,)") == .call("F", [.missing, .missing]))
+        #expect(try FormulaParser.parse("F()") == .call("F", []))
+        #expect(try FormulaParser.parse("F(1,)") == .call("F", [.number(1), .missing]))
+    }
+
+    @Test("Whole columns and whole rows are ranges reaching the sheet's edge")
+    func wholeLines() throws {
+        let column = try FormulaParser.parse("SUM(B:C)")
+        #expect(column == .call("SUM", [.range(sheet: nil, start: CellAddress(row: 0, column: 1),
+                                               end: CellAddress(row: SheetLimits.maxRow, column: 2))]))
+        let row = try FormulaParser.parse("SUM(Data!$2:$3)")
+        #expect(row == .call("SUM", [.range(sheet: "Data", start: CellAddress(row: 1, column: 0),
+                                            end: CellAddress(row: 2, column: SheetLimits.maxColumn))]))
+        #expect(try FormulaParser.parse("2:2") == .range(sheet: nil, start: CellAddress(row: 1, column: 0),
+                                                       end: CellAddress(row: 1, column: SheetLimits.maxColumn)))
+
+        let workbook = makeWorkbook(["A1": "1", "A2": "2", "B1": "10", "C1": "=SUM(A:A)", "C2": "=SUM(1:1)"])
+        #expect(number(workbook, "C1") == 3)
+        #expect(number(workbook, "C2") == 14)  // A1, B1 and C1's own total
+    }
+
+    @Test("A 3-D reference totals the same cells across a run of sheets")
+    func sheetSpans() throws {
+        #expect(try FormulaParser.parse("SUM(Jan:Mar!B2)") == .call("SUM", [
+            .sheetSpan(first: "Jan", last: "Mar", start: CellAddress(a1: "B2")!, end: CellAddress(a1: "B2")!),
+        ]))
+        #expect(try FormulaParser.parse("SUM('Q 1:Q 2'!A1:A2)") == .call("SUM", [
+            .sheetSpan(first: "Q 1", last: "Q 2", start: CellAddress(a1: "A1")!, end: CellAddress(a1: "A2")!),
+        ]))
+        var sheets = ["Jan", "Feb", "Mar", "Summary"].map { Worksheet(name: $0) }
+        for index in 0..<3 { sheets[index][CellAddress(a1: "B2")!] = Cell(value: .number(Double(index + 1))) }
+        sheets[3][CellAddress(a1: "A1")!] = Cell(formula: "SUM(Jan:Mar!B2)")
+        var workbook = Workbook(sheets: sheets)
+        workbook.recalculate()
+        #expect(workbook.sheets[3][CellAddress(a1: "A1")!].value == .number(6))
+    }
+
+    @Test("Excel's file prefixes are not part of a function's name")
+    func filePrefixes() throws {
+        #expect(try FormulaParser.parse("_xlfn.XLOOKUP(1,A1:A2,B1:B2)") == .call("XLOOKUP", [
+            .number(1),
+            .range(sheet: nil, start: CellAddress(a1: "A1")!, end: CellAddress(a1: "A2")!),
+            .range(sheet: nil, start: CellAddress(a1: "B1")!, end: CellAddress(a1: "B2")!),
+        ]))
+        #expect(try FormulaParser.parse("_xlfn._xlws.SORT(A1:A2)") == .call("SORT", [
+            .range(sheet: nil, start: CellAddress(a1: "A1")!, end: CellAddress(a1: "A2")!),
+        ]))
+        #expect(try FormulaParser.parse("_xlpm.x") == .definedName(sheet: nil, name: "x"))
+        #expect(try FormulaParser.parse("_xlfn.SINGLE(A1:A2)")
+                == .intersect(.range(sheet: nil, start: CellAddress(a1: "A1")!, end: CellAddress(a1: "A2")!)))
+        #expect(try FormulaParser.parse("_xlfn.ANCHORARRAY(B1)")
+                == .spill(.reference(sheet: nil, address: CellAddress(a1: "B1")!)))
+    }
+
+    @Test("@, # and the range operator parse where Excel writes them")
+    func referenceOperators() throws {
+        let a1 = FormulaNode.reference(sheet: nil, address: CellAddress(a1: "A1")!)
+        #expect(try FormulaParser.parse("@A1:A3")
+                == .intersect(.range(sheet: nil, start: CellAddress(a1: "A1")!, end: CellAddress(a1: "A3")!)))
+        #expect(try FormulaParser.parse("SUM(A1#)") == .call("SUM", [.spill(a1)]))
+        #expect(try FormulaParser.parse("A1:INDEX(B1:B3,2)") == .binary(":", a1, .call("INDEX", [
+            .range(sheet: nil, start: CellAddress(a1: "B1")!, end: CellAddress(a1: "B3")!), .number(2),
+        ])))
+        #expect(try FormulaParser.parse("LAMBDA(x,x)(2)")
+                == .invoke(.call("LAMBDA", [.definedName(sheet: nil, name: "x"), .definedName(sheet: nil, name: "x")]),
+                           [.number(2)]))
+    }
+
+    @Test("Syntax spans cover the source text of each node")
+    func spans() throws {
+        let syntax = try FormulaParser.parseSyntax("SUM( A1:A3 , (B1) )")
+        #expect(syntax.range == 0..<19)
+        #expect(syntax.children.map(\.range) == [5..<10, 13..<17])
+    }
+}
+
+@Suite("Whole-line references when the grid changes")
+struct WholeLineShiftTests {
+    @Test("Inserting columns moves column spans and leaves row spans alone")
+    func columns() {
+        #expect(FormulaReferenceShifter.rewrite("SUM(B:C)+SUM(2:3)", operation: .insert(index: 0, count: 1), axis: .column)
+                == "SUM(C:D)+SUM(2:3)")
+        #expect(FormulaReferenceShifter.rewrite("SUM($B:$C)", operation: .remove(range: 0...0), axis: .column)
+                == "SUM($A:$B)")
+        #expect(FormulaReferenceShifter.rewrite("SUM(B:B)", operation: .remove(range: 1...1), axis: .column)
+                == "SUM(#REF!)")
+    }
+
+    @Test("Inserting rows moves row spans, and filling keeps anchored ones")
+    func rows() {
+        #expect(FormulaReferenceShifter.rewrite("SUM(2:3)", operation: .insert(index: 0, count: 2), axis: .row)
+                == "SUM(4:5)")
+        #expect(FormulaReferenceShifter.translated("SUM($2:3)", rowDelta: 1, columnDelta: 0) == "SUM($2:4)")
+        #expect(FormulaReferenceShifter.rewrite("TEXT(A1,\"h:m\")", operation: .insert(index: 0, count: 1), axis: .row)
+                == "TEXT(A2,\"h:m\")")
+    }
+}

@@ -44,11 +44,16 @@ protocol FormulaContext: AnyObject {
     /// range answers with the whole matrix, which is what makes `SUM(Sales)`
     /// behave like `SUM(Sheet1!$A$2:$A$10)`.
     func resolveDefinedName(_ name: String, sheetName: String?) -> FormulaValue?
+    func sheetNames(from first: String, to last: String) -> [String]?
 }
 
 extension FormulaContext {
     /// A context with no workbook behind it has no names to resolve.
     func resolveDefinedName(_ name: String, sheetName: String?) -> FormulaValue? { nil }
+
+    /// The sheets a 3-D reference spans, in tab order, or nil when either end
+    /// does not exist.
+    func sheetNames(from first: String, to last: String) -> [String]? { nil }
 }
 
 struct FormulaEvaluator {
@@ -100,15 +105,42 @@ struct FormulaEvaluator {
 
         case .definedName(let sheet, let name):
             return context.resolveDefinedName(name, sheetName: sheet) ?? .failure(.nameError)
+
+        case .missing:
+            return .scalar(.empty)
+
+        case .sheetSpan(let first, let last, let start, let end):
+            guard let sheets = context.sheetNames(from: first, to: last) else { return .failure(.referenceError) }
+            var rows: [[CellValue]] = []
+            for sheet in sheets {
+                guard case .matrix(let block) = matrix(sheet: sheet, start: start, end: end) else { continue }
+                rows += block
+            }
+            return rows.isEmpty ? .failure(.referenceError) : .matrix(rows)
+
+        case .intersect(let operand), .spill(let operand):
+            return evaluate(operand)
+
+        case .invoke:
+            return .failure(.valueError)
         }
     }
 
     /// Materializes a range, clamped to the target sheet's extent.
+    ///
+    /// Only whole columns and whole rows are cut down to the sheet: an explicit
+    /// range keeps the shape it was written with, empty cells and all, the way
+    /// Excel's grid would read it.
     func matrix(sheet: String?, start: CellAddress, end: CellAddress) -> FormulaValue {
         let box = CellRange(start: start, end: end).normalized
         guard let extent = context.bounds(forSheetNamed: sheet) else { return .failure(.referenceError) }
-        let lastRow = min(box.end.row, max(0, extent.rows - 1))
-        let lastColumn = min(box.end.column, max(0, extent.columns - 1))
+        let wholeColumns = box.start.row == 0 && box.end.row == SheetLimits.maxRow
+        let wholeRows = box.start.column == 0 && box.end.column == SheetLimits.maxColumn
+        // Past this many cells even an explicit range is read only as far as the
+        // sheet goes, so a stray `A1:Z1000000` cannot exhaust memory.
+        let oversized = box.cellCount > 1_000_000
+        let lastRow = wholeColumns || oversized ? min(box.end.row, max(0, extent.rows - 1)) : box.end.row
+        let lastColumn = wholeRows || oversized ? min(box.end.column, max(0, extent.columns - 1)) : box.end.column
         guard box.start.row <= lastRow, box.start.column <= lastColumn else {
             return .matrix([[.empty]])
         }
