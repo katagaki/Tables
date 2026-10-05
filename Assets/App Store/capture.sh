@@ -12,7 +12,6 @@ SCRIPT_DIR=${0:A:h}
 PROJECT_DIR=${SCRIPT_DIR:h:h}
 BUNDLE_ID=com.tsubuzaki.Tables
 DERIVED_DATA=/tmp/tables-screenshots-dd
-SAMPLES=/tmp/tables-screenshots-samples
 LANGUAGES=($@)
 (( $# )) || LANGUAGES=(en ja)
 typeset -A DEVICE_TYPES=(
@@ -91,10 +90,11 @@ capture() {
     xcrun simctl uninstall $udid $BUNDLE_ID 2>/dev/null || true
     xcrun simctl install $udid $APP
 
-    python3 "$SCRIPT_DIR/samples.py" $device $language "$SAMPLES/$device-$language" >/dev/null
+    samples="$(python3 "$SCRIPT_DIR/samples.py" $device $language)"
     documents="$(xcrun simctl get_app_container $udid $BUNDLE_ID data)/Documents"
     mkdir -p "$documents"
-    cp "$SAMPLES/$device-$language/"* "$documents/"
+    cp "$samples/"* "$documents/"
+    rm -r "$samples"
     # Match the file times in the browser to the 9:41 status bar.
     touch -t 202610040915 "$documents/"*
 

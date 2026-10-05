@@ -1,29 +1,34 @@
 """Writes the sample documents the App Store screenshots open.
 
-Usage: python3 samples.py <iPhone|iPad> <en|ja> <output directory>
+Usage: python3 samples.py <iPhone|iPad> <en|ja>
+
+Prints the directory it wrote the documents to.
 
 The iPhone set is sized to fit a phone screen without scrolling; the iPad set is
 larger so the sheets fill the screen. Everything is set in Kivotos. Needs
 openpyxl (pip3 install openpyxl).
 """
-import csv, os, random, re, shutil, sys, zipfile, datetime as dt
+import csv, os, random, re, sys, tempfile, zipfile, datetime as dt
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 from openpyxl.utils import get_column_letter as L
 
-# The output directory is emptied before it is written, so it is only accepted
-# where capture.sh puts it: one folder per device and language under the
-# samples root, never anywhere else on disk.
-SAMPLES_ROOT = os.path.realpath("/tmp/tables-screenshots-samples")
-if len(sys.argv) != 4 or sys.argv[1] not in ("iPhone", "iPad") or sys.argv[2] not in ("en", "ja"):
+# Device and language are picked from fixed lists rather than taken as given,
+# and the documents go into a fresh private directory of the script's own
+# making, whose path it prints for capture.sh to copy from and remove.
+def choose(value, options):
+    for option in options:
+        if option == value:
+            return option
     sys.exit(__doc__)
-DEVICE, LANG = sys.argv[1], sys.argv[2]
-OUT = os.path.join(SAMPLES_ROOT, f"{DEVICE}-{LANG}")
-if os.path.realpath(sys.argv[3]) != OUT:
-    sys.exit(f"The output directory must be {OUT}")
+
+
+if len(sys.argv) != 3:
+    sys.exit(__doc__)
+DEVICE = choose(sys.argv[1], ("iPhone", "iPad"))
+LANG = choose(sys.argv[2], ("en", "ja"))
+OUT = tempfile.mkdtemp(prefix=f"tables-samples-{DEVICE}-{LANG}-")
 JA = LANG == "ja"
-shutil.rmtree(OUT, ignore_errors=True)
-os.makedirs(OUT)
 rnd = random.Random(7)
 
 
@@ -577,4 +582,4 @@ else:
     plan_ipad()
     grades_ipad()
 csvs()
-print("\n".join(sorted(os.listdir(OUT))))
+print(OUT)
