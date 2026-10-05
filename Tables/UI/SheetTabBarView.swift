@@ -46,9 +46,14 @@ struct SheetTabBarView: View {
                 if !hiddenSheets.isEmpty { hiddenSheetsMenu }
 
                 ScrollView(.horizontal) {
-                    HStack(spacing: tabSpacing) {
-                        ForEach(workbook.visibleSheets) { sheet in
-                            tab(for: sheet)
+                    // A container of its own so the tabs never melt together:
+                    // the outer one's spacing is wider than the gap between
+                    // tabs, which bridged neighbours into one blob of glass.
+                    GlassEffectContainer(spacing: 0) {
+                        HStack(spacing: tabSpacing) {
+                            ForEach(workbook.visibleSheets) { sheet in
+                                tab(for: sheet)
+                            }
                         }
                     }
                     .padding(.horizontal, 2)
