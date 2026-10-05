@@ -17,6 +17,8 @@ struct MacrosView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var newModuleKind: VBAProject.Module.Kind?
     @State private var newModuleName = ""
+    @State private var moduleToRename: String?
+    @State private var renamedName = ""
     @State private var moduleToRemove: String?
     @State private var editError: String?
 
@@ -148,6 +150,15 @@ struct MacrosView: View {
                             Button("Macros.RemoveModule.Confirm", systemImage: "trash", role: .destructive) {
                                 moduleToRemove = module.name
                             }
+                            Button("Macros.RenameModule", systemImage: "pencil") { beginRename(module.name) }
+                        }
+                    }
+                    .contextMenu {
+                        if isEditable {
+                            Button("Macros.RenameModule", systemImage: "pencil") { beginRename(module.name) }
+                            Button("Macros.RemoveModule.Confirm", systemImage: "trash", role: .destructive) {
+                                moduleToRemove = module.name
+                            }
                         }
                     }
                 }
@@ -155,13 +166,18 @@ struct MacrosView: View {
                 HStack {
                     Text("Macros.Section.Code")
                     Spacer()
-                    Button("Macros.AddModule", systemImage: "plus") { beginAdding(.standard, to: project) }
-                        .labelStyle(.iconOnly)
-                        .accessibilityIdentifier("addModule")
+                    Menu {
+                        Button("Macros.AddModule", systemImage: "doc.text") { beginAdding(.standard, to: project) }
+                        Button("Macros.AddClassModule", systemImage: "cube") { beginAdding(.classModule, to: project) }
+                    } label: {
+                        Label("Macros.AddModule", systemImage: "plus")
+                            .labelStyle(.iconOnly)
+                    }
+                    .accessibilityIdentifier("addModule")
                 }
             }
             .alert(
-                "Macros.AddModule",
+                newModuleKind == .classModule ? "Macros.AddClassModule" : "Macros.AddModule",
                 isPresented: Binding(get: { newModuleKind != nil }, set: { if !$0 { newModuleKind = nil } })
             ) {
                 nameField($newModuleName)
@@ -169,7 +185,19 @@ struct MacrosView: View {
                     .disabled(project.problem(withModuleName: newModuleName) != nil)
                 Button("Macros.Button.Cancel", role: .cancel) {}
             } message: {
-                Text(project.problem(withModuleName: newModuleName) ?? String(localized: "Macros.AddModule.Message"))
+                Text(project.problem(withModuleName: newModuleName) ?? String(localized: newModuleKind == .classModule
+                    ? "Macros.AddClassModule.Message" : "Macros.AddModule.Message"))
+            }
+            .alert(
+                "Macros.RenameModule.Title",
+                isPresented: Binding(get: { moduleToRename != nil }, set: { if !$0 { moduleToRename = nil } })
+            ) {
+                nameField($renamedName)
+                Button("Macros.RenameModule") { renameModule() }
+                    .disabled(renameProblem(in: project) != nil)
+                Button("Macros.Button.Cancel", role: .cancel) {}
+            } message: {
+                if let problem = renameProblem(in: project) { Text(problem) }
             }
             .confirmationDialog(
                 "Macros.RemoveModule.Title",
@@ -197,7 +225,7 @@ struct MacrosView: View {
     }
 
     private func beginAdding(_ kind: VBAProject.Module.Kind, to project: VBAProject) {
-        newModuleName = project.nextModuleName()
+        newModuleName = project.nextModuleName(kind == .classModule ? "Class" : "Module")
         newModuleKind = kind
     }
 
@@ -205,6 +233,26 @@ struct MacrosView: View {
         let name = newModuleName
         let kind = newModuleKind ?? .standard
         perform { try edit { try $0.addModule(named: name, kind: kind) } }
+    }
+
+    private func beginRename(_ name: String) {
+        renamedName = name
+        moduleToRename = name
+    }
+
+    /// A new name may differ from the old one only in case; otherwise it has
+    /// to be free.
+    private func renameProblem(in project: VBAProject) -> String? {
+        guard let original = moduleToRename, renamedName.caseInsensitiveCompare(original) != .orderedSame else {
+            return nil
+        }
+        return project.problem(withModuleName: renamedName)
+    }
+
+    private func renameModule() {
+        guard let original = moduleToRename else { return }
+        let name = renamedName
+        perform { try edit { try $0.renameModule(original, to: name) } }
     }
 
     private func perform(_ change: () throws -> Void) {
