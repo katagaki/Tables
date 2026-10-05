@@ -173,7 +173,9 @@ enum VBALexer {
                 index += 2
                 continue
             }
-            if "+-*/\\^&=<>.,():;!".contains(character) {
+            // `#` also marks file numbers, as in `Close #1`: file I/O cannot
+            // run here, but it should not stop the rest of the module parsing.
+            if "+-*/\\^&=<>.,():;!#".contains(character) {
                 emit(.symbol(String(character)))
                 index += 1
                 continue

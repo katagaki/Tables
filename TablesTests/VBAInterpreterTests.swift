@@ -412,6 +412,25 @@ struct VBAInterpreterTests {
         #expect(error?.line == 2)
     }
 
+    @Test("File I/O parses, and fails only when it runs")
+    func fileStatements() throws {
+        let source = """
+        Sub Main()
+            Debug.Print "before"
+        End Sub
+
+        Sub WriteLog()
+            Open "log.txt" For Append As #1
+            Print #1, "entry"
+            Close #1
+        End Sub
+        """
+        #expect(try run(source) == ["before"])
+        let interpreter = try VBAInterpreter(modules: [("Module1", .standard, source)], host: RecordingHost())
+        let error = try #require(throws: VBAError.self) { try interpreter.run("WriteLog") }
+        #expect(error.number == 445)
+    }
+
     @Test("A runaway loop can be cancelled")
     func cancellation() throws {
         let interpreter = try VBAInterpreter(modules: [("Module1", .standard, "Sub Main()\nDo\nLoop\nEnd Sub")],
