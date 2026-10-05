@@ -2,7 +2,7 @@ import CoreTransferable
 import Foundation
 import UniformTypeIdentifiers
 
-/// Wraps a workbook so it can be handed to `ShareLink`. The `.xlsx` is written
+/// Wraps a workbook so it can be handed to `ShareLink`. The workbook is written
 /// lazily, only when the user actually picks a share destination.
 struct WorkbookExport: Transferable, Sendable {
     var workbook: Workbook
@@ -12,6 +12,16 @@ struct WorkbookExport: Transferable, Sendable {
     var sheetIndex = 0
 
     static var transferRepresentation: some TransferRepresentation {
+        // Offered first when there are macros to keep: sharing as `.xlsx`
+        // would leave them behind.
+        FileRepresentation(exportedContentType: .macroEnabledWorkbook) { export in
+            SentTransferredFile(try export.write(extension: "xlsm") {
+                try XLSXWriter.data(from: export.workbook, macroEnabled: true)
+            })
+        }
+        .suggestedFileName { $0.name + ".xlsm" }
+        .exportingCondition { $0.workbook.hasMacros }
+
         FileRepresentation(exportedContentType: .openXMLWorkbook) { export in
             SentTransferredFile(try export.write(extension: "xlsx") {
                 try XLSXWriter.data(from: export.workbook)

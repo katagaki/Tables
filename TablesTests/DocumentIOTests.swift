@@ -236,6 +236,16 @@ struct DocumentTypeTests {
         #expect(TablesDocument.writableContentTypes.first == .openXMLWorkbook)
     }
 
+    @Test("The macro-enabled type resolves to xlsm and can be read and written")
+    func macroEnabledWorkbookType() {
+        #expect(UTType.macroEnabledWorkbook.identifier == "org.openxmlformats.spreadsheetml.sheet.macroenabled")
+        #expect(UTType.macroEnabledWorkbook.preferredFilenameExtension == "xlsm")
+        #expect(TablesDocument.readableContentTypes.contains(.macroEnabledWorkbook))
+        #expect(TablesDocument.writableContentTypes.contains(.macroEnabledWorkbook))
+        // Saving asks about the two separately because of this.
+        #expect(!UTType.macroEnabledWorkbook.conforms(to: .openXMLWorkbook))
+    }
+
     @Test("Every readable delimited type can also be written back")
     func delimitedTypesRoundTrip() {
         for type in [UTType.commaSeparatedText, .tabSeparatedText] {

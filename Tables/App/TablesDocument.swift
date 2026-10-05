@@ -5,13 +5,18 @@ import UniformTypeIdentifiers
 extension UTType {
     /// The Office Open XML workbook type, declared by the system.
     static let openXMLWorkbook = UTType("org.openxmlformats.spreadsheetml.sheet") ?? .data
+    /// The `.xlsm` workbook, which may carry macros. It does not conform to
+    /// the plain workbook type, so it is asked about in its own right.
+    static let macroEnabledWorkbook = UTType("org.openxmlformats.spreadsheetml.sheet.macroenabled") ?? .data
 }
 
-/// The app's document: an entire workbook, loaded from `.xlsx` or `.csv`.
+/// The app's document: an entire workbook, loaded from `.xlsx`, `.xlsm` or `.csv`.
 struct TablesDocument: FileDocument {
-    static let readableContentTypes: [UTType] = [.openXMLWorkbook, .commaSeparatedText, .tabSeparatedText]
+    static let readableContentTypes: [UTType] = [
+        .openXMLWorkbook, .macroEnabledWorkbook, .commaSeparatedText, .tabSeparatedText
+    ]
     static let writableContentTypes: [UTType] = [
-        .openXMLWorkbook, .commaSeparatedText, .tabSeparatedText
+        .openXMLWorkbook, .macroEnabledWorkbook, .commaSeparatedText, .tabSeparatedText
     ]
 
     var workbook: Workbook
@@ -46,7 +51,8 @@ struct TablesDocument: FileDocument {
             ($0 as NSString).deletingPathExtension
         } ?? Workbook.defaultSheetName(1)
 
-        if configuration.contentType.conforms(to: .openXMLWorkbook) {
+        if configuration.contentType.conforms(to: .openXMLWorkbook)
+            || configuration.contentType.conforms(to: .macroEnabledWorkbook) {
             workbook = try XLSXReader.workbook(from: data)
             isPlainText = false
         } else if configuration.contentType.conforms(to: .commaSeparatedText)
@@ -75,7 +81,9 @@ struct TablesDocument: FileDocument {
         } else if configuration.contentType.conforms(to: .commaSeparatedText) {
             data = CSVCodec.data(from: exportSheet)
         } else {
-            data = try XLSXWriter.data(from: workbook)
+            data = try XLSXWriter.data(
+                from: workbook, macroEnabled: configuration.contentType.conforms(to: .macroEnabledWorkbook)
+            )
         }
         return FileWrapper(regularFileWithContents: data)
     }
