@@ -195,3 +195,94 @@ struct DescriptiveStatisticsTests {
         #expect(close(evaluate("=PROB({0,1,2,3},{0.2,0.3,0.1,0.4},1,3)"), 0.8))
     }
 }
+
+@Suite("Probability distributions")
+struct DistributionTests {
+    private func check(_ formula: String, _ expected: Double, _ tolerance: Double = 1e-6) {
+        let value = evaluate(formula)
+        #expect(close(value, expected, tolerance: tolerance), "\(formula) gave \(value)")
+    }
+
+    @Test("Normal and log-normal")
+    func normal() {
+        check("=NORM.DIST(42,40,1.5,TRUE)", 0.9087888)
+        check("=NORM.DIST(42,40,1.5,FALSE)", 0.10934005)
+        check("=NORM.INV(0.908789,40,1.5)", 42.000002)
+        check("=NORM.S.DIST(1.333333,TRUE)", 0.908788726)
+        check("=NORM.S.DIST(1.333333,FALSE)", 0.164010148)
+        check("=NORM.S.INV(0.908789)", 1.333334673)
+        check("=NORMSINV(0.001)", -3.090232306)
+        check("=LOGNORM.DIST(4,3.5,1.2,TRUE)", 0.0390836)
+        check("=LOGNORM.DIST(4,3.5,1.2,FALSE)", 0.0176176)
+        check("=LOGNORM.INV(0.039084,3.5,1.2)", 4.0000252)
+        check("=GAUSS(2)", 0.47724987)
+        check("=PHI(0.75)", 0.301137432)
+        #expect(evaluate("=NORM.INV(0,1,1)") == .error(.numberError))
+    }
+
+    @Test("Student's t, chi-square and F")
+    func sampling() {
+        check("=T.DIST(60,1,TRUE)", 0.99469533)
+        check("=T.DIST(8,3,FALSE)", 0.00073691)
+        check("=T.DIST.2T(1.959999998,60)", 0.054644930)
+        check("=T.DIST.RT(1.959999998,60)", 0.027322465)
+        check("=TDIST(1.959999998,60,2)", 0.054644930)
+        check("=T.INV(0.75,2)", 0.8164966)
+        check("=T.INV.2T(0.546449,60)", 0.606533)
+        check("=CHISQ.DIST(0.5,1,TRUE)", 0.52049988)
+        check("=CHISQ.DIST(2,3,FALSE)", 0.20755375)
+        check("=CHISQ.DIST.RT(18.307,10)", 0.0500006)
+        check("=CHISQ.INV(0.93,1)", 3.283020287)
+        check("=CHISQ.INV(0.6,2)", 1.832581464)
+        check("=CHISQ.INV.RT(0.050001,10)", 18.30697)
+        check("=F.DIST(15.2069,6,4,TRUE)", 0.99)
+        check("=F.DIST(15.2069,6,4,FALSE)", 0.0012238)
+        check("=F.DIST.RT(15.2069,6,4)", 0.01)
+        check("=F.INV(0.01,6,4)", 0.10930991)
+        check("=F.INV.RT(0.01,6,4)", 15.20686)
+    }
+
+    @Test("Beta and gamma")
+    func continuous() {
+        check("=BETA.DIST(2,8,10,TRUE,1,3)", 0.6854706)
+        check("=BETA.DIST(2,8,10,FALSE,1,3)", 1.4837646)
+        check("=BETA.INV(0.685470581,8,10,1,3)", 2)
+        check("=GAMMA.DIST(10.00001131,9,2,FALSE)", 0.032639)
+        check("=GAMMA.DIST(10.00001131,9,2,TRUE)", 0.068094)
+        check("=GAMMA.INV(0.068094,9,2)", 10.0000112, 1e-5)
+        check("=GAMMA(2.5)", 1.329340388)
+        check("=GAMMALN(4)", 1.791759469)
+        #expect(evaluate("=GAMMA(-1)") == .error(.numberError))
+        check("=EXPON.DIST(0.2,10,TRUE)", 0.86466472)
+        check("=EXPON.DIST(0.2,10,FALSE)", 1.35335283)
+        check("=WEIBULL.DIST(105,20,100,TRUE)", 0.929581)
+        check("=WEIBULL.DIST(105,20,100,FALSE)", 0.035589)
+    }
+
+    @Test("Discrete distributions")
+    func discrete() {
+        check("=BINOM.DIST(6,10,0.5,FALSE)", 0.2050781)
+        check("=BINOM.DIST(6,10,0.5,TRUE)", 0.828125)
+        check("=BINOM.DIST.RANGE(60,0.75,48)", 0.083974967)
+        check("=BINOM.DIST.RANGE(60,0.75,45,50)", 0.523629793)
+        #expect(evaluate("=BINOM.INV(6,0.5,0.75)") == .number(4))
+        check("=POISSON.DIST(2,5,TRUE)", 0.124652)
+        check("=POISSON.DIST(2,5,FALSE)", 0.084224)
+        check("=HYPGEOM.DIST(1,4,8,20,TRUE)", 0.4654, 1e-4)
+        check("=HYPGEOM.DIST(1,4,8,20,FALSE)", 0.3633, 1e-4)
+        check("=NEGBINOM.DIST(10,5,0.25,TRUE)", 0.3135141)
+        check("=NEGBINOM.DIST(10,5,0.25,FALSE)", 0.0550487)
+    }
+
+    @Test("Confidence intervals and hypothesis tests")
+    func tests() {
+        check("=CONFIDENCE.NORM(0.05,2.5,50)", 0.692952)
+        check("=CONFIDENCE.T(0.05,1,50)", 0.284196855)
+        check("=Z.TEST({3,6,7,8,6,5,4,2,1,9},4)", 0.090574)
+        check("=T.TEST({3,4,5,8,9,1,2,4,5},{6,19,3,2,14,4,5,17,1},2,1)", 0.196016)
+        check("=CHISQ.TEST({58,35;11,25;10,23},{45.35,47.65;17.56,18.44;16.09,16.91})", 0.0003082)
+        check("=F.TEST({6,7,9,15,21},{20,28,31,38,40})", 0.64831785)
+        check("=ERF(0.745)", 0.70792892)
+        check("=ERFC(1)", 0.15729921)
+    }
+}
