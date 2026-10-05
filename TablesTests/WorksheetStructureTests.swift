@@ -171,3 +171,25 @@ struct WorkbookTests {
         #expect(workbook.sheets[1].id != workbook.sheets[0].id)
     }
 }
+
+@Suite("Comments when the grid changes")
+struct CommentStructureTests {
+    @Test("Comments move with inserted rows and columns and go with deleted ones")
+    func moving() {
+        var sheet = Worksheet(name: "Sheet1")
+        let b2 = CellAddress(a1: "B2")!
+        let c3 = CellAddress(a1: "C3")!
+        sheet.comments[b2] = .note(author: "Ann", text: "Check")
+        sheet.comments[c3] = .thread(author: "Bo", text: "Why?")
+        sheet.insertRows(1, at: 0)
+        #expect(sheet.comments[CellAddress(a1: "B3")!]?.text == "Check")
+        sheet.insertColumns(2, at: 1)
+        #expect(sheet.comments[CellAddress(a1: "D3")!]?.text == "Check")
+        #expect(sheet.comments[CellAddress(a1: "E4")!]?.text == "Why?")
+        sheet.removeRows(2...2)
+        #expect(sheet.comments[CellAddress(a1: "E3")!]?.text == "Why?")
+        #expect(sheet.comments.count == 1)
+        sheet.removeColumns(0...0)
+        #expect(sheet.comments[CellAddress(a1: "D3")!]?.text == "Why?")
+    }
+}

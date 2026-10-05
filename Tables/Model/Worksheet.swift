@@ -130,6 +130,13 @@ struct Worksheet: Identifiable, Hashable, Sendable {
     /// address of the formula. Recalculation starts from this so that cells
     /// reading a spilled range see it on the first pass.
     var spills: [CellAddress: CellRange] = [:]
+    /// Notes and threaded comments, by the cell they belong to.
+    var comments: [CellAddress: CellComment] = [:]
+    /// Shapes from the file's VML drawing that are not notes — form controls,
+    /// mostly — carried verbatim into the drawing written with the notes.
+    var preservedVMLShapes: String?
+    /// That drawing's own relationships, for the pictures those shapes show.
+    var preservedVMLRelationships: Data?
 
     /// A chart sheet holds one chart and no cells — Excel's "Move Chart to New
     /// Sheet". It is still a sheet: it takes a tab and a position, and
@@ -301,6 +308,7 @@ struct Worksheet: Identifiable, Hashable, Sendable {
         guard rowCount - count >= 1 else { return }
         FormulaReferenceShifter.apply(.remove(range: range), axis: .row, to: &cells)
         cells = cells.filter { !range.contains($0.key.row) }
+        comments = comments.filter { !range.contains($0.key.row) }
         remapCells { $0.row > range.upperBound ? CellAddress(row: $0.row - count, column: $0.column) : $0 }
         rowHeights = Self.shift(rowHeights.filter { !range.contains($0.key) }, from: range.upperBound + 1, by: -count)
         fittedRows = Self.shift(fittedRows.filter { !range.contains($0) }, from: range.upperBound + 1, by: -count)
@@ -315,6 +323,7 @@ struct Worksheet: Identifiable, Hashable, Sendable {
         guard columnCount - count >= 1 else { return }
         FormulaReferenceShifter.apply(.remove(range: range), axis: .column, to: &cells)
         cells = cells.filter { !range.contains($0.key.column) }
+        comments = comments.filter { !range.contains($0.key.column) }
         remapCells { $0.column > range.upperBound ? CellAddress(row: $0.row, column: $0.column - count) : $0 }
         columnWidths = Self.shift(columnWidths.filter { !range.contains($0.key) }, from: range.upperBound + 1, by: -count)
         hiddenColumns = Self.shift(hiddenColumns.filter { !range.contains($0) }, from: range.upperBound + 1, by: -count)
@@ -345,11 +354,17 @@ struct Worksheet: Identifiable, Hashable, Sendable {
         hiddenColumns.removeAll()
     }
 
+    /// Moves cells, and the comments on them, to new addresses.
     private mutating func remapCells(_ transform: (CellAddress) -> CellAddress) {
         var moved: [CellAddress: Cell] = [:]
         moved.reserveCapacity(cells.count)
         for (address, cell) in cells { moved[transform(address)] = cell }
         cells = moved
+        var movedComments: [CellAddress: CellComment] = [:]
+        for (address, comment) in comments { movedComments[transform(address)] = comment }
+        comments = movedComments
+        // Where arrays spilled is worked out again on the next recalculation.
+        spills = [:]
     }
 
     private static func shift(_ values: [Int: Double], from index: Int, by delta: Int) -> [Int: Double] {
