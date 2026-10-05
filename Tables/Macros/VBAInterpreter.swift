@@ -1041,6 +1041,10 @@ final class VBAInterpreter {
             let object = VBADocumentModuleObject(module: module, base: host?.documentObject(codeName: module.name, in: self))
             return try apply(.object(object), evaluateArguments(argumentExpressions, frame))
         }
+        // A sheet's code name works even where the project has no module for it.
+        if let object = host?.documentObject(codeName: name, in: self) {
+            return try apply(.object(object), evaluateArguments(argumentExpressions, frame))
+        }
 
         let arguments = try evaluateArguments(argumentExpressions, frame)
         if frame.module.syntax.externalProcedures.contains(key)
