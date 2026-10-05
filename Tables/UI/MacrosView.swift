@@ -8,7 +8,13 @@ struct MacrosView: View {
     let loadError: String?
     let output: [String]
     let run: (_ module: String, _ procedure: String) -> Void
+    /// Puts an edited project into the workbook.
+    let save: (VBAProject) throws -> Void
     @Environment(\.dismiss) private var dismiss
+    @State private var isAddingModule = false
+    @State private var newModuleName = ""
+    @State private var moduleToRemove: String?
+    @State private var editError: String?
 
     private var catalog: MacroCatalog { project.map(MacroCatalog.init(project:)) ?? MacroCatalog() }
 
@@ -41,6 +47,14 @@ struct MacrosView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(role: .confirm) { dismiss() }
                 }
+            }
+            .alert(
+                "Macros.Save.Failed",
+                isPresented: Binding(get: { editError != nil }, set: { if !$0 { editError = nil } })
+            ) {
+                Button("Common.OK", role: .cancel) { editError = nil }
+            } message: {
+                Text(editError ?? "")
             }
         }
     }
@@ -82,10 +96,14 @@ struct MacrosView: View {
     @ViewBuilder
     private var codeSection: some View {
         if let project {
-            Section("Macros.Section.Code") {
+            Section {
                 ForEach(project.modules) { module in
                     NavigationLink {
-                        ModuleCodeView(module: module, problem: catalog.problems[module.name])
+                        ModuleEditorView(module: module) { source in
+                            var edited = project
+                            edited.setSource(source, ofModule: module.name)
+                            try save(edited)
+                        }
                     } label: {
                         LabeledContent {
                             if catalog.problems[module.name] != nil {
@@ -97,34 +115,139 @@ struct MacrosView: View {
                             Text(module.kind.label)
                         }
                     }
+                    .deleteDisabled(module.kind != .standard && module.kind != .classModule)
+                }
+                .onDelete { offsets in
+                    moduleToRemove = offsets.first.map { project.modules[$0].name }
+                }
+            } header: {
+                HStack {
+                    Text("Macros.Section.Code")
+                    Spacer()
+                    Button("Macros.AddModule", systemImage: "plus") {
+                        newModuleName = project.nextModuleName()
+                        isAddingModule = true
+                    }
+                    .labelStyle(.iconOnly)
+                    .accessibilityIdentifier("addModule")
                 }
             }
+            .alert("Macros.AddModule", isPresented: $isAddingModule) {
+                TextField("Macros.AddModule.Placeholder", text: $newModuleName)
+                    .autocorrectionDisabled()
+                    #if os(iOS)
+                    .textInputAutocapitalization(.never)
+                    // Module names are ASCII letters, digits and underscores.
+                    .keyboardType(.asciiCapable)
+                    #endif
+                Button("Macros.AddModule.Confirm") { addModule(to: project) }
+                    .disabled(project.problem(withModuleName: newModuleName) != nil)
+                Button("Macros.Button.Cancel", role: .cancel) {}
+            } message: {
+                Text(project.problem(withModuleName: newModuleName) ?? String(localized: "Macros.AddModule.Message"))
+            }
+            .confirmationDialog(
+                "Macros.RemoveModule.Title",
+                isPresented: Binding(get: { moduleToRemove != nil }, set: { if !$0 { moduleToRemove = nil } }),
+                titleVisibility: .visible,
+                presenting: moduleToRemove
+            ) { name in
+                Button("Macros.RemoveModule.Confirm", role: .destructive) {
+                    var edited = project
+                    edited.removeModule(named: name)
+                    perform { try save(edited) }
+                }
+            } message: { name in
+                Text(String(format: String(localized: "Macros.RemoveModule.Message"), name))
+            }
+        }
+    }
+
+    private func addModule(to project: VBAProject) {
+        var edited = project
+        perform {
+            try edited.addModule(named: newModuleName)
+            try save(edited)
+        }
+    }
+
+    private func perform(_ change: () throws -> Void) {
+        do {
+            try change()
+        } catch {
+            editError = error.localizedDescription
         }
     }
 }
 
-/// One module's source, read-only.
-private struct ModuleCodeView: View {
+/// One module's code, editable. Changes go into the workbook when the
+/// editor is left or Save is pressed — one undoable step either way — and
+/// the code is checked as it is typed.
+private struct ModuleEditorView: View {
     let module: VBAProject.Module
-    let problem: String?
+    let save: (String) throws -> Void
+    @State private var text: String
+    @State private var savedText: String
+    @State private var saveError: String?
+
+    init(module: VBAProject.Module, save: @escaping (String) throws -> Void) {
+        self.module = module
+        self.save = save
+        _text = State(initialValue: module.source)
+        _savedText = State(initialValue: module.source)
+    }
+
+    /// The first syntax error in the code as it stands, if any.
+    private var problem: String? {
+        do {
+            _ = try VBAParser.parse(module: module.name, source: text)
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
 
     var body: some View {
-        ScrollView([.vertical, .horizontal]) {
-            VStack(alignment: .leading, spacing: 12) {
-                if let problem {
-                    Label(problem, systemImage: "exclamationmark.triangle")
-                        .font(.callout)
-                        .foregroundStyle(.orange)
-                }
-                Text(module.source.isEmpty ? " " : module.source)
-                    .font(.system(.footnote, design: .monospaced))
-                    .textSelection(.enabled)
-                    .fixedSize()
+        VStack(spacing: 0) {
+            if let problem {
+                Label(problem, systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                    .background(.orange.opacity(0.1))
+                    .accessibilityIdentifier("codeProblem")
             }
-            .padding()
-            .frame(maxWidth: .infinity, alignment: .leading)
+            CodeEditor(text: $text)
         }
         .navigationTitle(module.name)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Macros.Save") { commit() }
+                    .disabled(text == savedText)
+                    .accessibilityIdentifier("saveModule")
+            }
+        }
+        .onDisappear { commit() }
+        .alert(
+            "Macros.Save.Failed",
+            isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })
+        ) {
+            Button("Common.OK", role: .cancel) { saveError = nil }
+        } message: {
+            Text(saveError ?? "")
+        }
+    }
+
+    private func commit() {
+        guard text != savedText else { return }
+        do {
+            try save(text)
+            savedText = text
+        } catch {
+            saveError = error.localizedDescription
+        }
     }
 }
 

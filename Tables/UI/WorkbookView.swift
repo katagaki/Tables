@@ -328,16 +328,18 @@ struct WorkbookView: View {
         return MacrosView(
             project: (try? loaded.get()) ?? nil,
             loadError: loaded.failureDescription,
-            output: macroRunner.output
-        ) { module, procedure in
-            let macro = MacroCatalog.Macro(module: module, procedure: procedure)
-            isShowingMacros = false
-            if hasAllowedMacros {
-                runMacro(macro)
-            } else {
-                pendingMacro = macro
-            }
-        }
+            output: macroRunner.output,
+            run: { module, procedure in
+                let macro = MacroCatalog.Macro(module: module, procedure: procedure)
+                isShowingMacros = false
+                if hasAllowedMacros {
+                    runMacro(macro)
+                } else {
+                    pendingMacro = macro
+                }
+            },
+            save: { project in document.workbook.setMacroProject(try project.data()) }
+        )
         #if os(macOS)
         .frame(minWidth: 420, minHeight: 480)
         #endif
