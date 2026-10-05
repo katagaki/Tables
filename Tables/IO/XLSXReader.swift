@@ -604,9 +604,12 @@ enum XLSXReader {
         ///
         /// `xl/comments` has no trailing slash on purpose: Excel writes
         /// `xl/comments1.xml` while other generators write `xl/comments/…`.
+        /// `xl/vbaProject` covers the macro project and the signatures that
+        /// sit beside it as `xl/vbaProjectSignature….bin`.
         static let preservablePathPrefixes = [
             "xl/theme/", "xl/comments", "xl/drawings/", "xl/tables/",
             "xl/charts/", "xl/media/", "xl/printerSettings/", "docProps/",
+            "xl/vbaProject",
         ]
 
         /// PivotTables are excluded even though their parts are self-contained,
@@ -754,6 +757,7 @@ enum XLSXReader {
             note(.pivotTables) { path in pivotPathPrefixes.contains(where: path.hasPrefix) }
             note(.slicers) { path in slicerPathPrefixes.contains(where: path.hasPrefix) }
             note(.documentProperties) { $0.hasPrefix("docProps/") }
+            note(.macros) { $0.hasPrefix("xl/vbaProject") }
         }
 
         // MARK: Package graph

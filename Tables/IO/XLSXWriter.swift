@@ -2,16 +2,21 @@ import Foundation
 
 /// Serializes the app's model back into an Office Open XML workbook.
 enum XLSXWriter {
-    static func data(from workbook: Workbook) throws -> Data {
+    /// `macroEnabled` writes an `.xlsm`, which keeps any macros the workbook
+    /// came with. Without it the macros are left out, as Excel does when a
+    /// macro workbook is saved as `.xlsx`.
+    static func data(from workbook: Workbook, macroEnabled: Bool = false) throws -> Data {
         let strings = SharedStringTable(workbook: workbook)
         let styles = StyleTable(workbook: workbook)
-        let preserved = workbook.preservedPackage
+        let preserved = macroEnabled ? workbook.preservedPackage : workbook.preservedPackage.removingMacros()
         let drawings = DrawingPlan(workbook: workbook)
 
         var parts: [(path: String, data: Data)] = [
             (
                 "[Content_Types].xml",
-                contentTypes(workbook: workbook, drawings: drawings, preserved: preserved).utf8Data
+                contentTypes(
+                    workbook: workbook, drawings: drawings, preserved: preserved, macroEnabled: macroEnabled
+                ).utf8Data
             ),
             ("_rels/.rels", rootRelationships(preserved: preserved).utf8Data),
             ("xl/workbook.xml", workbookPart(workbook).utf8Data),
@@ -233,7 +238,9 @@ enum XLSXWriter {
 
     // MARK: - Package parts
 
-    private static func contentTypes(workbook: Workbook, drawings: DrawingPlan, preserved: PreservedPackage) -> String {
+    private static func contentTypes(
+        workbook: Workbook, drawings: DrawingPlan, preserved: PreservedPackage, macroEnabled: Bool
+    ) -> String {
         var xml = declaration
         xml += "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
         xml += "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>"
@@ -244,7 +251,13 @@ enum XLSXWriter {
         where ext != "rels" && ext != "xml" {
             xml += "<Default Extension=\"\(XMLLite.escape(ext))\" ContentType=\"\(XMLLite.escape(type))\"/>"
         }
-        xml += "<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>"
+        // The workbook's own type is what says the package is an `.xlsm`;
+        // Excel refuses a file whose extension and type disagree, even one
+        // with no macros in it yet.
+        let workbookType = macroEnabled
+            ? "application/vnd.ms-excel.sheet.macroEnabled.main+xml"
+            : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"
+        xml += "<Override PartName=\"/xl/workbook.xml\" ContentType=\"\(workbookType)\"/>"
         for (index, sheet) in workbook.sheets.enumerated() {
             let type = drawings.isChartSheet(sheet)
                 ? ChartWriter.chartSheetContentType

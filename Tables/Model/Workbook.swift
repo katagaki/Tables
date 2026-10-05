@@ -44,6 +44,7 @@ enum UnsupportedFeature: String, CaseIterable, Hashable, Sendable, Comparable {
     case pivotTables
     case slicers
     case documentProperties
+    case macros
 
     var label: String {
         switch self {
@@ -61,6 +62,7 @@ enum UnsupportedFeature: String, CaseIterable, Hashable, Sendable, Comparable {
         case .pivotTables: return String(localized: "UnsupportedFeature.PivotTables")
         case .slicers: return String(localized: "UnsupportedFeature.Slicers")
         case .documentProperties: return String(localized: "UnsupportedFeature.DocumentProperties")
+        case .macros: return String(localized: "UnsupportedFeature.Macros")
         }
     }
 
@@ -175,6 +177,31 @@ struct PreservedPackage: Hashable, Sendable {
     var styleSheetElements: [PreservedElement] = []
 
     var isEmpty: Bool { parts.isEmpty && sheetRelationshipParts.isEmpty && styleSheetElements.isEmpty }
+
+    static let macroProjectRelationshipType = "http://schemas.microsoft.com/office/2006/relationships/vbaProject"
+
+    /// The package path of the compiled macro project, when one was kept.
+    var macroProjectPath: String? {
+        workbookRelationships.lazy
+            .filter { $0.type == Self.macroProjectRelationshipType && $0.targetMode != "External" }
+            .map { XLSXReader.PackagePreservation.absolutePath($0.target, relativeTo: "xl") }
+            .first { parts[$0] != nil }
+    }
+
+    /// The same package with the macros taken out, for saving to a format
+    /// that cannot hold them: an `.xlsx` that declares a macro project is one
+    /// Excel refuses to open at all.
+    func removingMacros() -> PreservedPackage {
+        var package = self
+        // The parts themselves, and the `_rels` naming their signatures.
+        let dropped = parts.keys.filter { $0.hasPrefix("xl/vbaProject") || $0.hasPrefix("xl/_rels/vbaProject") }
+        for path in dropped {
+            package.parts[path] = nil
+            package.contentTypeOverrides["/" + path] = nil
+        }
+        package.workbookRelationships.removeAll { $0.type == Self.macroProjectRelationshipType }
+        return package
+    }
 }
 
 /// A collection of worksheets — the whole document.
@@ -191,6 +218,12 @@ struct Workbook: Hashable, Sendable {
     /// The name the macros know the workbook by, `ThisWorkbook` unless the
     /// file renamed it. Like a sheet's, it binds the workbook to its module.
     var codeName: String?
+
+    /// Whether the file came with macros that a save can carry through.
+    var hasMacros: Bool { preservedPackage.macroProjectPath != nil }
+
+    /// The compiled macro project, `vbaProject.bin`, exactly as it was read.
+    var macroProject: Data? { preservedPackage.macroProjectPath.flatMap { preservedPackage.parts[$0] } }
 
     init(sheets: [Worksheet], definedNames: [DefinedName] = []) {
         self.sheets = sheets.isEmpty ? [Worksheet(name: Workbook.defaultSheetName(1))] : sheets
