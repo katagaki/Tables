@@ -671,3 +671,93 @@ struct FinancialFunctionTests {
               0.0772, 1e-3)
     }
 }
+
+@Suite("Engineering")
+struct EngineeringFunctionTests {
+    private func check(_ formula: String, _ expected: Double, _ tolerance: Double = 1e-7) {
+        let value = evaluate(formula)
+        #expect(close(value, expected, tolerance: tolerance), "\(formula) gave \(value)")
+    }
+
+    @Test("Number bases, two's complement included")
+    func bases() {
+        #expect(evaluate("=BIN2DEC(1100100)") == .number(100))
+        #expect(evaluate("=BIN2DEC(\"1111111111\")") == .number(-1))
+        #expect(evaluate("=BIN2HEX(11111011,4)") == .text("00FB"))
+        #expect(evaluate("=BIN2HEX(\"1110000000\")") == .text("FFFFFFFF80"))
+        #expect(evaluate("=DEC2BIN(9,4)") == .text("1001"))
+        #expect(evaluate("=DEC2BIN(-100)") == .text("1110011100"))
+        #expect(evaluate("=DEC2BIN(512)") == .error(.numberError))
+        #expect(evaluate("=DEC2HEX(100,4)") == .text("0064"))
+        #expect(evaluate("=DEC2HEX(-54)") == .text("FFFFFFFFCA"))
+        #expect(evaluate("=DEC2OCT(58,3)") == .text("072"))
+        #expect(evaluate("=HEX2DEC(\"A5\")") == .number(165))
+        #expect(evaluate("=HEX2DEC(\"FFFFFFFF5B\")") == .number(-165))
+        #expect(evaluate("=HEX2BIN(\"F\",8)") == .text("00001111"))
+        #expect(evaluate("=OCT2DEC(54)") == .number(44))
+        #expect(evaluate("=OCT2HEX(\"7777777533\")") == .text("FFFFFFFF5B"))
+        #expect(evaluate("=DEC2BIN(9,2)") == .error(.numberError))
+    }
+
+    @Test("Bitwise operations, DELTA and GESTEP")
+    func bitwise() {
+        #expect(evaluate("=BITAND(13,25)") == .number(9))
+        #expect(evaluate("=BITOR(23,10)") == .number(31))
+        #expect(evaluate("=BITXOR(5,3)") == .number(6))
+        #expect(evaluate("=BITLSHIFT(4,2)") == .number(16))
+        #expect(evaluate("=BITRSHIFT(13,2)") == .number(3))
+        #expect(evaluate("=BITLSHIFT(4,-2)") == .number(1))
+        #expect(evaluate("=BITAND(-1,1)") == .error(.numberError))
+        #expect(evaluate("=DELTA(5,4)") == .number(0))
+        #expect(evaluate("=GESTEP(5,4)") == .number(1))
+    }
+
+    @Test("Complex numbers")
+    func complex() {
+        #expect(evaluate("=COMPLEX(3,4)") == .text("3+4i"))
+        #expect(evaluate("=COMPLEX(3,4,\"j\")") == .text("3+4j"))
+        #expect(evaluate("=COMPLEX(0,1)") == .text("i"))
+        #expect(evaluate("=COMPLEX(0,-1)") == .text("-i"))
+        #expect(evaluate("=IMABS(\"5+12i\")") == .number(13))
+        #expect(evaluate("=IMREAL(\"6-9i\")") == .number(6))
+        #expect(evaluate("=IMAGINARY(\"3+4i\")") == .number(4))
+        #expect(evaluate("=IMAGINARY(\"-j\")") == .number(-1))
+        check("=IMARGUMENT(\"3+4i\")", 0.92729522)
+        #expect(evaluate("=IMCONJUGATE(\"3+4i\")") == .text("3-4i"))
+        #expect(evaluate("=IMSUM(\"3+4i\",\"5-3i\")") == .text("8+i"))
+        #expect(evaluate("=IMSUB(\"13+4i\",\"5+3i\")") == .text("8+i"))
+        #expect(evaluate("=IMPRODUCT(\"3+4i\",\"5-3i\")") == .text("27+11i"))
+        #expect(evaluate("=IMDIV(\"-238+240i\",\"10+24i\")") == .text("5+12i"))
+        // Excel's own answer carries the same binary dust.
+        #expect(evaluate("=IMPOWER(\"2+3i\",3)") == .text("-46+9.00000000000001i"))
+        #expect(evaluate("=IMSQRT(\"1+i\")") == .text("1.09868411346781+0.455089860562227i"))
+        #expect(evaluate("=IMSUM(\"1+i\",\"1+j\")") == .error(.valueError))
+        #expect(evaluate("=IMEXP(\"1+i\")") == .text("1.46869393991589+2.28735528717884i"))
+        #expect(evaluate("=IMLN(\"3+4i\")") == .text("1.6094379124341+0.927295218001612i"))
+        #expect(evaluate("=IMSIN(\"4+3i\")") == .text("-7.61923172032141-6.548120040911i"))
+    }
+
+    @Test("Unit conversion")
+    func units() {
+        check("=CONVERT(1,\"lbm\",\"kg\")", 0.45359237)
+        check("=CONVERT(68,\"F\",\"C\")", 20)
+        #expect(evaluate("=CONVERT(2.5,\"ft\",\"sec\")") == .error(.notAvailable))
+        check("=CONVERT(CONVERT(100,\"ft\",\"m\"),\"ft\",\"m\")", 9.290304)
+        check("=CONVERT(6,\"tsp\",\"tbs\")", 2)
+        check("=CONVERT(1,\"gal\",\"l\")", 3.785411784)
+        check("=CONVERT(100,\"mi\",\"km\")", 160.9344)
+        check("=CONVERT(1,\"km2\",\"m2\")", 1e6)
+        check("=CONVERT(1,\"Mibyte\",\"byte\")", 1_048_576)
+        check("=CONVERT(1,\"hr\",\"mn\")", 60)
+        check("=CONVERT(0,\"C\",\"K\")", 273.15)
+        #expect(evaluate("=CONVERT(1,\"xyz\",\"m\")") == .error(.notAvailable))
+    }
+
+    @Test("Bessel functions")
+    func bessel() {
+        check("=BESSELI(1.5,1)", 0.981666428, 1e-8)
+        check("=BESSELJ(1.9,2)", 0.329925829, 1e-6)
+        check("=BESSELK(1.5,1)", 0.277387804, 1e-6)
+        check("=BESSELY(2.5,1)", 0.145918138, 1e-8)
+    }
+}
