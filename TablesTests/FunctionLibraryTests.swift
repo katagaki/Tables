@@ -99,3 +99,99 @@ struct MathFunctionTests {
         #expect(evaluate("=COUNT(RANDARRAY(3,2,1,6,TRUE))") == .number(6))
     }
 }
+
+@Suite("Descriptive statistics")
+struct DescriptiveStatisticsTests {
+    @Test("Spread and shape match Excel's documented examples")
+    func shape() {
+        let data = "{3,4,5,2,3,4,5,6,4,7}"
+        #expect(close(evaluate("=KURT(\(data))"), -0.151799637, tolerance: 1e-8))
+        #expect(close(evaluate("=SKEW(\(data))"), 0.359543071, tolerance: 1e-8))
+        #expect(close(evaluate("=SKEW.P(\(data))"), 0.303193339, tolerance: 1e-8))
+        #expect(close(evaluate("=TRIMMEAN({4,5,6,7,2,3,4,5,1,2,3},0.2)"), 3.777777778, tolerance: 1e-8))
+        #expect(close(evaluate("=AVEDEV({4,5,6,7,5,4,3})"), 1.020408163, tolerance: 1e-8))
+        #expect(evaluate("=DEVSQ({4,5,8,7,11,4,3})") == .number(48))
+        #expect(close(evaluate("=GEOMEAN({4,5,8,7,11,4,3})"), 5.476986969, tolerance: 1e-8))
+        #expect(close(evaluate("=HARMEAN({4,5,8,7,11,4,3})"), 5.028375962, tolerance: 1e-8))
+        let sample = "{1345,1301,1368,1322,1310,1370,1318,1350,1303,1299}"
+        #expect(close(evaluate("=STDEV.P(\(sample))"), 26.05455814, tolerance: 1e-8))
+        #expect(close(evaluate("=STDEV.S(\(sample))"), 27.46391572, tolerance: 1e-8))
+        #expect(close(evaluate("=VARA({1,TRUE,\"x\"})"), 1.0 / 3))
+    }
+
+    @Test("Percentiles, quartiles and percent ranks")
+    func percentiles() {
+        #expect(close(evaluate("=PERCENTILE.INC({1,3,2,4},0.3)"), 1.9))
+        #expect(close(evaluate("=PERCENTILE.EXC({1,2,3,6,6,6,7,8,9},0.25)"), 2.5))
+        #expect(evaluate("=PERCENTILE.EXC({1,2,3},0.1)") == .error(.numberError))
+        #expect(close(evaluate("=QUARTILE.INC({1,2,4,7,8,9,10,12},1)"), 3.5))
+        #expect(close(evaluate("=QUARTILE.EXC({6,7,15,36,39,40,41,42,43,47,49},1)"), 15))
+        let ranks = "{13,12,11,8,4,3,2,1,1,1}"
+        #expect(evaluate("=PERCENTRANK.INC(\(ranks),2)") == .number(0.333))
+        #expect(evaluate("=PERCENTRANK.INC(\(ranks),4)") == .number(0.555))
+        #expect(evaluate("=PERCENTRANK.INC(\(ranks),5)") == .number(0.583))
+        #expect(evaluate("=PERCENTRANK.EXC({1,2,3,6,6,6,7,8,9},7)") == .number(0.7))
+        #expect(evaluate("=PERCENTRANK.EXC({1,2,3,6,6,6,7,8,9},5.43)") == .number(0.381))
+        #expect(evaluate("=PERCENTRANK.EXC({1,2,3,6,6,6,7,8,9},5.43,1)") == .number(0.3))
+    }
+
+    @Test("Ranks, modes and frequencies")
+    func ranks() {
+        #expect(evaluate("=RANK.EQ(7,{7,3.5,3.5,1,2})") == .number(1))
+        #expect(evaluate("=RANK.EQ(2,{7,3.5,3.5,1,2},1)") == .number(2))
+        #expect(evaluate("=RANK.AVG(3.5,{7,3.5,3.5,1,2})") == .number(2.5))
+        #expect(evaluate("=RANK(9,{7,3.5})") == .error(.notAvailable))
+        #expect(evaluate("=MODE.SNGL({5.6,4,4,3,2,4})") == .number(4))
+        #expect(evaluate("=MODE({1,2,3})") == .error(.notAvailable))
+        #expect(evaluate("=TEXTJOIN(\",\",,MODE.MULT({1,2,3,4,3,2,1,2,3,5,6,1}))") == .text("1,2,3"))
+        #expect(evaluate("=TEXTJOIN(\",\",,FREQUENCY({79,85,78,85,50,81,95,88,97},{70,79,89}))") == .text("1,2,4,2"))
+        #expect(evaluate("=MAXIFS({89,93,96,85,91,88},{1,2,2,3,1,1},1)") == .number(91))
+        #expect(evaluate("=MINIFS({89,93,96,85,91,88},{1,2,2,3,1,1},2)") == .number(93))
+    }
+
+    @Test("Correlation, covariance and simple regression")
+    func pairs() {
+        #expect(close(evaluate("=CORREL({3,2,4,5,6},{9,7,12,15,17})"), 0.997054486, tolerance: 1e-8))
+        #expect(close(evaluate("=COVARIANCE.P({3,2,4,5,6},{9,7,12,15,17})"), 5.2))
+        #expect(close(evaluate("=COVARIANCE.S({3,2,4,5,6},{9,7,12,15,17})"), 6.5))
+        let ys = "{2,3,9,1,8,7,5}"
+        let xs = "{6,5,11,7,5,4,4}"
+        #expect(close(evaluate("=SLOPE(\(ys),\(xs))"), 0.305555556, tolerance: 1e-8))
+        #expect(close(evaluate("=INTERCEPT({2,3,9,1,8},{6,5,11,7,5})"), 0.048387097, tolerance: 1e-7))
+        #expect(close(evaluate("=RSQ(\(ys),\(xs))"), 0.057950192, tolerance: 1e-7))
+        #expect(close(evaluate("=STEYX(\(ys),\(xs))"), 3.305718950, tolerance: 1e-8))
+        #expect(close(evaluate("=FORECAST(30,{6,7,9,15,21},{20,28,31,38,40})"), 10.607253, tolerance: 1e-7))
+        #expect(close(evaluate("=FORECAST.LINEAR(30,{6,7,9,15,21},{20,28,31,38,40})"), 10.607253, tolerance: 1e-7))
+    }
+
+    @Test("Multiple regression and growth curves")
+    func regression() {
+        #expect(close(evaluate("=INDEX(LINEST({1,9,5,7},{0,4,2,3}),1,1)"), 2))
+        #expect(close(evaluate("=INDEX(LINEST({1,9,5,7},{0,4,2,3}),1,2)"), 1))
+        #expect(close(evaluate("=TREND({1,2,3},{1,2,3},4)"), 4))
+        let sales = "{33100,47300,69000,102000,150000,220000}"
+        let months = "{11,12,13,14,15,16}"
+        #expect(close(evaluate("=GROWTH(\(sales),\(months),17)"), 320196.7184, tolerance: 1e-8))
+        #expect(close(evaluate("=INDEX(LOGEST(\(sales),\(months)),1,1)"), 1.463275628, tolerance: 1e-8))
+        #expect(close(evaluate("=INDEX(LOGEST(\(sales),\(months)),1,2)"), 495.3047702, tolerance: 1e-7))
+        // Two predictors, with statistics.
+        let y = "{1;2;3;5;8}"
+        let x = "{1,2;2,1;3,4;4,3;5,7}"
+        #expect(close(evaluate("=INDEX(LINEST(\(y),\(x),TRUE,TRUE),3,1)"), 0.9574102368220015))
+        #expect(close(evaluate("=INDEX(LINEST(\(y),\(x)),1,1)"), 0.29411764705882354))
+        #expect(close(evaluate("=INDEX(LINEST(\(y),\(x)),1,2)"), 1.3470588235294119))
+        #expect(close(evaluate("=INDEX(LINEST(\(y),\(x)),1,3)"), -1.2411764705882353))
+        #expect(evaluate("=INDEX(LINEST(\(y),\(x),TRUE,TRUE),3,3)") == .error(.notAvailable))
+    }
+
+    @Test("Standardising, Fisher transforms, permutations and probability")
+    func odds() {
+        #expect(close(evaluate("=STANDARDIZE(42,40,1.5)"), 1.333333333, tolerance: 1e-8))
+        #expect(close(evaluate("=FISHER(0.75)"), 0.972955075, tolerance: 1e-8))
+        #expect(close(evaluate("=FISHERINV(0.972955075)"), 0.75, tolerance: 1e-8))
+        #expect(evaluate("=PERMUT(100,3)") == .number(970200))
+        #expect(evaluate("=PERMUTATIONA(3,2)") == .number(9))
+        #expect(close(evaluate("=PROB({0,1,2,3},{0.2,0.3,0.1,0.4},2)"), 0.1))
+        #expect(close(evaluate("=PROB({0,1,2,3},{0.2,0.3,0.1,0.4},1,3)"), 0.8))
+    }
+}
