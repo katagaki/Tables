@@ -188,6 +188,9 @@ struct Workbook: Hashable, Sendable {
     /// The theme's six accent colours, as six-digit RGB. Chart series without
     /// a colour of their own take these in turn, exactly as Excel draws them.
     var themeAccentColors = ThemeColorScheme.office.accentColors
+    /// The name the macros know the workbook by, `ThisWorkbook` unless the
+    /// file renamed it. Like a sheet's, it binds the workbook to its module.
+    var codeName: String?
 
     init(sheets: [Worksheet], definedNames: [DefinedName] = []) {
         self.sheets = sheets.isEmpty ? [Worksheet(name: Workbook.defaultSheetName(1))] : sheets
@@ -287,6 +290,9 @@ struct Workbook: Hashable, Sendable {
         var copy = sheets[index]
         copy.id = UUID()
         copy.name = uniqueSheetName(basedOn: sheets[index].name + " Copy")
+        // Code names are unique, and the original's document module stays
+        // with the original.
+        copy.codeName = nil
         // Excel points a copied sheet's charts at the copy's own cells.
         for chart in copy.charts.indices {
             copy.charts[chart].id = UUID()

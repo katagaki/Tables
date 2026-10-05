@@ -74,6 +74,9 @@ enum XLSXReader {
             sheet.preservedElements.removeAll { $0.name == "drawing" }
             sheet.name = name
             sheet.isHidden = isHidden
+            if sheet.kind == .worksheet {
+                sheet.codeName = sheetXML.firstChild(named: "sheetPr")?.attribute("codeName")
+            }
             sheets.append(sheet)
             sheetPaths.append(entries[path] != nil ? path : fallbackPath)
             sheetFindings.append(unsupportedFindings(in: sheetXML))
@@ -85,6 +88,7 @@ enum XLSXReader {
         if sheets.allSatisfy(\.isHidden) { sheets[0].isHidden = false }
         var workbook = Workbook(sheets: sheets, definedNames: parseDefinedNames(workbookXML, sheets: sheets))
         workbook.themeAccentColors = theme.accentColors
+        workbook.codeName = workbookXML.firstChild(named: "workbookPr")?.attribute("codeName")
 
         // Drawings are read into the model — charts as charts, everything
         // else as anchors kept verbatim — and written afresh on save.

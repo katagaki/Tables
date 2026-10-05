@@ -111,6 +111,11 @@ struct Worksheet: Identifiable, Hashable, Sendable {
     /// the tab strip.
     var isHidden = false
     var tabColorHex: String?
+    /// The name the workbook's macros know this sheet by — `Sheet1` in
+    /// `Sheet1.Range("A1")` — which stays put when the tab is renamed. It is
+    /// what ties the sheet to its document module, so it has to survive a save
+    /// for the macros to keep working.
+    var codeName: String?
     /// Worksheet children we do not understand, in the order the file had them.
     var preservedElements: [PreservedElement] = []
 

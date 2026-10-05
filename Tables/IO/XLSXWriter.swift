@@ -324,7 +324,11 @@ enum XLSXWriter {
 
     private static func workbookPart(_ workbook: Workbook) -> String {
         var xml = declaration
-        xml += "<workbook xmlns=\"\(mainNamespace)\" xmlns:r=\"\(relationshipNamespace)\"><sheets>"
+        xml += "<workbook xmlns=\"\(mainNamespace)\" xmlns:r=\"\(relationshipNamespace)\">"
+        if let codeName = workbook.codeName {
+            xml += "<workbookPr codeName=\"\(XMLLite.escape(codeName))\"/>"
+        }
+        xml += "<sheets>"
         let hasVisibleSheet = workbook.sheets.contains { !$0.isHidden }
         for (index, sheet) in workbook.sheets.enumerated() {
             xml += "<sheet name=\"\(XMLLite.escape(sheet.name))\" sheetId=\"\(index + 1)\""
@@ -391,6 +395,9 @@ enum XLSXWriter {
             fragments.append((order, fragments.count, body))
         }
 
+        if let codeName = sheet.codeName {
+            add("sheetPr", "<sheetPr codeName=\"\(XMLLite.escape(codeName))\"/>")
+        }
         add("dimension", "<dimension ref=\"A1:\(CellAddress(row: sheet.rowCount - 1, column: sheet.columnCount - 1).a1)\"/>")
 
         // Our defaults differ from Excel's, so state them: otherwise every row
