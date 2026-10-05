@@ -761,3 +761,46 @@ struct EngineeringFunctionTests {
         check("=BESSELY(2.5,1)", 0.145918138, 1e-8)
     }
 }
+
+@Suite("Database functions")
+struct DatabaseFunctionTests {
+    /// Excel's documented orchard example.
+    private let orchard: [String: String] = [
+        "A1": "Tree", "B1": "Height", "C1": "Age", "D1": "Yield", "E1": "Profit", "F1": "Height",
+        "A2": "=\"=Apple\"", "B2": ">10", "F2": "<16",
+        "A3": "=\"=Pear\"",
+        "A6": "Tree", "B6": "Height", "C6": "Age", "D6": "Yield", "E6": "Profit",
+        "A7": "Apple", "B7": "18", "C7": "20", "D7": "14", "E7": "105",
+        "A8": "Pear", "B8": "12", "C8": "12", "D8": "10", "E8": "96",
+        "A9": "Cherry", "B9": "13", "C9": "14", "D9": "9", "E9": "105",
+        "A10": "Apple", "B10": "14", "C10": "15", "D10": "10", "E10": "75",
+        "A11": "Pear", "B11": "9", "C11": "8", "D11": "8", "E11": "76.8",
+        "A12": "Apple", "B12": "8", "C12": "9", "D12": "6", "E12": "45",
+    ]
+
+    @Test("The documented orchard examples")
+    func orchardExamples() {
+        #expect(evaluate("=DCOUNT(A6:E12,\"Age\",A1:F2)", with: orchard) == .number(1))
+        #expect(evaluate("=DCOUNTA(A6:E12,\"Profit\",A1:F2)", with: orchard) == .number(1))
+        #expect(evaluate("=DMAX(A6:E12,\"Profit\",A1:A3)", with: orchard) == .number(105))
+        #expect(evaluate("=DMIN(A6:E12,\"Profit\",A1:B2)", with: orchard) == .number(75))
+        #expect(close(evaluate("=DSUM(A6:E12,\"Profit\",A1:A2)", with: orchard), 225))
+        #expect(close(evaluate("=DSUM(A6:E12,\"Profit\",A1:F2)", with: orchard), 75))
+        #expect(evaluate("=DPRODUCT(A6:E12,\"Yield\",A1:F2)", with: orchard) == .number(10))
+        #expect(close(evaluate("=DAVERAGE(A6:E12,\"Yield\",A1:B2)", with: orchard), 12))
+        #expect(close(evaluate("=DAVERAGE(A6:E12,3,A6:E12)", with: orchard), 13))
+        #expect(close(evaluate("=DSTDEV(A6:E12,\"Yield\",A1:A3)", with: orchard), 2.96647939, tolerance: 1e-8))
+        #expect(close(evaluate("=DSTDEVP(A6:E12,\"Yield\",A1:A3)", with: orchard), 2.65329983, tolerance: 1e-8))
+        #expect(close(evaluate("=DVAR(A6:E12,\"Yield\",A1:A3)", with: orchard), 8.8))
+        #expect(close(evaluate("=DVARP(A6:E12,\"Yield\",A1:A3)", with: orchard), 7.04))
+        #expect(evaluate("=DGET(A6:E12,\"Yield\",A1:A3)", with: orchard) == .error(.numberError))
+    }
+
+    @Test("A bare word matches the start of a value")
+    func prefixMatching() {
+        let data: [String: String] = ["A1": "Name", "A2": "Apples", "A3": "Applesauce", "A4": "Pear",
+                                      "B1": "Name", "B2": "Apple"]
+        #expect(evaluate("=DCOUNTA(A1:A4,1,B1:B2)", with: data) == .number(2))
+        #expect(evaluate("=DGET(A1:A4,\"Name\",B1:B2)", with: data) == .error(.numberError))
+    }
+}
