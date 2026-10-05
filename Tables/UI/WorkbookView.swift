@@ -183,7 +183,8 @@ struct WorkbookView: View {
 
     @ToolbarContentBuilder
     private var sharingToolbar: some ToolbarContent {
-        if document.workbook.hasMacros {
+        // Any workbook can be given macros; delimited text has nowhere to keep them.
+        if !document.isPlainText {
             ToolbarItem(placement: .primaryAction) {
                 Button("Toolbar.Macros", systemImage: "curlybraces") { isShowingMacros = true }
                     .disabled(macroRunner.isRunning)
@@ -328,6 +329,7 @@ struct WorkbookView: View {
         return MacrosView(
             project: (try? loaded.get()) ?? nil,
             loadError: loaded.failureDescription,
+            isMacroEnabledFile: document.isMacroEnabled,
             output: macroRunner.output,
             run: { module, procedure in
                 let macro = MacroCatalog.Macro(module: module, procedure: procedure)
@@ -338,7 +340,13 @@ struct WorkbookView: View {
                     pendingMacro = macro
                 }
             },
-            save: { project in document.workbook.setMacroProject(try project.data()) }
+            edit: { change in
+                guard let data = document.workbook.macroProject else { return }
+                var project = try VBAProject(data: data)
+                try change(&project)
+                document.workbook.setMacroProject(try project.data())
+            },
+            createProject: { try document.workbook.createMacroProject() }
         )
         #if os(macOS)
         .frame(minWidth: 420, minHeight: 480)

@@ -28,6 +28,8 @@ struct TablesDocument: FileDocument {
     /// Whether the file is delimited text, which keeps values but no styling,
     /// so formatting applied to it would be thrown away on save.
     let isPlainText: Bool
+    /// Whether the file is an `.xlsm`, the only kind that keeps macros.
+    let isMacroEnabled: Bool
 
     /// What the opened file used that Tables cannot edit. Empty for anything we
     /// authored ourselves and for CSV, which has no such features to begin with.
@@ -36,11 +38,13 @@ struct TablesDocument: FileDocument {
     init() {
         workbook = Workbook()
         isPlainText = false
+        isMacroEnabled = false
     }
 
     init(workbook: Workbook) {
         self.workbook = workbook
         isPlainText = false
+        isMacroEnabled = false
     }
 
     init(configuration: ReadConfiguration) throws {
@@ -50,6 +54,7 @@ struct TablesDocument: FileDocument {
         let name = configuration.file.preferredFilename.map {
             ($0 as NSString).deletingPathExtension
         } ?? Workbook.defaultSheetName(1)
+        isMacroEnabled = configuration.contentType.conforms(to: .macroEnabledWorkbook)
 
         if configuration.contentType.conforms(to: .openXMLWorkbook)
             || configuration.contentType.conforms(to: .macroEnabledWorkbook) {

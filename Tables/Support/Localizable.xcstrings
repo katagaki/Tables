@@ -7984,6 +7984,76 @@
         }
       }
     },
+    "Macros.Create" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Create Macros"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マクロを作成"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "매크로 만들기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "创建宏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "建立巨集"
+          }
+        }
+      }
+    },
+    "Macros.Create.Message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This workbook has no macros yet. Creating them adds a module for the workbook and each sheet, as Excel does, and a module to write your first macro in."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このブックにはまだマクロがありません。作成すると、Excel と同じようにブックと各シートのモジュール、そして最初のマクロを書くためのモジュールが追加されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 통합 문서에는 아직 매크로가 없습니다. 매크로를 만들면 Excel처럼 통합 문서와 각 시트의 모듈, 그리고 첫 매크로를 작성할 모듈이 추가됩니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此工作簿还没有宏。创建后会像 Excel 一样，为工作簿和每个工作表添加模块，并添加一个用于编写第一个宏的模块。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此活頁簿還沒有巨集。建立後會像 Excel 一樣，為活頁簿和每個工作表加入模組，並加入一個用來撰寫第一個巨集的模組。"
+          }
+        }
+      }
+    },
     "Macros.DefaultWorkbookName" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8995,6 +9065,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "自動換行"
+          }
+        }
+      }
+    },
+    "Macros.XLSXNotice" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file is an .xlsx workbook, which can’t keep macros. To keep them, share or save a copy as a macro-enabled workbook (.xlsm)."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このファイルは .xlsx 形式のため、マクロを保存できません。マクロを残すには、マクロ有効ブック（.xlsm）として共有するか、コピーを保存してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 파일은 매크로를 저장할 수 없는 .xlsx 통합 문서입니다. 매크로를 유지하려면 매크로 사용 통합 문서(.xlsm)로 공유하거나 사본을 저장하십시오."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此文件是 .xlsx 工作簿，无法保存宏。要保留宏，请将其共享或另存为启用宏的工作簿（.xlsm）。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此檔案是 .xlsx 活頁簿，無法保留巨集。若要保留巨集，請將其分享或另存為啟用巨集的活頁簿（.xlsm）。"
           }
         }
       }

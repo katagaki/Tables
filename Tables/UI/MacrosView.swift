@@ -6,12 +6,16 @@ struct MacrosView: View {
     let project: VBAProject?
     /// Why the project could not be read, when it could not.
     let loadError: String?
+    /// Whether the file is an `.xlsm`. An `.xlsx` drops macros when saved.
+    let isMacroEnabledFile: Bool
     let output: [String]
     let run: (_ module: String, _ procedure: String) -> Void
-    /// Puts an edited project into the workbook.
-    let save: (VBAProject) throws -> Void
+    /// Applies a change to the workbook's project as it is now, and saves it.
+    let edit: (_ change: (inout VBAProject) throws -> Void) throws -> Void
+    /// Gives a workbook without macros a project to write them in.
+    let createProject: () throws -> Void
     @Environment(\.dismiss) private var dismiss
-    @State private var isAddingModule = false
+    @State private var newModuleKind: VBAProject.Module.Kind?
     @State private var newModuleName = ""
     @State private var moduleToRemove: String?
     @State private var editError: String?
@@ -27,9 +31,17 @@ struct MacrosView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                if project != nil, !isMacroEnabledFile {
+                    Section {
+                        Label("Macros.XLSXNotice", systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.orange)
+                    }
+                }
                 if project != nil {
                     macrosSection
                     codeSection
+                } else if loadError == nil {
+                    createSection
                 }
                 if !output.isEmpty {
                     Section("Macros.Section.Output") {
@@ -56,6 +68,23 @@ struct MacrosView: View {
             } message: {
                 Text(editError ?? "")
             }
+        }
+    }
+
+    private var createSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Macros.Create.Message")
+                    .foregroundStyle(.secondary)
+                Button("Macros.Create") {
+                    perform(createProject)
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("createMacros")
+            }
+            .padding(.vertical, 4)
+        } footer: {
+            if !isMacroEnabledFile { Text("Macros.XLSXNotice") }
         }
     }
 
@@ -98,11 +127,10 @@ struct MacrosView: View {
         if let project {
             Section {
                 ForEach(project.modules) { module in
+                    let isEditable = module.kind == .standard || module.kind == .classModule
                     NavigationLink {
                         ModuleEditorView(module: module) { source in
-                            var edited = project
-                            edited.setSource(source, ofModule: module.name)
-                            try save(edited)
+                            try edit { $0.setSource(source, ofModule: module.name) }
                         }
                     } label: {
                         LabeledContent {
@@ -115,32 +143,29 @@ struct MacrosView: View {
                             Text(module.kind.label)
                         }
                     }
-                    .deleteDisabled(module.kind != .standard && module.kind != .classModule)
-                }
-                .onDelete { offsets in
-                    moduleToRemove = offsets.first.map { project.modules[$0].name }
+                    .swipeActions {
+                        if isEditable {
+                            Button("Macros.RemoveModule.Confirm", systemImage: "trash", role: .destructive) {
+                                moduleToRemove = module.name
+                            }
+                        }
+                    }
                 }
             } header: {
                 HStack {
                     Text("Macros.Section.Code")
                     Spacer()
-                    Button("Macros.AddModule", systemImage: "plus") {
-                        newModuleName = project.nextModuleName()
-                        isAddingModule = true
-                    }
-                    .labelStyle(.iconOnly)
-                    .accessibilityIdentifier("addModule")
+                    Button("Macros.AddModule", systemImage: "plus") { beginAdding(.standard, to: project) }
+                        .labelStyle(.iconOnly)
+                        .accessibilityIdentifier("addModule")
                 }
             }
-            .alert("Macros.AddModule", isPresented: $isAddingModule) {
-                TextField("Macros.AddModule.Placeholder", text: $newModuleName)
-                    .autocorrectionDisabled()
-                    #if os(iOS)
-                    .textInputAutocapitalization(.never)
-                    // Module names are ASCII letters, digits and underscores.
-                    .keyboardType(.asciiCapable)
-                    #endif
-                Button("Macros.AddModule.Confirm") { addModule(to: project) }
+            .alert(
+                "Macros.AddModule",
+                isPresented: Binding(get: { newModuleKind != nil }, set: { if !$0 { newModuleKind = nil } })
+            ) {
+                nameField($newModuleName)
+                Button("Macros.AddModule.Confirm") { addModule() }
                     .disabled(project.problem(withModuleName: newModuleName) != nil)
                 Button("Macros.Button.Cancel", role: .cancel) {}
             } message: {
@@ -153,9 +178,7 @@ struct MacrosView: View {
                 presenting: moduleToRemove
             ) { name in
                 Button("Macros.RemoveModule.Confirm", role: .destructive) {
-                    var edited = project
-                    edited.removeModule(named: name)
-                    perform { try save(edited) }
+                    perform { try edit { $0.removeModule(named: name) } }
                 }
             } message: { name in
                 Text(String(format: String(localized: "Macros.RemoveModule.Message"), name))
@@ -163,12 +186,25 @@ struct MacrosView: View {
         }
     }
 
-    private func addModule(to project: VBAProject) {
-        var edited = project
-        perform {
-            try edited.addModule(named: newModuleName)
-            try save(edited)
-        }
+    private func nameField(_ text: Binding<String>) -> some View {
+        TextField("Macros.AddModule.Placeholder", text: text)
+            .autocorrectionDisabled()
+            #if os(iOS)
+            .textInputAutocapitalization(.never)
+            // Module names are ASCII letters, digits and underscores.
+            .keyboardType(.asciiCapable)
+            #endif
+    }
+
+    private func beginAdding(_ kind: VBAProject.Module.Kind, to project: VBAProject) {
+        newModuleName = project.nextModuleName()
+        newModuleKind = kind
+    }
+
+    private func addModule() {
+        let name = newModuleName
+        let kind = newModuleKind ?? .standard
+        perform { try edit { try $0.addModule(named: name, kind: kind) } }
     }
 
     private func perform(_ change: () throws -> Void) {
