@@ -151,6 +151,22 @@ enum VBALexer {
                 emit(.identifier(name))
                 continue
             }
+            if character == "[" {
+                // `[A1]` is shorthand for `Evaluate("A1")`.
+                var text = ""
+                index += 1
+                while let next = peek(), next != "]", next != "\n" {
+                    text.append(next)
+                    index += 1
+                }
+                guard peek() == "]" else { throw VBASyntaxError(message: "Unterminated [", line: line) }
+                index += 1
+                emit(.identifier("Evaluate"))
+                emit(.symbol("("))
+                emit(.string(text))
+                emit(.symbol(")"))
+                continue
+            }
             let two = peek(1).map { String([character, $0]) }
             if let two, ["<>", "<=", ">=", ":=", "=<", "=>"].contains(two) {
                 emit(.symbol(two == "=<" ? "<=" : two == "=>" ? ">=" : two))
