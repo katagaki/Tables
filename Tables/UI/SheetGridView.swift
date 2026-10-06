@@ -673,14 +673,7 @@ struct SheetGridView: View {
                     if let placement = anchor.placement {
                         let frame = placement.frame(in: metrics)
                         if frame.intersects(window), frame.width > 0, frame.height > 0 {
-                            if let picture = anchor.picture,
-                               let data = workbook.preservedPackage.parts[picture.target] {
-                                keptPicture(anchor, picture: picture, data: data, frame: frame)
-                            } else {
-                                PreservedDrawingPlaceholder(isChart: anchor.isChart, zoom: metrics.zoom)
-                                    .frame(width: frame.width, height: frame.height)
-                                    .offset(x: frame.minX, y: frame.minY)
-                            }
+                            keptDrawing(anchor, frame: frame)
                         }
                     }
                 }
@@ -723,15 +716,19 @@ struct SheetGridView: View {
         )
     }
 
-    private func keptPicture(
-        _ anchor: PreservedDrawingAnchor, picture: DrawingPicture, data: Data, frame: CGRect
-    ) -> some View {
-        FloatingObjectView(
+    /// A picture, shape or unmodelled chart kept from the file: drawn as
+    /// itself when it is a picture, as a placeholder when not, and moved
+    /// either way.
+    private func keptDrawing(_ anchor: PreservedDrawingAnchor, frame: CGRect) -> some View {
+        let image = anchor.picture.flatMap { picture in
+            workbook.preservedPackage.parts[picture.target].map { (picture, $0) }
+        }
+        return FloatingObjectView(
             frame: frame, isSelected: state.selectedDrawingID == anchor.id,
             minimumSize: CGSize(width: 12, height: 12),
             isMovable: !anchor.locks.noMove, isResizable: !anchor.locks.noResize,
             keepsAspectRatio: anchor.locks.noChangeAspect,
-            gripIdentifier: "pictureResizeGrip", gripLabel: "Picture.Resize",
+            gripIdentifier: "drawingResizeGrip", gripLabel: image != nil ? "Picture.Resize" : "Drawing.Resize",
             onSelect: {
                 if state.editingAddress != nil { state.commitEditing(in: &workbook, then: nil) }
                 state.selectDrawing(anchor.id)
@@ -749,13 +746,21 @@ struct SheetGridView: View {
                 )
             }
         ) { size in
-            PreservedPictureView(picture: picture, data: data)
-                .frame(width: size.width, height: size.height)
-                .accessibilityElement()
-                .accessibilityLabel("Picture.Label")
-                .accessibilityIdentifier("picture")
+            Group {
+                if let image {
+                    PreservedPictureView(picture: image.0, data: image.1)
+                        .accessibilityElement()
+                        .accessibilityLabel("Picture.Label")
+                        .accessibilityIdentifier("picture")
+                } else {
+                    PreservedDrawingPlaceholder(isChart: anchor.isChart, zoom: metrics.zoom)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("keptObject")
+                }
+            }
+            .frame(width: size.width, height: size.height)
         } menu: {
-            Button("Picture.Menu.Delete", systemImage: "trash", role: .destructive) {
+            Button(image != nil ? "Picture.Menu.Delete" : "Drawing.Menu.Delete", systemImage: "trash", role: .destructive) {
                 state.selectDrawing(anchor.id)
                 state.deleteSelectedDrawing(in: &workbook)
             }

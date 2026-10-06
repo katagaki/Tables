@@ -1208,6 +1208,30 @@ struct ChartTests {
         #expect(reread.sheets[0].preservedDrawingAnchors.first?.picture?.target == "xl/media/image1.png")
     }
 
+    @Test("A shape anchored absolutely is moved by its position, its transform following")
+    func movedAbsoluteShape() throws {
+        let shape = """
+        <xdr:absoluteAnchor><xdr:pos x="0" y="0"/><xdr:ext cx="1270000" cy="635000"/><xdr:sp macro="" textlink="">\
+        <xdr:nvSpPr><xdr:cNvPr id="4" name="Rectangle 4"/><xdr:cNvSpPr/></xdr:nvSpPr><xdr:spPr><a:xfrm>\
+        <a:off x="0" y="0"/><a:ext cx="1270000" cy="635000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom>\
+        </xdr:spPr></xdr:sp><xdr:clientData/></xdr:absoluteAnchor>
+        """
+        let data = try package(anchors: shape, drawingRelationships: "", extraParts: [])
+        var workbook = try XLSXReader.workbook(from: data)
+        let sheet = workbook.sheets[0]
+        workbook.sheets[0].preservedDrawingAnchors[0].place(at: CGRect(x: 10, y: 20, width: 30, height: 40), in: sheet)
+
+        let root = try XMLLite.parse(Data(workbook.sheets[0].preservedDrawingAnchors[0].xml.utf8))
+        #expect(root.firstChild(named: "pos")?.attribute("x") == "127000")
+        #expect(root.firstChild(named: "pos")?.attribute("y") == "254000")
+        #expect(root.firstChild(named: "ext")?.attribute("cx") == "381000")
+        #expect(root.firstDescendant(atPath: "sp/spPr/xfrm/off")?.attribute("y") == "254000")
+        #expect(root.firstDescendant(atPath: "sp/spPr/xfrm/ext")?.attribute("cy") == "508000")
+        let frame = try #require(workbook.sheets[0].preservedDrawingAnchors[0].placement)
+            .frame(in: SheetMetrics(sheet: sheet))
+        #expect(abs(frame.minX - 10) < 0.01 && abs(frame.height - 40) < 0.01)
+    }
+
     @Test("A picture is selected apart from charts, moved, and deleted")
     @MainActor
     func pictureSelection() throws {

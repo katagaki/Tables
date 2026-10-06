@@ -74,7 +74,7 @@ struct FloatingActionBar: View {
                     chartGroup
                 }
                 if state.selectedDrawingID != nil {
-                    pictureGroup
+                    drawingGroup
                 }
             }
         }
@@ -109,13 +109,16 @@ struct FloatingActionBar: View {
         .transition(.scale.combined(with: .opacity))
     }
 
-    /// What can be done to the picture that is picked out.
-    private var pictureGroup: some View {
-        group {
-            action("trash", isOn: false, label: "Picture.Menu.Delete") {
+    /// What can be done to the picture or other kept object that is picked out.
+    private var drawingGroup: some View {
+        let isPicture = state.selectedDrawingLocation(in: workbook).map {
+            workbook.sheets[$0.sheet].preservedDrawingAnchors[$0.drawing].picture != nil
+        } ?? false
+        return group {
+            action("trash", isOn: false, label: isPicture ? "Picture.Menu.Delete" : "Drawing.Menu.Delete") {
                 state.deleteSelectedDrawing(in: &workbook)
             }
-            .accessibilityIdentifier("deletePicture")
+            .accessibilityIdentifier("deleteDrawing")
         }
         .transition(.scale.combined(with: .opacity))
     }

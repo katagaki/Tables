@@ -647,6 +647,5 @@ struct PreservedDrawingPlaceholder: View {
                 .foregroundStyle(.secondary)
                 .padding(8 * zoom)
             }
-            .allowsHitTesting(false)
     }
 }
