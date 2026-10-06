@@ -240,6 +240,44 @@ struct UnsupportedFeatureTests {
         #expect(workbook.unsupportedFeatures.preserved.contains(.documentProperties))
     }
 
+    @Test("Form control properties and ActiveX parts survive with the controls list that names them")
+    func controlsSurvive() throws {
+        let properties = Part(
+            "xl/ctrlProps/ctrlProp1.xml",
+            "<?xml version=\"1.0\"?><formControlPr "
+                + "xmlns=\"http://schemas.microsoft.com/office/spreadsheetml/2009/9/main\" objectType=\"Button\"/>",
+            contentType: "application/vnd.ms-excel.controlproperties+xml"
+        )
+        let activeX = Part(
+            "xl/activeX/activeX1.xml",
+            "<?xml version=\"1.0\"?><ax:ocx xmlns:ax=\"http://schemas.microsoft.com/office/2006/activeX\"/>",
+            contentType: "application/vnd.ms-office.activeX+xml"
+        )
+        // Excel 2010 and later hide the list from older readers behind
+        // markup compatibility.
+        let controls = "<mc:AlternateContent xmlns:mc=\"http://schemas.openxmlformats.org/markup-compatibility/2006\">"
+            + "<mc:Choice Requires=\"x14\"><controls><control shapeId=\"1025\" r:id=\"rId1\" name=\"Button 1\"/>"
+            + "<control shapeId=\"1026\" r:id=\"rId2\" name=\"CommandButton1\"/></controls></mc:Choice>"
+            + "</mc:AlternateContent>"
+        let data = try package(
+            sheets: [controls],
+            extraParts: [properties, activeX],
+            sheetRelationships: [0: "<Relationship Id=\"rId1\" "
+                + "Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/ctrlProp\" "
+                + "Target=\"../ctrlProps/ctrlProp1.xml\"/><Relationship Id=\"rId2\" "
+                + "Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/control\" "
+                + "Target=\"../activeX/activeX1.xml\"/>"]
+        )
+        let (_, entries) = try roundTrip(data)
+
+        #expect(entries["xl/ctrlProps/ctrlProp1.xml"] != nil)
+        #expect(entries["xl/activeX/activeX1.xml"] != nil)
+        let sheet = try text(entries, "xl/worksheets/sheet1.xml")
+        #expect(sheet.contains("<mc:Choice Requires=\"x14\"><controls"))
+        #expect(sheet.contains("shapeId=\"1026\""))
+        #expect(try text(entries, "xl/worksheets/_rels/sheet1.xml.rels").contains("Target=\"../ctrlProps/ctrlProp1.xml\""))
+    }
+
     @Test("A part is dropped whole when a part it needs cannot be kept")
     func unsatisfiableDependencyDropsThePart() throws {
         // The drawing reaches an embedded object, which is a family we never

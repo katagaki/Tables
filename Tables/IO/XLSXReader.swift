@@ -576,13 +576,21 @@ enum XLSXReader {
     private static let preservedWorksheetChildNames: Set<String> = [
         "sheetViews", "sheetProtection", "autoFilter", "conditionalFormatting",
         "dataValidations", "hyperlinks", "printOptions", "pageMargins", "pageSetup",
-        "drawing", "legacyDrawing", "tableParts", "extLst",
+        "drawing", "legacyDrawing", "controls", "tableParts", "extLst",
     ]
 
     private static func preservedChildren(
         of root: XMLElement, hasDifferentialFormats: Bool
     ) -> [PreservedElement] {
         root.children.compactMap { child in
+            // Excel wraps `<controls>` in markup compatibility so that older
+            // readers skip it. The wrapper is kept whole, and placed by what
+            // its choice holds.
+            if child.name == "AlternateContent" {
+                guard let wrapped = child.firstChild(named: "Choice")?.children.first,
+                      wrapped.name == "controls", let xml = XMLLite.serialize(child) else { return nil }
+                return PreservedElement(name: wrapped.name, xml: xml)
+            }
             guard preservedWorksheetChildNames.contains(child.name) else { return nil }
             // A rule styled by a differential format indexes into the `<dxfs>`
             // table; without that table the index points at nothing.
@@ -650,7 +658,7 @@ enum XLSXReader {
         static let preservablePathPrefixes = [
             "xl/theme/", "xl/comments", "xl/drawings/", "xl/tables/",
             "xl/charts/", "xl/media/", "xl/printerSettings/", "docProps/",
-            "xl/vbaProject",
+            "xl/vbaProject", "xl/ctrlProps/", "xl/activeX/",
         ]
 
         /// PivotTables are excluded even though their parts are self-contained,

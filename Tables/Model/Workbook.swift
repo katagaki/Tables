@@ -136,7 +136,7 @@ struct PreservedElement: Hashable, Sendable {
     /// `_rels` part survives alongside them, and a dangling id is what makes
     /// Excel offer to repair a file.
     static let relationshipDependentNames: Set<String> = [
-        "hyperlinks", "legacyDrawing", "tableParts", "drawing",
+        "hyperlinks", "legacyDrawing", "controls", "tableParts", "drawing",
     ]
 
     var needsSheetRelationships: Bool { Self.relationshipDependentNames.contains(name) }
