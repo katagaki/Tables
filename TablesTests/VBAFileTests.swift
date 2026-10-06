@@ -373,4 +373,24 @@ struct VBALanguageAdditionTests {
         #expect(printed == ["[ab   ]", "[   ab]", "[abcde]"])
     }
 
+    @Test("GoSub runs to Return and carries on after itself")
+    func goSub() throws {
+        let printed = try run("""
+        Sub Main()
+            Dim n As Integer
+            n = 1
+            GoSub Double
+            GoSub Double
+            Debug.Print n
+            Exit Sub
+        Double:
+            n = n * 2
+            Return
+        End Sub
+        """)
+        #expect(printed == [" 4 "])
+        let interpreter = try VBAInterpreter(modules: [("Module1", .standard, "Sub Main()\nReturn\nEnd Sub")], host: nil)
+        #expect((try #require(throws: VBAError.self) { try interpreter.run("Main") }).number == 3)
+    }
+
 }

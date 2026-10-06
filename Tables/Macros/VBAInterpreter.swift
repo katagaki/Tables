@@ -53,6 +53,8 @@ enum VBAControl: Error {
     case exitDo
     case goTo(String)
     case resume(VBAResumeTarget)
+    /// `Return`, back to the statement after the `GoSub` that got here.
+    case returnFromGoSub
     /// The `End` statement: stop everything, successfully.
     case end
     case cancelled
@@ -102,6 +104,8 @@ final class VBAInterpreter {
         var withStack: [VBAValue] = []
         var errorHandling: VBAErrorHandling = .disabled
         var inHandler = false
+        /// How many `GoSub`s deep this activation is, for `Return` to check.
+        var goSubDepth = 0
 
         init(module: Module, instance: VBAClassInstance?, procedure: VBAProcedure) {
             self.module = module
@@ -613,8 +617,25 @@ final class VBAInterpreter {
         case .goTo(let label):
             throw VBAControl.goTo(label)
 
-        case .goSub, .returnFromGoSub:
-            throw VBAError.notSupported("GoSub")
+        case .goSub(let label):
+            // The subroutine runs from its label until `Return`, then this
+            // statement is done and the next one follows. Running off the
+            // end of the procedure ends the procedure, as in VBA.
+            guard let index = labelIndex(label, in: frame.procedure.body) else {
+                throw VBAError(number: 0, "Label not defined (\(label))")
+            }
+            frame.goSubDepth += 1
+            defer { frame.goSubDepth -= 1 }
+            do {
+                try run(frame.procedure.body, from: index + 1, frame)
+            } catch VBAControl.returnFromGoSub {
+                return
+            }
+            throw VBAControl.exitProcedure
+
+        case .returnFromGoSub:
+            guard frame.goSubDepth > 0 else { throw VBAError(number: 3, "Return without GoSub") }
+            throw VBAControl.returnFromGoSub
 
         case .file(let fileStatement):
             try execute(fileStatement, frame)
