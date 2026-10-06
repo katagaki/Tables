@@ -115,11 +115,12 @@ extension FormulaFunctions {
         "SCAN": FunctionSpec(2...3, lifts: .none) { call throws(CellError) in
             let (initial, array, lambda) = try FormulaLogic.accumulation(call)
             var accumulator = initial
-            let rows = array.map { line in
-                line.map { value -> CellValue in
+            var rows: [[CellValue]] = []
+            for line in array {
+                rows.append(line.map { value -> CellValue in
                     accumulator = call.evaluator.invoke(lambda, values: [accumulator, .scalar(value)])
                     return FormulaLogic.single(accumulator)
-                }
+                })
             }
             return .block(rows)
         },
@@ -133,7 +134,7 @@ extension FormulaFunctions {
             let lambda = try call.lambda(1)
             let width = array.first?.count ?? 0
             return .block([(0..<width).map { column in
-                FormulaLogic.single(call.evaluator.invoke(lambda, values: [.block(array.map { [$0[column]] })]))
+                FormulaLogic.single(call.evaluator.invoke(lambda, values: [.block(FormulaArrays.columns([column], of: array))]))
             }])
         },
         "MAKEARRAY": FunctionSpec(3...3, lifts: .none) { call throws(CellError) in
@@ -142,11 +143,9 @@ extension FormulaFunctions {
             let lambda = try call.lambda(2)
             guard height >= 1, width >= 1 else { throw .valueError }
             guard height * width <= FormulaLogic.maximumArrayCells else { throw .numberError }
-            return .block((1...height).map { row in
-                (1...width).map { column in
-                    FormulaLogic.single(call.evaluator.invoke(lambda, values: [.number(Double(row)),
-                                                                              .number(Double(column))]))
-                }
+            return .block(FormulaArrays.grid(rows: height, columns: width) { row, column in
+                FormulaLogic.single(call.evaluator.invoke(lambda, values: [.number(Double(row + 1)),
+                                                                          .number(Double(column + 1))]))
             })
         },
         "IFERROR": FunctionSpec(2...2, lifts: .none) { call throws(CellError) in

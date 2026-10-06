@@ -163,13 +163,15 @@ extension FormulaFunctions {
         while index + 1 < call.count {
             let range = try call.matrix(index)
             let criterion = FormulaCriterion(call.scalar(index + 1))
+            let passes = range.map { $0.map(criterion.matches) }
             if let existing = result {
                 guard existing.count == range.count, existing.first?.count == range.first?.count else {
                     throw .valueError
                 }
+                result = zip(existing, passes).map { zip($0, $1).map { $0 && $1 } }
+            } else {
+                result = passes
             }
-            let passes = range.map { $0.map(criterion.matches) }
-            result = result.map { previous in zip(previous, passes).map { zip($0, $1).map { $0 && $1 } } } ?? passes
             index += 2
         }
         return result ?? []

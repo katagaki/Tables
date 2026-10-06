@@ -132,9 +132,7 @@ extension FormulaFunctions {
 
     static let arrayFunctions: [String: FunctionSpec] = [
         "TRANSPOSE": FunctionSpec(1...1, lifts: .none) { call throws(CellError) in
-            let rows = try call.matrix(0)
-            let width = rows.first?.count ?? 0
-            return .block((0..<width).map { column in rows.map { $0[column] } })
+            .block(FormulaArrays.transposed(try call.matrix(0)))
         },
         "FILTER": FunctionSpec(2...3, lifts: .none) { call throws(CellError) in
             let rows = try call.matrix(0)
@@ -150,7 +148,7 @@ extension FormulaFunctions {
                 result = rows.enumerated().filter { flags[$0.offset] }.map(\.element)
             } else if include.count == 1, include.first?.count == width {
                 let kept = (0..<width).filter { flags[$0] }
-                result = kept.isEmpty ? [] : rows.map { row in kept.map { row[$0] } }
+                result = kept.isEmpty ? [] : FormulaArrays.columns(kept, of: rows)
             } else {
                 throw .valueError
             }
@@ -171,7 +169,7 @@ extension FormulaFunctions {
                   orders.allSatisfy({ $0 == 1 || $0 == -1 }),
                   orders.count == 1 || orders.count == indices.count else { throw .valueError }
             let keys = indices.enumerated().map { position, column in
-                (rows.map { $0[column - 1] }, orders.count == 1 ? orders[0] : orders[position])
+                (FormulaArrays.column(column - 1, of: rows), orders.count == 1 ? orders[0] : orders[position])
             }
             let sorted = FormulaArrays.stableSorted(rows, keys: keys)
             return .block(byColumn ? FormulaArrays.transposed(sorted) : sorted)
@@ -239,7 +237,7 @@ extension FormulaFunctions {
         "CHOOSECOLS": FunctionSpec(2...255, lifts: .none) { call throws(CellError) in
             let rows = try call.matrix(0)
             let picks = try FormulaArrays.positions(call, from: 1, count: rows.first?.count ?? 0)
-            return .block(rows.map { row in picks.map { row[$0] } })
+            return .block(FormulaArrays.columns(picks, of: rows))
         },
         "EXPAND": FunctionSpec(2...4, lifts: .none) { call throws(CellError) in
             let rows = try call.matrix(0)
@@ -247,28 +245,26 @@ extension FormulaFunctions {
             let width = try call.integer(2, default: rows.first?.count ?? 0)
             guard height >= rows.count, width >= (rows.first?.count ?? 0) else { throw .valueError }
             let pad = call.isMissing(3) ? CellValue.error(.notAvailable) : call.scalar(3)
-            return .block((0..<height).map { row in
-                (0..<width).map { column in
-                    row < rows.count && column < rows[row].count ? rows[row][column] : pad
-                }
+            return .block(FormulaArrays.grid(rows: height, columns: width) { row, column in
+                row < rows.count && column < rows[row].count ? rows[row][column] : pad
             })
         },
         "VSTACK": FunctionSpec(1...254, lifts: .none) { call throws(CellError) in
             let blocks = try (0..<call.count).map { index throws(CellError) in try call.matrix(index) }
             let width = blocks.map { $0.first?.count ?? 0 }.max() ?? 0
-            return .block(blocks.flatMap { block in
-                block.map { $0 + [CellValue](repeating: .error(.notAvailable), count: width - $0.count) }
-            })
+            return .block(blocks.joined().map { $0 + [CellValue](repeating: .error(.notAvailable), count: width - $0.count) })
         },
         "HSTACK": FunctionSpec(1...254, lifts: .none) { call throws(CellError) in
             let blocks = try (0..<call.count).map { index throws(CellError) in try call.matrix(index) }
             let height = blocks.map(\.count).max() ?? 0
-            return .block((0..<height).map { row in
-                blocks.flatMap { block in
+            var rows: [[CellValue]] = []
+            for row in 0..<height {
+                rows.append(blocks.flatMap { block in
                     row < block.count ? block[row]
                         : [CellValue](repeating: .error(.notAvailable), count: block.first?.count ?? 0)
-                }
-            })
+                })
+            }
+            return .block(rows)
         },
         "TOCOL": FunctionSpec(1...3, lifts: .none) { call throws(CellError) in
             try .block(FormulaArrays.flattened(call).map { [$0] })
@@ -289,7 +285,30 @@ extension FormulaFunctions {
 enum FormulaArrays {
     static func transposed(_ rows: [[CellValue]]) -> [[CellValue]] {
         let width = rows.first?.count ?? 0
-        return (0..<width).map { column in rows.map { $0[column] } }
+        return (0..<width).map { column($0, of: rows) }
+    }
+
+    /// The cells in one column, top to bottom.
+    static func column(_ index: Int, of rows: [[CellValue]]) -> [CellValue] {
+        rows.map { $0[index] }
+    }
+
+    /// Each row cut down to the cells at `picks`, in that order.
+    static func columns(_ picks: [Int], of rows: [[CellValue]]) -> [[CellValue]] {
+        rows.map { row in picks.map { row[$0] } }
+    }
+
+    /// A block `rows` high and `columns` wide, each cell from `value`.
+    static func grid<Value>(rows: Int, columns: Int, _ value: (_ row: Int, _ column: Int) -> Value) -> [[Value]] {
+        var block: [[Value]] = []
+        block.reserveCapacity(rows)
+        for row in 0..<rows {
+            var line: [Value] = []
+            line.reserveCapacity(columns)
+            for column in 0..<columns { line.append(value(row, column)) }
+            block.append(line)
+        }
+        return block
     }
 
     /// Rows sorted by successive keys, ties keeping their order. Numbers come

@@ -231,7 +231,7 @@ extension FormulaFunctions {
                 if whole { return .number(Double(Int.random(in: Int(lower)...Int(upper)))) }
                 return .number(lower == upper ? lower : Double.random(in: lower..<upper))
             }
-            return .block((0..<rows).map { _ in (0..<columns).map { _ in draw() } })
+            return .block(FormulaArrays.grid(rows: rows, columns: columns) { _, _ in draw() })
         },
         "SEQUENCE": FunctionSpec(1...4, lifts: .none) { call throws(CellError) in
             let rows = try call.integer(0, default: 1)
@@ -240,23 +240,26 @@ extension FormulaFunctions {
             let step = try call.number(3, default: 1)
             guard rows >= 1, columns >= 1 else { throw .calc }
             guard rows * columns <= FormulaLogic.maximumArrayCells else { throw .numberError }
-            return .block((0..<rows).map { row in
-                (0..<columns).map { column in .number(start + Double(row * columns + column) * step) }
+            return .block(FormulaArrays.grid(rows: rows, columns: columns) { row, column in
+                .number(start + Double(row * columns + column) * step)
             })
         },
         "MUNIT": FunctionSpec(1...1) { call throws(CellError) in
             let size = try call.integer(0)
             guard size >= 1, size * size <= FormulaLogic.maximumArrayCells else { throw .valueError }
-            return .block((0..<size).map { row in (0..<size).map { .number($0 == row ? 1 : 0) } })
+            return .block(FormulaArrays.grid(rows: size, columns: size) { row, column in .number(row == column ? 1 : 0) })
         },
         "MMULT": FunctionSpec(2...2, lifts: .none) { call throws(CellError) in
             let a = try FormulaMath.numericMatrix(call.matrix(0))
             let b = try FormulaMath.numericMatrix(call.matrix(1))
             guard let inner = a.first?.count, inner == b.count, let width = b.first?.count else { throw .valueError }
-            return .block(a.map { row in
-                (0..<width).map { column in
-                    .number(FormulaMath.sum((0..<inner).map { row[$0] * b[$0][column] }))
-                }
+            func product(_ row: Int, _ column: Int) -> Double {
+                var terms: [Double] = []
+                for index in 0..<inner { terms.append(a[row][index] * b[index][column]) }
+                return FormulaMath.sum(terms)
+            }
+            return .block(FormulaArrays.grid(rows: a.count, columns: width) { row, column in
+                .number(product(row, column))
             })
         },
         "MDETERM": FunctionSpec(1...1, lifts: .none) { call throws(CellError) in

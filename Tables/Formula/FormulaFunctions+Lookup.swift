@@ -32,7 +32,7 @@ extension FormulaFunctions {
                 call, rows: array.count, columns: array.first?.count ?? 0)
             let rows = row == 0 ? Array(array.indices) : [row - 1]
             let columns = column == 0 ? Array((array.first ?? []).indices) : [column - 1]
-            return .block(rows.map { r in columns.map { array[r][$0] } })
+            return .block(FormulaArrays.columns(columns, of: rows.map { array[$0] }))
         }),
         "MATCH": FunctionSpec(2...3, lifts: .only([0])) { call throws(CellError) in
             let needle = call.scalar(0)
