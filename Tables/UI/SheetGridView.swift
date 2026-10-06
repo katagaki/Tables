@@ -34,6 +34,9 @@ struct SheetGridView: View {
     @State private var lastTap: (address: CellAddress, time: Date)?
     /// Bumped to raise the cell menu from a double tap or a long press.
     @State private var cellMenuTrigger = 0
+    /// The cell the menu was last raised from, which a long press inside a
+    /// larger selection leaves somewhere other than the selection's corner.
+    @State private var cellMenuAddress: CellAddress?
     @FocusState private var isCellEditorFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
     #if os(macOS)
@@ -470,6 +473,7 @@ struct SheetGridView: View {
         if let last = lastTap, last.address == address,
            Date.now.timeIntervalSince(last.time) < Self.doubleTapInterval {
             lastTap = nil
+            cellMenuAddress = address
             cellMenuTrigger += 1
             return
         }
@@ -497,13 +501,17 @@ struct SheetGridView: View {
         CellMenuBuilder(address: address, workbook: $workbook, state: state).actions()
     }
 
-    /// Moves the selection onto the pressed cell, then raises its menu. The
-    /// anchor follows the selection, so the order matters.
+    /// Moves the selection onto the pressed cell, then raises its menu. A press
+    /// inside the selection keeps it, so the menu can act on the whole range —
+    /// merging it, for one.
     private func raiseCellMenu(at point: CGPoint) {
         let address = address(at: point)
         state.selectChart(nil)
         if state.editingAddress != nil { state.commitEditing(in: &workbook, then: nil) }
-        state.select(address, in: activeSheet)
+        if !state.selection.normalized.contains(address) {
+            state.select(address, in: activeSheet)
+        }
+        cellMenuAddress = address
         cellMenuTrigger += 1
     }
 
@@ -511,11 +519,11 @@ struct SheetGridView: View {
     ///
     /// One anchor sitting over the selected cell rather than a presenter inside
     /// every cell: a platform view per cell would be paid for on every scroll
-    /// frame. Both the double tap and the long press have already moved the
-    /// selection onto the cell they landed on by the time the menu is raised, so
-    /// the anchor is always in the right place.
+    /// frame. It sits over the cell the menu was raised from, which is inside
+    /// the selection but not necessarily its first cell.
     private var cellMenuAnchor: some View {
-        let address = state.selectedAddress
+        let address = cellMenuAddress.flatMap { state.selection.normalized.contains($0) ? $0 : nil }
+            ?? state.selectedAddress
         let frame = metrics.frame(
             for: activeSheet.mergedRange(containing: address) ?? CellRange(address)
         )
