@@ -119,7 +119,7 @@ struct DocumentLaunchOverlay: View {
                 .position(x: center.x - 90, y: center.y + 32)
 
             chartChip
-                .position(x: center.x + 34, y: center.y + 76)
+                .position(x: center.x + 28, y: center.y + 81)
         }
         .accessibilityHidden(true)
     }
@@ -154,7 +154,7 @@ struct DocumentLaunchOverlay: View {
                     .frame(width: 6, height: 22 * height)
             }
         }
-        .frame(width: 48, height: 36)
+        .frame(width: 60, height: 46)
         .background(.white.opacity(0.18), in: .rect(cornerRadius: 12))
     }
 }
