@@ -71,7 +71,6 @@ struct DocumentLaunchGlyph: View {
                 }
             }
         }
-        .shadow(color: .black.opacity(0.18), radius: 16, y: 8)
         .accessibilityHidden(true)
     }
 
@@ -87,8 +86,8 @@ struct DocumentLaunchGlyph: View {
     }
 }
 
-/// The table glyph with a formula, a reference and a small chart drifting in
-/// glass around it, set in the empty space beside the leading-aligned title.
+/// The table glyph with a formula, a reference and a small chart set flat
+/// around it, in the empty space beside the leading-aligned title.
 /// Decoration only, so hidden from VoiceOver.
 struct DocumentLaunchOverlay: View {
     let geometry: DocumentLaunchGeometryProxy
@@ -107,20 +106,20 @@ struct DocumentLaunchOverlay: View {
 
         ZStack {
             DocumentLaunchGlyph()
-                .rotationEffect(.degrees(4))
                 .position(center)
 
+            // The chips line up against the glyph's edges, 10pt clear of it:
+            // the formula with its top, the reference with its bottom, and the
+            // chart beneath it with its trailing edge.
             formulaChip
-                .rotationEffect(.degrees(-6))
-                .position(x: center.x - 168, y: center.y - 28)
+                .frame(width: 200, alignment: .trailing)
+                .position(x: center.x - 168, y: center.y - 32)
 
             referenceChip
-                .rotationEffect(.degrees(-8))
-                .position(x: center.x - 90, y: center.y + 38)
+                .position(x: center.x - 90, y: center.y + 32)
 
             chartChip
-                .rotationEffect(.degrees(6))
-                .position(x: center.x + 44, y: center.y + 66)
+                .position(x: center.x + 34, y: center.y + 76)
         }
         .accessibilityHidden(true)
     }
@@ -136,7 +135,7 @@ struct DocumentLaunchOverlay: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .glassEffect(.clear, in: .capsule)
+        .background(.white.opacity(0.18), in: .capsule)
     }
 
     private var referenceChip: some View {
@@ -144,7 +143,7 @@ struct DocumentLaunchOverlay: View {
             .font(.system(size: 14, weight: .bold, design: .rounded))
             .foregroundStyle(.white)
             .frame(width: 44, height: 32)
-            .glassEffect(.clear, in: .rect(cornerRadius: 10))
+            .background(.white.opacity(0.18), in: .rect(cornerRadius: 10))
     }
 
     private var chartChip: some View {
@@ -156,6 +155,6 @@ struct DocumentLaunchOverlay: View {
             }
         }
         .frame(width: 48, height: 36)
-        .glassEffect(.clear, in: .rect(cornerRadius: 12))
+        .background(.white.opacity(0.18), in: .rect(cornerRadius: 12))
     }
 }
