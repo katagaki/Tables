@@ -209,8 +209,8 @@ enum CommentParts {
 
     /// A stable id for an author, so saving twice does not churn the file.
     static func personID(for author: String) -> String {
-        let digest = Insecure.MD5.hash(data: Data(author.utf8))
-        let hex = digest.map { String(format: "%02X", $0) }.joined()
+        let digest = SHA256.hash(data: Data(author.utf8))
+        let hex = digest.prefix(16).map { String(format: "%02X", $0) }.joined()
         let parts = [hex.prefix(8), hex.dropFirst(8).prefix(4), hex.dropFirst(12).prefix(4),
                      hex.dropFirst(16).prefix(4), hex.dropFirst(20).prefix(12)]
         return "{" + parts.joined(separator: "-") + "}"
