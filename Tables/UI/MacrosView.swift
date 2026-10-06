@@ -58,6 +58,9 @@ struct MacrosView: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    MacroHelpButton()
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(role: .confirm) { dismiss() }
                 }
@@ -308,6 +311,9 @@ private struct ModuleEditorView: View {
         }
         .navigationTitle(module.name)
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                MacroHelpButton()
+            }
             ToolbarItem(placement: .primaryAction) {
                 Toggle(isOn: $wrapsLines) {
                     Label("Macros.WrapLines", systemImage: "text.word.spacing")
