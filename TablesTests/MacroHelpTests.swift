@@ -19,6 +19,13 @@ struct MacroHelpTests {
         for key in keys {
             #expect(String(localized: String.LocalizationValue(key)) != key, "Missing \(key)")
         }
+        // And through the properties the view reads, not just the keys.
+        for topic in MacroHelp.topics {
+            #expect(!topic.title.hasPrefix("Help."), "Untranslated title for \(topic.id)")
+            for group in topic.groups where !group.isCode {
+                #expect(!group.displayTitle.hasPrefix("Help."), "Untranslated \(group.title)")
+            }
+        }
     }
 
     /// The error a one-argument call to `name` stops with, or nil if it runs.

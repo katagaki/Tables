@@ -15,7 +15,12 @@ enum MacroHelp {
         var paragraphs: [String]
         var groups: [Group] = []
 
-        var title: String { String(localized: String.LocalizationValue("Help.\(id).Title")) }
+        var title: String {
+            // Built first: written inline, the interpolation would become part
+            // of the catalog key as a placeholder.
+            let key = "Help.\(id).Title"
+            return String(localized: String.LocalizationValue(key))
+        }
     }
 
     struct Group: Identifiable, Hashable, Sendable {
