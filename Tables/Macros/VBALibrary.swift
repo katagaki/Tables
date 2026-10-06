@@ -340,6 +340,10 @@ enum VBALibrary {
             return .object(object)
         case "doevents": return .integer(0)
         case "environ", "environ$": return .string("")
+        case "beep", "randomize", "appactivate":
+            // Nothing to beep with, a generator that needs no seed, and no
+            // other app a macro could bring forward.
+            return .empty
         case "shell":
             // Web and app links only, opened once the user agrees; a command
             // line names a program, and there are none to start.
@@ -349,6 +353,11 @@ enum VBALibrary {
             }
             guard interpreter.host?.openURL(url) == true else { throw VBAFileSystem.permissionDenied }
             return .double(1)
+        case "sendkeys":
+            // Keystrokes cannot be typed into another app, so the user is
+            // shown them instead, to type or paste where they were meant to go.
+            interpreter.host?.showSendKeys(try call.string(0, "String"))
+            return .empty
         case "getobject", "callbyname":
             throw VBAError.notSupported(name)
 

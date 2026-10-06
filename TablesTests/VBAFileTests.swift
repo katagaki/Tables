@@ -2,11 +2,12 @@ import Foundation
 import Testing
 @testable import Tables
 
-/// A host that records links instead of opening them.
+/// A host that records links and keys instead of acting on them.
 private final class FileTestHost: VBAHost {
     var printed: [String] = []
     var openedURLs: [URL] = []
     var allowsLinks = true
+    var sentKeys: [String] = []
 
     func globalMember(_ name: String, _ arguments: VBAArguments, in interpreter: VBAInterpreter) throws -> VBAValue? { nil }
     func setGlobalMember(_ name: String, _ arguments: VBAArguments, to value: VBAValue,
@@ -21,6 +22,7 @@ private final class FileTestHost: VBAHost {
         openedURLs.append(url)
         return allowsLinks
     }
+    func showSendKeys(_ keys: String) { sentKeys.append(keys) }
 }
 
 @Suite("VBA files")
@@ -304,7 +306,7 @@ struct VBAFileTests {
         #expect(error.number == 445)
     }
 
-    // MARK: - Shell
+    // MARK: - Shell, SendKeys, AppActivate
 
     @Test("Shell opens web and app links with the user's agreement, and nothing else")
     func shell() throws {
@@ -321,4 +323,11 @@ struct VBAFileTests {
         #expect(try error(running: "Sub Main()\nShell \"https://example.com\"\nEnd Sub", in: folder, host: declining)?.number == 70)
     }
 
+    @Test("SendKeys shows its keys; AppActivate does nothing")
+    func keys() throws {
+        let (_, folder) = try workingFolder()
+        let host = FileTestHost()
+        _ = try run("Sub Main()\nAppActivate \"Notepad\"\nSendKeys \"Hello{ENTER}\", True\nEnd Sub", in: folder, host: host)
+        #expect(host.sentKeys == ["Hello{ENTER}"])
+    }
 }

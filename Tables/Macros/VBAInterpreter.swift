@@ -37,10 +37,13 @@ protocol VBAHost: AnyObject {
     func debugPrint(_ text: String)
     /// Asks the user, then opens a link a macro gave `Shell`; true when opened.
     func openURL(_ url: URL) -> Bool
+    /// Shows the keys a macro tried to send with `SendKeys`.
+    func showSendKeys(_ keys: String)
 }
 
 extension VBAHost {
     func openURL(_ url: URL) -> Bool { false }
+    func showSendKeys(_ keys: String) {}
 }
 
 /// Control flow that unwinds through Swift's error propagation.

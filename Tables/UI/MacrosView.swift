@@ -430,11 +430,18 @@ struct MacroPrompts: ViewModifier {
                     runner.answer(button: 1)
                 }
                 Button("Macros.Button.Cancel", role: .cancel) { runner.answer(button: 2) }
+            case .sendKeys(let keys):
+                // Copyable, so they can be typed or pasted where they were meant to go.
+                TextField("", text: $input)
+                    .onAppear { input = keys }
+                Button("Common.OK") { runner.answer(button: 1) }
             }
         } message: { prompt in
             switch prompt.kind {
             case .openLink(let url):
                 Text(String(format: String(localized: "Macros.OpenLink.Message"), url.absoluteString))
+            case .sendKeys:
+                Text("Macros.SendKeys.Message")
             default:
                 Text(prompt.text)
             }
@@ -444,6 +451,7 @@ struct MacroPrompts: ViewModifier {
     private var promptTitle: String {
         switch runner.prompt?.kind {
         case .openLink: return String(localized: "Macros.OpenLink.Title")
+        case .sendKeys: return String(localized: "Macros.SendKeys.Title")
         default: return runner.prompt?.title ?? String(localized: "Macros.Prompt.DefaultTitle")
         }
     }

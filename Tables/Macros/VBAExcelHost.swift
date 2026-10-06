@@ -8,6 +8,7 @@ struct VBAInteraction: Sendable {
     var debugPrint: @Sendable (_ text: String) -> Void = { _ in }
     /// Asks before opening a link from `Shell` or `FollowHyperlink`; true if opened.
     var openURL: @Sendable (_ url: URL) -> Bool = { _ in false }
+    var showSendKeys: @Sendable (_ keys: String) -> Void = { _ in }
 }
 
 /// The Excel object model over a Tables workbook: `Range`, `Cells`,
@@ -181,6 +182,10 @@ final class VBAExcelHost: VBAHost {
 
     func openURL(_ url: URL) -> Bool {
         interaction.openURL(url)
+    }
+
+    func showSendKeys(_ keys: String) {
+        interaction.showSendKeys(keys)
     }
 
     // MARK: - Values

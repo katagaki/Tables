@@ -15684,6 +15684,76 @@
         }
       }
     },
+    "Macros.SendKeys.Message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables can’t type into other apps, so here are the keys this macro tried to send. You can copy them."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables は他のアプリに入力できないため、このマクロが送ろうとしたキーをここに表示します。コピーして使用できます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables는 다른 앱에 입력할 수 없으므로, 이 매크로가 보내려던 키를 여기에 표시합니다. 복사할 수 있습니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables 无法在其他应用中输入，因此这里显示此宏尝试发送的按键，你可以拷贝它们。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables 無法在其他 App 中輸入，因此這裡顯示此巨集嘗試傳送的按鍵，你可以拷貝它們。"
+          }
+        }
+      }
+    },
+    "Macros.SendKeys.Title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keys from the Macro"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マクロからのキー入力"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "매크로의 키 입력"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "来自宏的按键"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "來自巨集的按鍵"
+          }
+        }
+      }
+    },
     "Macros.Stop" : {
       "extractionState" : "manual",
       "localizations" : {

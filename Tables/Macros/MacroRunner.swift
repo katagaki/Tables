@@ -18,6 +18,8 @@ final class MacroRunner {
             case input(defaultText: String)
             /// `Shell` or `FollowHyperlink` asking to open a link.
             case openLink(URL)
+            /// `SendKeys`, whose keys the user is shown to type themselves.
+            case sendKeys(String)
         }
 
         let id = UUID()
@@ -89,6 +91,11 @@ final class MacroRunner {
                 channel.ask {
                     Task { @MainActor in self.prompt = Prompt(kind: .openLink(url), title: nil, text: url.absoluteString) }
                 }.button == 1
+            },
+            showSendKeys: { keys in
+                _ = channel.ask {
+                    Task { @MainActor in self.prompt = Prompt(kind: .sendKeys(keys), title: nil, text: keys) }
+                }
             }
         )
 

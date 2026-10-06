@@ -458,12 +458,8 @@ struct VBAParser {
             advance()
             return statement(.call(.call(.identifier("__DebugAssert"), [VBAArgument(value: try parseExpression())])))
         }
-        for keyword in ["RaiseEvent", "Load", "Unload", "SendKeys", "AppActivate", "Randomize", "Beep", "LSet", "RSet"]
+        for keyword in ["RaiseEvent", "Load", "Unload", "LSet", "RSet"]
         where isKeyword(keyword) && !(peek(1) == .symbol("=") || peek(1) == .symbol(".")) {
-            if keyword == "Randomize" || keyword == "Beep" {
-                skipToEndOfLine()
-                return []
-            }
             let start = line
             var text = keyword
             advance()
