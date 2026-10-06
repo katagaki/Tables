@@ -39,11 +39,14 @@ enum WorkbookAutomation {
     }
 
     enum Format: String, CaseIterable, Sendable {
-        case xlsx, csv, tsv
+        /// `.xlsm` is chosen by a file's own extension, never offered: it is
+        /// how a macro workbook saved back to its file keeps its macros.
+        case xlsx, xlsm, csv, tsv
 
         var type: UTType {
             switch self {
             case .xlsx: return .openXMLWorkbook
+            case .xlsm: return .macroEnabledWorkbook
             case .csv: return .commaSeparatedText
             case .tsv: return .tabSeparatedText
             }
@@ -59,7 +62,7 @@ enum WorkbookAutomation {
     static func read(_ data: Data, filename: String) throws -> Workbook {
         let name = (filename as NSString).deletingPathExtension
         let ext = (filename as NSString).pathExtension.lowercased()
-        if data.starts(with: [0x50, 0x4B]) || ext == "xlsx" {
+        if data.starts(with: [0x50, 0x4B]) || ext == "xlsx" || ext == "xlsm" {
             do {
                 return try XLSXReader.workbook(from: data)
             } catch {
@@ -75,6 +78,7 @@ enum WorkbookAutomation {
     static func write(_ workbook: Workbook, as format: Format, sheet: String? = nil) throws -> Data {
         switch format {
         case .xlsx: return try XLSXWriter.data(from: workbook)
+        case .xlsm: return try XLSXWriter.data(from: workbook, macroEnabled: true)
         case .csv: return CSVCodec.data(from: workbook.sheets[try sheetIndex(sheet, in: workbook)])
         case .tsv: return CSVCodec.data(from: workbook.sheets[try sheetIndex(sheet, in: workbook)], delimiter: "\t")
         }

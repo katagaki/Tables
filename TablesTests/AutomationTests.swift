@@ -197,6 +197,33 @@ struct SaveAndOpenTests {
         #expect(try String(contentsOf: url, encoding: .utf8).contains("Ink,3"))
     }
 
+    @Test("A macro workbook keeps its macros through Shortcuts and saves back as an .xlsm")
+    func savesMacroWorkbookInPlace() async throws {
+        var original = Workbook(sheets: [Worksheet(name: "Data")])
+        try original.createMacroProject()
+        let url = try temporaryFile("Tools.xlsm", "")
+        try XLSXWriter.data(from: original, macroEnabled: true).write(to: url)
+
+        var get = GetWorkbookIntent()
+        get.file = IntentFile(fileURL: url, filename: "Tools.xlsm", type: .macroEnabledWorkbook)
+        let opened = try #require(try await get.perform().value)
+        var append = AppendRowIntent()
+        append.workbook = opened
+        append.values = ["kept"]
+        let changed = try #require(try await append.perform().value)
+        #expect(changed.file.filename.hasSuffix(".xlsm"))
+
+        var save = SaveWorkbookIntent()
+        save.workbook = changed
+        _ = try await save.perform()
+        let entries = try ZipArchive.entries(in: Data(contentsOf: url))
+        let types = String(decoding: try #require(entries["[Content_Types].xml"]), as: UTF8.self)
+        #expect(types.contains("application/vnd.ms-excel.sheet.macroEnabled.main+xml"))
+        let reopened = try XLSXReader.workbook(from: Data(contentsOf: url))
+        #expect(reopened.hasMacros)
+        #expect(reopened.sheets[0][CellAddress(a1: "A1")!].value == .text("kept"))
+    }
+
     @Test("Save Workbook can write to a chosen file, and asks for one when there is none")
     func savesElsewhere() async throws {
         var create = CreateWorkbookIntent()

@@ -36,7 +36,11 @@ struct WorkbookEntity: TransientAppEntity {
         self.init()
         self.name = name
         sheetNames = workbook.sheets.map(\.name)
-        file = IntentFile(data: try XLSXWriter.data(from: workbook), filename: name + ".xlsx", type: .openXMLWorkbook)
+        // A workbook with macros travels between actions as an .xlsm, so
+        // they are still there when it is saved.
+        let format: WorkbookAutomation.Format = workbook.hasMacros ? .xlsm : .xlsx
+        file = IntentFile(data: try WorkbookAutomation.write(workbook, as: format),
+                          filename: name + "." + format.fileExtension, type: format.type)
     }
 
     var displayRepresentation: DisplayRepresentation {
