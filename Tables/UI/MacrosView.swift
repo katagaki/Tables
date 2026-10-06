@@ -297,6 +297,9 @@ private struct ModuleEditorView: View {
     @State private var savedText: String
     @State private var saveError: String?
     @AppStorage("MacroEditor.WrapsLines") private var wrapsLines = false
+    /// The problem being shown, which trails the typing by a moment.
+    @State private var shownProblem: String?
+    @State private var isProblemExpanded = false
 
     init(module: VBAProject.Module, save: @escaping (String) throws -> Void) {
         self.module = module
@@ -306,9 +309,9 @@ private struct ModuleEditorView: View {
     }
 
     /// The first syntax error in the code as it stands, if any.
-    private var problem: String? {
+    private static func problem(in source: String, module: String) -> String? {
         do {
-            _ = try VBAParser.parse(module: module.name, source: text)
+            _ = try VBAParser.parse(module: module, source: source)
             return nil
         } catch {
             return error.localizedDescription
@@ -316,20 +319,24 @@ private struct ModuleEditorView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            if let problem {
-                Label(problem, systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
-                    .foregroundStyle(.orange)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal)
-                    .padding(.vertical, 8)
-                    .background(.orange.opacity(0.1))
-                    .accessibilityIdentifier("codeProblem")
+        CodeEditor(text: $text, wrapsLines: wrapsLines)
+            // Floating over the code rather than above it, so a problem
+            // coming and going never moves the line being typed.
+            .overlay(alignment: .bottom) {
+                if let shownProblem { problemBanner(shownProblem) }
             }
-            CodeEditor(text: $text, wrapsLines: wrapsLines)
-        }
-        .navigationTitle(module.name)
+            .animation(.snappy(duration: 0.25), value: shownProblem)
+            // Checked once typing pauses: a line half-written is nearly
+            // always wrong, and saying so on every keystroke is noise.
+            .task(id: text) {
+                if shownProblem != nil { try? await Task.sleep(for: .milliseconds(600)) }
+                else { try? await Task.sleep(for: .milliseconds(900)) }
+                guard !Task.isCancelled else { return }
+                let problem = Self.problem(in: text, module: module.name)
+                if problem != shownProblem { isProblemExpanded = false }
+                shownProblem = problem
+            }
+            .navigationTitle(module.name)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 MacroHelpButton()
@@ -362,6 +369,33 @@ private struct ModuleEditorView: View {
         } message: {
             Text(saveError ?? "")
         }
+    }
+
+    /// One line until tapped, then the whole message.
+    private func problemBanner(_ problem: String) -> some View {
+        Button {
+            isProblemExpanded.toggle()
+        } label: {
+            Label {
+                Text(problem)
+                    .lineLimit(isProblemExpanded ? nil : 1)
+                    .multilineTextAlignment(.leading)
+            } icon: {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+            }
+            .font(.callout)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+        .accessibilityIdentifier("codeProblem")
     }
 
     private func commit() {
