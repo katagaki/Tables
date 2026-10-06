@@ -424,7 +424,7 @@ struct WorkbookView: View {
             Color.black.opacity(0.08)
                 .ignoresSafeArea()
                 .contentShape(.rect)
-                .onTapGesture {}
+                .onTapGesture { /* Swallow taps meant for the sheet. */ }
             HStack(spacing: 12) {
                 ProgressView()
                 Text(String(format: String(localized: "Macros.Running"), macroRunner.runningMacro ?? ""))

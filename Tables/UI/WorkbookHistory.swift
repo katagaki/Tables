@@ -23,10 +23,12 @@ final class WorkbookHistory {
 
     @ObservationIgnored private weak var undoManager: UndoManager?
     @ObservationIgnored private var read: () -> Workbook = { Workbook() }
-    @ObservationIgnored private var write: (Workbook) -> Void = { _ in }
+    @ObservationIgnored private var write: (Workbook) -> Void = { _ in /* Replaced on attach. */ }
     /// Told after an undo or redo has put a workbook back, with the workbook
     /// it replaced, so the editor can show where the change happened.
-    @ObservationIgnored private var restored: (_ now: Workbook, _ before: Workbook) -> Void = { _, _ in }
+    @ObservationIgnored private var restored: (_ now: Workbook, _ before: Workbook) -> Void = { _, _ in
+        // Replaced on attach.
+    }
 
     /// The workbook an undo or redo has just written. SwiftUI reports the
     /// change a moment later, by which time the undo manager is no longer

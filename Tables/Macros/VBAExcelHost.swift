@@ -5,10 +5,10 @@ import Foundation
 struct VBAInteraction: Sendable {
     var messageBox: @Sendable (_ prompt: String, _ buttons: Int, _ title: String?) -> Int = { _, _, _ in 1 }
     var inputBox: @Sendable (_ prompt: String, _ title: String?, _ defaultText: String) -> String? = { _, _, text in text }
-    var debugPrint: @Sendable (_ text: String) -> Void = { _ in }
+    var debugPrint: @Sendable (_ text: String) -> Void = { _ in /* No Immediate window to print to. */ }
     /// Asks before opening a link from `Shell` or `FollowHyperlink`; true if opened.
     var openURL: @Sendable (_ url: URL) -> Bool = { _ in false }
-    var showSendKeys: @Sendable (_ keys: String) -> Void = { _ in }
+    var showSendKeys: @Sendable (_ keys: String) -> Void = { _ in /* Nowhere to show the keys. */ }
 }
 
 /// The Excel object model over a Tables workbook: `Range`, `Cells`,

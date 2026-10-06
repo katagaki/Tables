@@ -42,8 +42,8 @@ protocol VBAHost: AnyObject {
 }
 
 extension VBAHost {
-    func openURL(_ url: URL) -> Bool { false }
-    func showSendKeys(_ keys: String) {}
+    func openURL(_: URL) -> Bool { false }
+    func showSendKeys(_: String) { /* Hosts with nowhere to show keys drop them. */ }
 }
 
 /// Control flow that unwinds through Swift's error propagation.

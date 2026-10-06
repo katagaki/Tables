@@ -6,7 +6,7 @@ import Testing
 /// long title over the blank cells beside it.
 @Suite("Text overflow")
 struct TextOverflowTests {
-    private func sheet(_ entries: [String: CellValue], configure: (inout Worksheet) -> Void = { _ in }) throws -> Worksheet {
+    private func sheet(_ entries: [String: CellValue], configure: (inout Worksheet) -> Void = { _ in /* Leave the sheet as built. */ }) throws -> Worksheet {
         var sheet = Worksheet(name: "Sheet")
         sheet.columnCount = 10
         for (reference, value) in entries {

@@ -74,7 +74,7 @@ struct UndoTests {
             to: undoManager,
             read: { document.value },
             write: { document.value = $0 },
-            restored: { _, _ in }
+            restored: { _, _ in /* These tests do not follow where changes land. */ }
         )
         return (history, undoManager)
     }

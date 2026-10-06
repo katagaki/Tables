@@ -206,7 +206,7 @@ struct MacrosView: View {
                 nameField($newModuleName)
                 Button("Macros.AddModule.Confirm") { addModule() }
                     .disabled(project.problem(withModuleName: newModuleName) != nil)
-                Button("Macros.Button.Cancel", role: .cancel) {}
+                Button("Macros.Button.Cancel", role: .cancel) { /* The alert dismisses itself. */ }
             } message: {
                 Text(project.problem(withModuleName: newModuleName) ?? String(localized: newModuleKind == .classModule
                     ? "Macros.AddClassModule.Message" : "Macros.AddModule.Message"))
@@ -218,7 +218,7 @@ struct MacrosView: View {
                 nameField($renamedName)
                 Button("Macros.RenameModule") { renameModule() }
                     .disabled(renameProblem(in: project) != nil)
-                Button("Macros.Button.Cancel", role: .cancel) {}
+                Button("Macros.Button.Cancel", role: .cancel) { /* The alert dismisses itself. */ }
             } message: {
                 if let problem = renameProblem(in: project) { Text(problem) }
             }
@@ -405,7 +405,7 @@ struct MacroPrompts: ViewModifier {
     @Environment(\.openURL) private var openURL
 
     private var isPresented: Binding<Bool> {
-        Binding(get: { runner.prompt != nil }, set: { _ in })
+        Binding(get: { runner.prompt != nil }, set: { _ in /* Answering the prompt clears it. */ })
     }
 
     func body(content: Content) -> some View {
