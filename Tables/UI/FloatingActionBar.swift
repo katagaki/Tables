@@ -12,26 +12,37 @@ struct FloatingActionBar: View {
     var showMacros: (() -> Void)?
     var isMacroRunning = false
 
+    private static let selectionActionsID = "selectionActions"
+
     private var style: CellStyle { state.representativeStyle(in: workbook) }
 
     var body: some View {
         // The full set of groups is wider than an iPhone, so the bar scrolls
         // sideways rather than clipping its end groups.
-        ScrollView(.horizontal) {
-            Group {
-                if state.activeSheet(in: workbook).isChartSheet {
-                    // Cell formatting has nothing to act on here.
-                    GlassEffectContainer(spacing: 10) { chartGroup }
-                } else {
-                    barContent
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal) {
+                Group {
+                    if state.activeSheet(in: workbook).isChartSheet {
+                        // Cell formatting has nothing to act on here.
+                        GlassEffectContainer(spacing: 10) { chartGroup }
+                    } else {
+                        barContent
+                    }
                 }
+                .padding(.horizontal, 12)
+                .animation(.snappy(duration: 0.2), value: state.selectedChartID)
+                .animation(.snappy(duration: 0.2), value: state.selectedDrawingID)
             }
-            .padding(.horizontal, 12)
-            .animation(.snappy(duration: 0.2), value: state.selectedChartID)
-            .animation(.snappy(duration: 0.2), value: state.selectedDrawingID)
+            .scrollIndicators(.hidden)
+            .scrollBounceBehavior(.basedOnSize)
+            // What can be done to a chart or picture just picked out sits at the
+            // far end of the bar; bring it into view rather than leave it to be
+            // found.
+            .onChange(of: state.selectedChartID ?? state.selectedDrawingID) { _, selected in
+                guard selected != nil else { return }
+                withAnimation(.snappy(duration: 0.3)) { proxy.scrollTo(Self.selectionActionsID, anchor: .trailing) }
+            }
         }
-        .scrollIndicators(.hidden)
-        .scrollBounceBehavior(.basedOnSize)
         .frame(height: 56)
     }
 
@@ -71,10 +82,10 @@ struct FloatingActionBar: View {
                 }
 
                 if state.selectedChartID != nil {
-                    chartGroup
+                    chartGroup.id(Self.selectionActionsID)
                 }
                 if state.selectedDrawingID != nil {
-                    drawingGroup
+                    drawingGroup.id(Self.selectionActionsID)
                 }
             }
         }

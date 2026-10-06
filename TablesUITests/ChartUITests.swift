@@ -92,7 +92,8 @@ final class ChartUITests: XCTestCase {
         let chart = app.descendants(matching: .any).matching(identifier: added).firstMatch
         capture("chart-inserted")
 
-        // The new chart is already selected, so its actions are in the bar.
+        // The new chart is already selected, and the bar brings its actions
+        // into view.
         app.buttons["editChart"].tap()
         XCTAssertTrue(app.navigationBars["Chart"].waitForExistence(timeout: 5), "the chart panel never opened")
         // The title sits below the type and data sections; scroll the form,
