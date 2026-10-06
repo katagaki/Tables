@@ -37,7 +37,7 @@ struct SheetGridView: View {
     /// The cell the menu was last raised from, which a long press inside a
     /// larger selection leaves somewhere other than the selection's corner.
     @State private var cellMenuAddress: CellAddress?
-    @FocusState private var isCellEditorFocused: Bool
+    @State private var isCellEditorFocused = false
     @Environment(\.colorScheme) private var colorScheme
     #if os(macOS)
     /// Where the pointer last was, for the right-click menu to read.
@@ -866,12 +866,15 @@ struct SheetGridView: View {
             )
             // Single-line on purpose: a vertical-axis field treats Return as a
             // newline instead of committing the cell.
-            TextField("", text: $state.editingText)
-                .accessibilityIdentifier("cellEditor")
-                .textFieldStyle(.plain)
-                .font(state.editingText.hasPrefix("=")
-                      ? .system(size: 14 * metrics.zoom, design: .monospaced)
-                      : activeSheet[address].style.font(zoom: metrics.zoom))
+            FormulaTextField(
+                text: $state.editingText,
+                isFocused: $isCellEditorFocused,
+                font: editorFont(for: activeSheet[address].style),
+                accessibilityIdentifier: "cellEditor",
+                returnKeyType: .done
+            ) {
+                state.commitEditing(in: &workbook, keepingEditor: true)
+            }
                 // Exactly the cell, padded exactly as the cell paints its text,
                 // so opening the editor neither grows the box nor shifts the
                 // glyphs. A field too narrow to hold what is being typed scrolls
@@ -880,13 +883,23 @@ struct SheetGridView: View {
                 .frame(width: frame.width, height: frame.height, alignment: .leading)
                 .background(Color.sheetBackground)
                 .overlay(RoundedRectangle(cornerRadius: 2).strokeBorder(Color.accentColor, lineWidth: 2.5))
-                .focused($isCellEditorFocused)
-                .submitLabel(.done)
-                .onSubmit { state.commitEditing(in: &workbook, keepingEditor: true) }
-                .onEscapeKey { state.cancelEditing() }
                 .offset(x: frame.minX, y: frame.minY)
                 .zIndex(2)
         }
+    }
+
+    /// Formulas in a monospaced face; anything else in the cell's own, so the
+    /// glyphs do not jump when the editor opens over them.
+    private func editorFont(for style: CellStyle) -> UIFont {
+        let size = (state.editingText.hasPrefix("=") ? 14 : style.fontSize) * metrics.zoom
+        if state.editingText.hasPrefix("=") {
+            return .monospacedSystemFont(ofSize: size, weight: .regular)
+        }
+        var traits: UIFontDescriptor.SymbolicTraits = []
+        if style.isBold { traits.insert(.traitBold) }
+        if style.isItalic { traits.insert(.traitItalic) }
+        let base = UIFont.systemFont(ofSize: size)
+        return base.fontDescriptor.withSymbolicTraits(traits).map { UIFont(descriptor: $0, size: size) } ?? base
     }
 
     // MARK: - Headers

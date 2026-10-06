@@ -6,7 +6,7 @@ struct FormulaBarView: View {
     @Binding var workbook: Workbook
     @Bindable var state: EditorState
 
-    @FocusState private var isFocused: Bool
+    @State private var isFocused = false
 
     private var activeSheet: Worksheet { state.activeSheet(in: workbook) }
     private var selectedCell: Cell { activeSheet[state.selectedAddress] }
@@ -43,17 +43,18 @@ struct FormulaBarView: View {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(isShowingFormula ? Color.accentColor : .secondary)
 
-            TextField("FormulaBar.Field.Placeholder", text: displayedText)
-                .accessibilityIdentifier("formulaField")
-                .textFieldStyle(.plain)
-                .font(isShowingFormula ? .system(size: 16, design: .monospaced) : .system(size: 16))
-                .focused($isFocused)
-                .onSubmit { state.commitEditing(in: &workbook, keepingEditor: true) }
-                .onEscapeKey { state.cancelEditing() }
-                #if os(iOS)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-                #endif
+            FormulaTextField(
+                text: displayedText,
+                isFocused: $isFocused,
+                placeholder: String(localized: "FormulaBar.Field.Placeholder"),
+                font: isShowingFormula
+                    ? .monospacedSystemFont(ofSize: 16, weight: .regular)
+                    : .systemFont(ofSize: 16),
+                accessibilityIdentifier: "formulaField",
+                isPlainInput: true
+            ) {
+                state.commitEditing(in: &workbook, keepingEditor: true)
+            }
 
             if state.editingAddress != nil {
                 Button {
