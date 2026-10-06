@@ -3,7 +3,9 @@ import Foundation
 private typealias D = FormulaDistributions
 
 extension FormulaFunctions {
-    static let distributionFunctions: [String: FunctionSpec] = {
+    static let distributionFunctions: [String: FunctionSpec] = makeDistributionFunctions()
+
+    private static func makeDistributionFunctions() -> [String: FunctionSpec] {
         var table: [String: FunctionSpec] = [:]
 
         // MARK: Normal and log-normal
@@ -429,7 +431,7 @@ extension FormulaFunctions {
         table["ERFC.PRECISE"] = .unary { erfc($0) }
 
         return table
-    }()
+    }
 }
 
 extension FormulaDistributions {

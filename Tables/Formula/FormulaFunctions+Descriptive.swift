@@ -1,7 +1,9 @@
 import Foundation
 
 extension FormulaFunctions {
-    static let descriptiveFunctions: [String: FunctionSpec] = {
+    static let descriptiveFunctions: [String: FunctionSpec] = makeDescriptiveFunctions()
+
+    private static func makeDescriptiveFunctions() -> [String: FunctionSpec] {
         var table: [String: FunctionSpec] = [
             "MAXA": FunctionSpec(1...255, lifts: .none) { call throws(CellError) in
                 .number(try call.allNumbers(mode: .valuesAsNumbers).max() ?? 0)
@@ -260,7 +262,7 @@ extension FormulaFunctions {
         for name in ["COVAR", "COVARIANCE.P"] { table[name] = populationCovariance }
         table["FORECAST"] = forecast
         return table
-    }()
+    }
 }
 
 extension FormulaStatistics {

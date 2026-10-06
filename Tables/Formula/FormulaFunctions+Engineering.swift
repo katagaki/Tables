@@ -1,7 +1,9 @@
 import Foundation
 
 extension FormulaFunctions {
-    static let engineeringFunctions: [String: FunctionSpec] = {
+    static let engineeringFunctions: [String: FunctionSpec] = makeEngineeringFunctions()
+
+    private static func makeEngineeringFunctions() -> [String: FunctionSpec] {
         var table: [String: FunctionSpec] = [
             "DELTA": FunctionSpec(1...2) { call throws(CellError) in
                 .number(try call.number(0) == call.number(1, default: 0) ? 1 : 0)
@@ -144,7 +146,7 @@ extension FormulaFunctions {
             return .text(values.reduce(FormulaComplex.one) { $0.times($1) }.text(suffix: suffix))
         }
         return table
-    }()
+    }
 }
 
 /// Base conversion, bitwise operations and Bessel functions.

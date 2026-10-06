@@ -1,7 +1,9 @@
 import Foundation
 
 extension FormulaFunctions {
-    static let databaseFunctions: [String: FunctionSpec] = {
+    static let databaseFunctions: [String: FunctionSpec] = makeDatabaseFunctions()
+
+    private static func makeDatabaseFunctions() -> [String: FunctionSpec] {
         var table: [String: FunctionSpec] = [:]
         let numeric: [(String, @Sendable ([Double]) throws(CellError) -> Double)] = [
             ("DSUM", { FormulaMath.sum($0) }),
@@ -40,7 +42,7 @@ extension FormulaFunctions {
             return .scalar(values[0])
         }
         return table
-    }()
+    }
 }
 
 /// The D-functions' shared reading of a database, a field and a criteria range.
