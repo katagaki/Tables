@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import Tables
 
@@ -57,5 +58,19 @@ struct FunctionCoverageTests {
     func coverage() {
         let missing = excelFunctionNames.filter { !FormulaFunctions.isKnown($0) && !externalFunctionNames.contains($0) }
         #expect(missing.isEmpty, "Missing: \(missing.joined(separator: ", "))")
+    }
+
+    @Test("Every function in the library has a test of its answers")
+    func correctness() throws {
+        let folder = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        let source = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "swift" && $0.lastPathComponent != URL(fileURLWithPath: #filePath).lastPathComponent }
+            .map { try String(contentsOf: $0, encoding: .utf8) }
+            .joined(separator: "\n")
+        let untested = FormulaFunctions.names.filter { name in
+            let call = "(?<![A-Za-z0-9._])" + NSRegularExpression.escapedPattern(for: name) + "\\("
+            return source.range(of: call, options: .regularExpression) == nil
+        }
+        #expect(untested.isEmpty, "No test calls: \(untested.joined(separator: ", "))")
     }
 }
