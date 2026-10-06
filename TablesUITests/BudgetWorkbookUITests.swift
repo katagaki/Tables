@@ -41,6 +41,7 @@ final class BudgetWorkbookUITests: XCTestCase {
     private func select(_ reference: String, expecting: String? = nil) {
         let target = cell(reference)
         XCTAssertTrue(target.waitForExistence(timeout: 5), "missing cell \(reference)")
+        uncover(target, in: app)
         target.tap()
         waitForSelection(expecting ?? reference)
     }
@@ -180,7 +181,10 @@ final class BudgetWorkbookUITests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 5), "the rename field never appeared")
         field.tap()
         // Replace rather than append: the field is pre-filled with the old name.
-        field.typeKey("a", modifierFlags: .command)
+        // Deleting it character by character works whether or not the
+        // simulator has a hardware keyboard to take a select-all shortcut.
+        let existing = (field.value as? String) ?? ""
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: existing.count + 2))
         field.typeText(name + "\n")
         XCTAssertTrue(app.staticTexts[name].waitForExistence(timeout: 5), "the sheet was not renamed to \(name)")
     }

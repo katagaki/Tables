@@ -44,6 +44,18 @@ extension XCTestCase {
         XCTFail("\(reference) never took the text \(text)", file: file, line: line)
     }
 
+    /// Return leaves the editor open on the next cell, and with a software
+    /// keyboard up the lower rows sit under it. Discarding that empty edit
+    /// brings them back before a test reaches for one.
+    func uncover(_ target: XCUIElement, in app: XCUIApplication) {
+        // A cell under the keyboard still reports itself hittable, so the
+        // keyboard is the thing to look for.
+        guard app.keyboards.element.exists else { return }
+        let discard = app.buttons["Discard edit"]
+        if discard.exists { discard.tap() }
+        _ = app.keyboards.element.waitForNonExistence(timeout: 3)
+    }
+
     /// Opens a cell's in-place editor, and hands back the field ready to type
     /// into.
     ///
@@ -61,6 +73,8 @@ extension XCTestCase {
         XCTAssertTrue(
             target.waitForExistence(timeout: 5), "missing cell \(reference)", file: file, line: line
         )
+
+        uncover(target, in: app)
 
         // Land the selection with a plain tap first. It commits whatever the
         // last Return left open and scrolls the cell into view, so the press
