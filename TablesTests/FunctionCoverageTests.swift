@@ -43,13 +43,13 @@ WEIBULL WEIBULL.DIST WORKDAY WORKDAY.INTL WRAPCOLS WRAPROWS XIRR XLOOKUP XMATCH 
 YIELDDISC YIELDMAT Z.TEST ZTEST
 """.split(whereSeparator: \.isWhitespace).map(String.init)
 
-/// Functions whose answer comes from outside the workbook — a server, a
-/// cube, an add-in, a translation service — so a saved file's results are
-/// kept instead.
+/// Functions requiring data Tables cannot calculate or retain, such as server
+/// data, add-ins, translation services, and phonetic reading guides. Saved
+/// results are preserved instead.
 let externalFunctionNames: Set<String> = [
     "CALL", "CUBEKPIMEMBER", "CUBEMEMBER", "CUBEMEMBERPROPERTY", "CUBERANKEDMEMBER", "CUBESET", "CUBESETCOUNT",
     "CUBEVALUE", "DETECTLANGUAGE", "EUROCONVERT", "FILTERXML", "GETPIVOTDATA", "IMAGE", "REGISTER.ID", "RTD",
-    "STOCKHISTORY", "TRANSLATE", "WEBSERVICE",
+    "STOCKHISTORY", "TRANSLATE", "WEBSERVICE", "PHONETIC",
 ]
 
 @Suite("Function coverage")

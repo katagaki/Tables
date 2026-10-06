@@ -350,7 +350,7 @@ struct TextBasicsTests {
     func conversions() {
         #expect(evaluate("=JIS(\"ABC 123\")") == .text("ＡＢＣ　１２３"))
         #expect(evaluate("=JIS(\"ｱｲｳ\")") == .text("アイウ"))
-        #expect(evaluate("=PHONETIC(A1:A2)", with: ["A1": "東京", "A2": "都"]) == .text("東京都"))
+        #expect(evaluate("=PHONETIC(A1:A2)", with: ["A1": "東京", "A2": "都"]) == .error(.nameError))
         #expect(evaluate("=USDOLLAR(1234.567,2)") == .text("$1,234.57"))
         #expect(evaluate("=USDOLLAR(-0.123,4)") == .text("($0.1230)"))
         #expect(evaluate("=VALUE(\"$1,000\")") == .number(1000))

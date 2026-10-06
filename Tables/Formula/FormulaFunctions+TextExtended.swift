@@ -78,13 +78,8 @@ extension FormulaFunctions {
                 let text = try call.text(0)
                 return .text(text.applyingTransform(.fullwidthToHalfwidth, reverse: false) ?? text)
             },
-            "PHONETIC": FunctionSpec(1...1, lifts: .none) { call throws(CellError) in
-                // Tables keeps no reading guides, so the text is its own reading.
-                .text(try call.matrix(0).flatMap { $0 }.compactMap { cell -> String? in
-                    if case .text(let text) = cell { return text }
-                    return nil
-                }.joined())
-            },
+            // PHONETIC needs reading guides, which Tables does not retain. Leave
+            // it unregistered so imported workbooks keep Excel's saved answer.
             "BAHTTEXT": FunctionSpec(1...1) { call throws(CellError) in
                 .text(FormulaText.bahtText(try call.number(0)))
             },
