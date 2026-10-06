@@ -379,7 +379,8 @@ extension PreservedDrawingAnchor {
     /// keeping its size; an absolute one stays where it is.
     mutating func shift(_ operation: FormulaReferenceShifter.Operation, axis: FormulaReferenceShifter.Axis) {
         guard var placement, let root = try? XMLLite.parse(Data(xml.utf8)) else { return }
-        switch root.name {
+        let anchors = DrawingReader.anchors(in: root)
+        switch anchors.first?.name {
         case "twoCellAnchor": break
         case "oneCellAnchor": placement.editAs = "oneCell"
         default: return
@@ -388,14 +389,18 @@ extension PreservedDrawingAnchor {
         guard moved.from != placement.from || moved.to != placement.to else { return }
 
         let emusPerPoint = 12_700.0
-        for (name, before, after) in [("from", placement.from, moved.from), ("to", placement.to, moved.to)] {
-            guard let marker = root.firstChild(named: name) else { continue }
-            func set(_ child: String, _ value: String) { marker.firstChild(named: child)?.setText(value) }
-            if after.row != before.row { set("row", String(after.row)) }
-            if after.column != before.column { set("col", String(after.column)) }
-            if after.rowOffset != before.rowOffset { set("rowOff", String(Int((after.rowOffset * emusPerPoint).rounded()))) }
-            if after.columnOffset != before.columnOffset {
-                set("colOff", String(Int((after.columnOffset * emusPerPoint).rounded())))
+        for anchor in anchors {
+            for (name, before, after) in [("from", placement.from, moved.from), ("to", placement.to, moved.to)] {
+                guard let marker = anchor.firstChild(named: name) else { continue }
+                func set(_ child: String, _ value: String) { marker.firstChild(named: child)?.setText(value) }
+                if after.row != before.row { set("row", String(after.row)) }
+                if after.column != before.column { set("col", String(after.column)) }
+                if after.rowOffset != before.rowOffset {
+                    set("rowOff", String(Int((after.rowOffset * emusPerPoint).rounded())))
+                }
+                if after.columnOffset != before.columnOffset {
+                    set("colOff", String(Int((after.columnOffset * emusPerPoint).rounded())))
+                }
             }
         }
         guard let rewritten = XMLLite.serialize(root) else { return }
@@ -418,9 +423,19 @@ extension PreservedDrawingAnchor {
         var moved = ChartPlacement(frame: frame, in: sheet)
         moved.editAs = placement?.editAs
 
+        let anchors = DrawingReader.anchors(in: root)
+        guard !anchors.isEmpty else { return }
+        for anchor in anchors { Self.place(anchor, at: frame, corners: moved) }
+
+        guard let rewritten = XMLLite.serialize(root) else { return }
+        xml = rewritten
+        placement = moved
+    }
+
+    private static func place(_ anchor: XMLElement, at frame: CGRect, corners: ChartPlacement) {
         func emus(_ points: Double) -> String { String(Int((points * 12_700).rounded())) }
         func mark(_ name: String, _ corner: ChartAnchor) {
-            guard let marker = root.firstChild(named: name) else { return }
+            guard let marker = anchor.firstChild(named: name) else { return }
             marker.firstChild(named: "col")?.setText(String(corner.column))
             marker.firstChild(named: "colOff")?.setText(emus(corner.columnOffset))
             marker.firstChild(named: "row")?.setText(String(corner.row))
@@ -430,33 +445,27 @@ extension PreservedDrawingAnchor {
             extent?.setAttribute("cx", emus(frame.width))
             extent?.setAttribute("cy", emus(frame.height))
         }
-        switch root.name {
+        switch anchor.name {
         case "twoCellAnchor":
-            mark("from", moved.from)
-            mark("to", moved.to)
+            mark("from", corners.from)
+            mark("to", corners.to)
         case "oneCellAnchor":
-            mark("from", moved.from)
-            size(root.firstChild(named: "ext"))
-        case "absoluteAnchor":
-            root.firstChild(named: "pos")?.setAttribute("x", emus(frame.minX))
-            root.firstChild(named: "pos")?.setAttribute("y", emus(frame.minY))
-            size(root.firstChild(named: "ext"))
+            mark("from", corners.from)
+            size(anchor.firstChild(named: "ext"))
         default:
-            return
+            anchor.firstChild(named: "pos")?.setAttribute("x", emus(frame.minX))
+            anchor.firstChild(named: "pos")?.setAttribute("y", emus(frame.minY))
+            size(anchor.firstChild(named: "ext"))
         }
         // A graphic frame's transform is left alone: Excel writes it as zeros
         // and places the frame by its anchor alone.
-        if let object = root.children.first(where: { DrawingReader.drawingObjects.contains($0.name) }),
+        if let object = anchor.children.first(where: { DrawingReader.drawingObjects.contains($0.name) }),
            let transform = object.children.first(where: { $0.name == "spPr" || $0.name == "grpSpPr" })?
                .firstChild(named: "xfrm") {
             transform.firstChild(named: "off")?.setAttribute("x", emus(frame.minX))
             transform.firstChild(named: "off")?.setAttribute("y", emus(frame.minY))
             size(transform.firstChild(named: "ext"))
         }
-
-        guard let rewritten = XMLLite.serialize(root) else { return }
-        xml = rewritten
-        placement = moved
     }
 }
 

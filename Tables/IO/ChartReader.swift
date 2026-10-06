@@ -479,7 +479,12 @@ enum DrawingReader {
         let metrics = SheetMetrics(sheet: room)
 
         for anchor in root.children {
-            let placement = self.placement(of: anchor, metrics: metrics, sheet: room)
+            // Newer objects come wrapped in markup compatibility: the anchor
+            // inside the first choice, and again, for older readers, inside
+            // the fallback. The wrapper is kept whole, and placed and drawn
+            // by the anchors inside it.
+            let inner = anchors(in: anchor)
+            let placement = inner.lazy.compactMap { self.placement(of: $0, metrics: metrics, sheet: room) }.first
             if let chart = chart(
                 in: anchor, placement: placement, relationships: relationships,
                 directory: directory, entries: entries, context: context, consumed: &result.consumedParts
@@ -519,15 +524,16 @@ enum DrawingReader {
             }
             result.anchors.append(PreservedDrawingAnchor(
                 xml: xml, relationships: kept, largestShapeID: largestShapeID,
-                placement: placement, isChart: isChart, picture: picture(in: anchor, relationships: kept),
-                locks: locks(in: anchor)
+                placement: placement, isChart: isChart,
+                picture: inner.lazy.compactMap { picture(in: $0, relationships: kept) }.first,
+                locks: inner.first.map(locks(in:)) ?? DrawingLocks()
             ))
         }
         return result
     }
 
-    /// The image a picture anchor shows. Pictures inside groups and
-    /// alternate content are left as placeholders, as are hidden ones.
+    /// The image a picture anchor shows. Pictures inside groups are left as
+    /// placeholders, as are hidden ones.
     private static func picture(
         in anchor: XMLElement, relationships: [PreservedDrawingRelationship]
     ) -> DrawingPicture? {
@@ -549,6 +555,19 @@ enum DrawingReader {
             result.cropBottom = edge("b")
         }
         return result
+    }
+
+    static let anchorNames: Set<String> = ["twoCellAnchor", "oneCellAnchor", "absoluteAnchor"]
+
+    /// The anchors an element of a drawing stands for: itself, when it is
+    /// one, or those in each branch of the `mc:AlternateContent` wrapping
+    /// them — the choice first, then the fallback.
+    static func anchors(in element: XMLElement) -> [XMLElement] {
+        if anchorNames.contains(element.name) { return [element] }
+        guard element.name == "AlternateContent" else { return [] }
+        return element.children
+            .filter { $0.name == "Choice" || $0.name == "Fallback" }
+            .flatMap { $0.children.filter { anchorNames.contains($0.name) } }
     }
 
     /// The objects an anchor can hold, one of which it does.
@@ -574,7 +593,7 @@ enum DrawingReader {
         consumed: inout Set<String>
     ) -> Chart? {
         typealias Plan = XLSXReader.PackagePreservation
-        guard ["twoCellAnchor", "oneCellAnchor", "absoluteAnchor"].contains(anchor.name),
+        guard anchorNames.contains(anchor.name),
               let frame = anchor.firstChild(named: "graphicFrame"),
               let data = frame.firstDescendant(atPath: "graphic/graphicData"),
               data.attribute("uri") == chartURI,

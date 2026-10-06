@@ -1232,6 +1232,57 @@ struct ChartTests {
         #expect(abs(frame.minX - 10) < 0.01 && abs(frame.height - 40) < 0.01)
     }
 
+    @Test("An object wrapped in alternate content is placed, drawn and moved by the anchors inside")
+    func wrappedAnchor() throws {
+        // A 3D model as Excel writes one: the model for readers that know it,
+        // a picture of it for those that do not.
+        let model = Self.anchor(id: 5, relationship: "rIdModel", from: (2, 4), to: (6, 12))
+            .replacingOccurrences(of: "http://schemas.openxmlformats.org/drawingml/2006/chart", with: "http://schemas.microsoft.com/office/drawing/2017/model3d")
+        let fallback = Self.lockedPictureAnchor
+            .replacingOccurrences(of: "<xdr:oneCellAnchor>", with: "<xdr:twoCellAnchor editAs=\"oneCell\">")
+            .replacingOccurrences(of: "<xdr:ext cx=\"952500\" cy=\"952500\"/><xdr:pic>",
+                                  with: "<xdr:to><xdr:col>6</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>12</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to><xdr:pic>")
+            .replacingOccurrences(of: "</xdr:oneCellAnchor>", with: "</xdr:twoCellAnchor>")
+            .replacingOccurrences(of: "<xdr:col>1</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>1</xdr:row>",
+                                  with: "<xdr:col>2</xdr:col><xdr:colOff>12700</xdr:colOff><xdr:row>4</xdr:row>")
+        let wrapped = """
+        <mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">\
+        <mc:Choice xmlns:am3d="http://schemas.microsoft.com/office/drawing/2017/model3d" Requires="am3d">\
+        \(model)</mc:Choice><mc:Fallback>\(fallback)</mc:Fallback></mc:AlternateContent>
+        """
+        let data = try package(
+            anchors: wrapped,
+            drawingRelationships: "<Relationship Id=\"rIdModel\" Type=\"http://schemas.microsoft.com/office/2017/06/relationships/model3d\" Target=\"../media/model3d1.glb\"/>"
+                + "<Relationship Id=\"rIdImage\" Type=\"\(Self.relationships)/image\" Target=\"../media/image1.png\"/>",
+            extraParts: [("xl/media/image1.png", "PNGDATA", nil), ("xl/media/model3d1.glb", "GLB", "model/gltf-binary")]
+        )
+        var workbook = try XLSXReader.workbook(from: data)
+        let anchor = try #require(workbook.sheets[0].preservedDrawingAnchors.first)
+        #expect(anchor.placement?.from == ChartAnchor(row: 4, column: 2, rowOffset: 0, columnOffset: 1))
+        #expect(anchor.picture?.target == "xl/media/image1.png")
+
+        /// Each branch's first row, as its XML now says.
+        func rows(_ workbook: Workbook) throws -> [String?] {
+            let root = try XMLLite.parse(Data(workbook.sheets[0].preservedDrawingAnchors[0].xml.utf8))
+            return DrawingReader.anchors(in: root).map { $0.firstDescendant(atPath: "from/row")?.text }
+        }
+        workbook.sheets[0].insertRows(2, at: 0)
+        #expect(try rows(workbook) == ["6", "6"])
+
+        let sheet = workbook.sheets[0]
+        let metrics = SheetMetrics(sheet: sheet)
+        let frame = CGRect(x: metrics.x(ofColumn: 3), y: metrics.y(ofRow: 9), width: 80, height: 60)
+        workbook.sheets[0].preservedDrawingAnchors[0].place(at: frame, in: sheet)
+        #expect(try rows(workbook) == ["9", "9"])
+
+        let written = try ZipArchive.entries(in: XLSXWriter.data(from: workbook))
+        try expectConsistentPackage(written)
+        let drawing = try text(written, "xl/drawings/drawing1.xml")
+        #expect(drawing.contains("Requires=\"am3d\""))
+        let reread = try XLSXReader.workbook(from: XLSXWriter.data(from: workbook))
+        #expect(reread.sheets[0].preservedDrawingAnchors.first?.placement?.from.row == 9)
+    }
+
     @Test("A picture is selected apart from charts, moved, and deleted")
     @MainActor
     func pictureSelection() throws {
