@@ -3,7 +3,8 @@ import Foundation
 /// What pressing Return does in macro code: the line being finished snaps
 /// to its block's indentation if it closes one — `End Sub` under `Sub`,
 /// `Next` under `For`, `Else` under `If` — and the new line starts one step
-/// in from a line that opens a block, level with anything else.
+/// in from a line that opens a block, level with anything else. Opening a
+/// block that has nothing to close it also writes its `End` line beneath.
 enum VBAIndenter {
     static let step = "    "
 
@@ -40,9 +41,71 @@ enum VBAIndenter {
             }
         }
         let nextIndent = kind == .opener || kind == .middle ? lineIndent + step : lineIndent
-        let replacement = lineIndent + content + "\n" + nextIndent
+        var replacement = lineIndent + content + "\n" + nextIndent
+        let cursor = lineStart + replacement.utf16.count
+        // Finishing the line that opens a block writes the line that closes
+        // it too, unless the code already has one waiting for it.
+        let lineEnd = NSMaxRange(source.lineRange(for: NSRange(location: tailEnd, length: 0)))
+        let restOfLine = source.substring(with: NSRange(location: tailEnd, length: lineEnd - tailEnd))
+        if kind == .opener, restOfLine.trimmingCharacters(in: .newlines).isEmpty,
+           let closer = closingStatement(for: content), isUnclosed(closer, in: source, replacing: lineStart) {
+            replacement += "\n" + lineIndent + closer
+        }
         return Edit(range: NSRange(location: lineStart, length: tailEnd - lineStart), replacement: replacement,
-                    cursor: lineStart + replacement.utf16.count)
+                    cursor: cursor)
+    }
+
+    /// The statement that ends the block a line opens, as it should be written.
+    static func closingStatement(for line: String) -> String? {
+        guard classify(line) == .opener else { return nil }
+        let words = stripComment(line).lowercased()
+            .split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "(" || $0 == ":" })
+            .map(String.init)
+            .drop { ["public", "private", "friend", "static", "global"].contains($0) }
+        switch words.first {
+        case "sub": return "End Sub"
+        case "function": return "End Function"
+        case "property": return "End Property"
+        case "type": return "End Type"
+        case "enum": return "End Enum"
+        case "if": return "End If"
+        case "with": return "End With"
+        case "select": return "End Select"
+        case "for": return "Next"
+        case "do": return "Loop"
+        case "while": return "Wend"
+        default: return nil
+        }
+    }
+
+    /// Whether the code holds more blocks ending in `closer` than lines that
+    /// end them, counting the line at `lineStart` as one of the blocks however
+    /// much of it has been typed. Counting rather than looking at the next
+    /// line is what stops a second Return on `Sub Main()` writing a second
+    /// `End Sub`.
+    private static func isUnclosed(_ closer: String, in source: NSString, replacing lineStart: Int) -> Bool {
+        let key = closer.lowercased()
+        var balance = 1
+        var location = 0
+        while location < source.length {
+            let range = source.lineRange(for: NSRange(location: location, length: 0))
+            location = NSMaxRange(range)
+            guard range.location != lineStart else { continue }
+            let line = source.substring(with: range).trimmingCharacters(in: .whitespacesAndNewlines)
+            if closingStatement(for: line)?.lowercased() == key {
+                balance += 1
+            } else if classify(line) == .closer, closingKey(line) == key {
+                balance -= 1
+            }
+        }
+        return balance > 0
+    }
+
+    /// A closing line's statement, lowercased and with single spaces: `end sub`, `next`.
+    private static func closingKey(_ line: String) -> String {
+        let words = stripComment(line).lowercased().split(whereSeparator: { $0 == " " || $0 == "\t" })
+        guard let first = words.first else { return "" }
+        return first == "end" && words.count > 1 ? "end \(words[1])" : String(first)
     }
 
     /// The nearest line above `location` that opens the block it is in.

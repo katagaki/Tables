@@ -14,12 +14,26 @@ struct VBAIndenterTests {
         return (result as NSString).replacingCharacters(in: NSRange(location: edit.cursor, length: 0), with: "|")
     }
 
-    @Test("A block opener indents the next line")
+    @Test("A block opener indents the next line and closes the block beneath it")
     func opens() {
-        #expect(pressReturn("Sub Main()|") == "Sub Main()\n    |")
-        #expect(pressReturn("    For i = 1 To 3|") == "    For i = 1 To 3\n        |")
-        #expect(pressReturn("Private Function F() As Long|") == "Private Function F() As Long\n    |")
-        #expect(pressReturn("    If x Then ' check|") == "    If x Then ' check\n        |")
+        #expect(pressReturn("Sub Main()|") == "Sub Main()\n    |\nEnd Sub")
+        #expect(pressReturn("    For i = 1 To 3|") == "    For i = 1 To 3\n        |\n    Next")
+        #expect(pressReturn("Private Function F() As Long|") == "Private Function F() As Long\n    |\nEnd Function")
+        #expect(pressReturn("    If x Then ' check|") == "    If x Then ' check\n        |\n    End If")
+        #expect(pressReturn("    Do While x|") == "    Do While x\n        |\n    Loop")
+        #expect(pressReturn("    Select Case x|") == "    Select Case x\n        |\n    End Select")
+        #expect(pressReturn("    With Range(\"A1\")|") == "    With Range(\"A1\")\n        |\n    End With")
+        #expect(pressReturn("    While x|") == "    While x\n        |\n    Wend")
+    }
+
+    @Test("A block that is already closed is not closed again")
+    func leavesClosedBlocks() {
+        #expect(pressReturn("Sub Main()|\n    x = 1\nEnd Sub") == "Sub Main()\n    |\n    x = 1\nEnd Sub")
+        #expect(pressReturn("Sub A()\n    For i = 1 To 3|\n    Next i\nEnd Sub")
+                == "Sub A()\n    For i = 1 To 3\n        |\n    Next i\nEnd Sub")
+        // A second, inner block of the same kind still gets its own closer.
+        #expect(pressReturn("Sub A()\n    If x Then\n        If y Then|\n    End If\nEnd Sub")
+                == "Sub A()\n    If x Then\n        If y Then\n            |\n        End If\n    End If\nEnd Sub")
     }
 
     @Test("Single-line If and ordinary statements keep the indentation")
