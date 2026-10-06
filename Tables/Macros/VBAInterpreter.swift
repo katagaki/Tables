@@ -247,7 +247,7 @@ final class VBAInterpreter {
         if declaration.type?.isNew == true, case .object(let className) = elementType {
             // `As New`: VBA creates it on first use; creating it now is
             // indistinguishable unless the macro tests it for Nothing.
-            variable.value = .object(try instantiate(className, frame))
+            variable.value = .object(try instantiate(className))
         }
         return variable
     }
@@ -709,9 +709,9 @@ final class VBAInterpreter {
     private func callStatement(_ expression: VBAExpression, _ frame: Frame) throws {
         switch expression {
         case .identifier, .member:
-            _ = try call(expression, arguments: [], frame, asStatement: true)
+            _ = try call(expression, arguments: [], frame)
         case .call(let target, let arguments):
-            _ = try call(target, arguments: arguments, frame, asStatement: true)
+            _ = try call(target, arguments: arguments, frame)
         default:
             _ = try evaluate(expression, frame)
         }
@@ -765,7 +765,7 @@ final class VBAInterpreter {
 
         case .member(let baseExpression, let name):
             let base = try evaluateBase(baseExpression, frame)
-            try setMember(of: base, name, .none, to: value, isSet: isSet, frame)
+            try setMember(of: base, name, .none, to: value)
 
         case .call(let callee, let argumentExpressions):
             let arguments = try evaluateArguments(argumentExpressions, frame)
@@ -797,7 +797,7 @@ final class VBAInterpreter {
                 try resolved.setMember("", .none, to: value, in: self)
             case .member(let baseExpression, let name):
                 let base = try evaluateBase(baseExpression, frame)
-                try setMember(of: base, name, arguments, to: value, isSet: isSet, frame)
+                try setMember(of: base, name, arguments, to: value)
             default:
                 let object = try evaluate(callee, frame)
                 guard case .object(let resolved) = object else { throw VBAError.objectRequired }
@@ -817,8 +817,7 @@ final class VBAInterpreter {
         try variable.assign(value)
     }
 
-    private func setMember(of base: VBAValue, _ name: String, _ arguments: VBAArguments, to value: VBAValue,
-                           isSet: Bool, _ frame: Frame) throws {
+    private func setMember(of base: VBAValue, _ name: String, _ arguments: VBAArguments, to value: VBAValue) throws {
         switch base {
         case .object(let object):
             do {
@@ -889,9 +888,9 @@ final class VBAInterpreter {
             case .null: return .null
             }
         case .identifier, .member:
-            return try call(expression, arguments: [], frame, asStatement: false)
+            return try call(expression, arguments: [], frame)
         case .call(let target, let arguments):
-            return try call(target, arguments: arguments, frame, asStatement: false)
+            return try call(target, arguments: arguments, frame)
         case .parenthesized(let inner):
             return try evaluate(inner, frame)
         case .unary(let op, let operand):
@@ -905,7 +904,7 @@ final class VBAInterpreter {
             let right = try letValue(evaluate(rhs, frame))
             return try VBAOperators.binary(op, left, right, textCompare: frame.module.syntax.optionCompareText)
         case .new(let className):
-            return .object(try instantiate(className, frame))
+            return .object(try instantiate(className))
         case .me:
             guard let instance = frame.instance else {
                 if frame.module.kind == .document, let object = host?.documentObject(codeName: frame.module.name, in: self) {
@@ -1007,8 +1006,8 @@ final class VBAInterpreter {
         }
     }
 
-    private func call(_ target: VBAExpression, arguments argumentExpressions: [VBAArgument], _ frame: Frame,
-                      asStatement: Bool) throws -> VBAValue {
+    private func call(_ target: VBAExpression, arguments argumentExpressions: [VBAArgument],
+                      _ frame: Frame) throws -> VBAValue {
         switch target {
         case .identifier(let name):
             return try callName(name, argumentExpressions, frame)
@@ -1146,7 +1145,7 @@ final class VBAInterpreter {
 
     // MARK: - Objects
 
-    func instantiate(_ className: String, _ frame: Frame) throws -> any VBAObject {
+    func instantiate(_ className: String) throws -> any VBAObject {
         if let module = module(named: className), module.kind == .classModule {
             try ensureInitialized()
             let instance = VBAClassInstance(module: module)

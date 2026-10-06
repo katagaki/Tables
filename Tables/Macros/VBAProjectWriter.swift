@@ -140,9 +140,9 @@ extension VBAProject {
                 encoding: encoding
             ))
         }
-        if let names = file.root.stream(named: "PROJECTwm") {
+        if file.root.stream(named: "PROJECTwm") != nil {
             file.root.setStream(named: "PROJECTwm", to: Self.rewrittenNameMap(
-                names, modules: modules.map(\.name), encoding: encoding
+                modules: modules.map(\.name), encoding: encoding
             ))
         }
         return try file.data()
@@ -186,7 +186,7 @@ extension VBAProject {
 
     /// `PROJECTwm` pairs each module name in the code page with its UTF-16
     /// spelling, both NUL-terminated, the whole list ended by two zero bytes.
-    static func rewrittenNameMap(_ stream: Data, modules: [String], encoding: String.Encoding) -> Data {
+    static func rewrittenNameMap(modules: [String], encoding: String.Encoding) -> Data {
         var out: [UInt8] = []
         for name in modules {
             out += [UInt8](name.data(using: encoding) ?? Data(name.utf8)) + [0]
@@ -468,7 +468,7 @@ extension VBAProject {
         var root = CompoundFile.Storage(name: "Root Entry")
         root.streams = [
             .init(name: "PROJECT", data: lines.joined(separator: "\r\n").data(using: encoding) ?? Data()),
-            .init(name: "PROJECTwm", data: rewrittenNameMap(Data(), modules: modules.map(\.name), encoding: encoding)),
+            .init(name: "PROJECTwm", data: rewrittenNameMap(modules: modules.map(\.name), encoding: encoding)),
         ]
         root.storages = [vba]
         return CompoundFile(root: root)

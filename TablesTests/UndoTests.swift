@@ -81,7 +81,7 @@ struct UndoTests {
 
     /// An edit as the editor makes one: through the document, then reported.
     private func edit(
-        _ document: Document, _ history: WorkbookHistory, _ undoManager: UndoManager,
+        _ document: Document, _ history: WorkbookHistory,
         _ change: (inout Workbook) -> Void
     ) {
         let old = document.value
@@ -109,9 +109,9 @@ struct UndoTests {
         let (history, undoManager) = makeHistory(document)
         let original = document.value
 
-        edit(document, history, undoManager) { $0.sheets[0][CellAddress(row: 9, column: 0)] = Cell(value: .number(1)) }
+        edit(document, history) { $0.sheets[0][CellAddress(row: 9, column: 0)] = Cell(value: .number(1)) }
         let afterFirst = document.value
-        edit(document, history, undoManager) { $0.sheets[0].charts.removeAll() }
+        edit(document, history) { $0.sheets[0].charts.removeAll() }
         let afterSecond = document.value
         #expect(history.canUndo)
 
@@ -136,7 +136,7 @@ struct UndoTests {
         let original = document.value
 
         for length in 1...6 {
-            edit(document, history, undoManager) {
+            edit(document, history) {
                 $0.sheets[0].charts[0].title = ChartTitle(text: String("Totals".prefix(length)))
             }
         }
@@ -147,10 +147,10 @@ struct UndoTests {
 
         // Straight after the undo, the same kind of edit must not fold itself
         // into whatever step is now on top.
-        edit(document, history, undoManager) { $0.sheets[0][CellAddress(row: 9, column: 0)] = Cell(value: .number(1)) }
+        edit(document, history) { $0.sheets[0][CellAddress(row: 9, column: 0)] = Cell(value: .number(1)) }
         let typed = document.value
-        edit(document, history, undoManager) { $0.sheets[0].charts[0].legend = .top }
-        edit(document, history, undoManager) { $0.sheets[0].charts[0].legend = .left }
+        edit(document, history) { $0.sheets[0].charts[0].legend = .top }
+        edit(document, history) { $0.sheets[0].charts[0].legend = .left }
         step(document, history, undo: true)
         #expect(document.value == typed)
     }
@@ -164,9 +164,9 @@ struct UndoTests {
         let document = Document(workbook)
         let (history, undoManager) = makeHistory(document)
 
-        edit(document, history, undoManager) { $0.sheets[0].charts[0].legend = .top }
+        edit(document, history) { $0.sheets[0].charts[0].legend = .top }
         let afterFirstChart = document.value
-        edit(document, history, undoManager) { $0.sheets[0].charts[1].legend = .top }
+        edit(document, history) { $0.sheets[0].charts[1].legend = .top }
         step(document, history, undo: true)
         #expect(document.value == afterFirstChart)
     }

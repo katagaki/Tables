@@ -41,7 +41,7 @@ final class BudgetWorkbookUITests: XCTestCase {
     private func select(_ reference: String, expecting: String? = nil) {
         let target = cell(reference)
         XCTAssertTrue(target.waitForExistence(timeout: 5), "missing cell \(reference)")
-        uncover(target, in: app)
+        uncover(in: app)
         target.tap()
         waitForSelection(expecting ?? reference)
     }
