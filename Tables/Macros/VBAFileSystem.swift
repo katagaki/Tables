@@ -154,7 +154,8 @@ final class VBAFileSystem {
     }
 
     func copy(_ source: String, to destination: String) throws {
-        let from = try resolve(source), to = try resolve(destination)
+        let from = try resolve(source)
+        let to = try resolve(destination)
         guard exists(from, isDirectory: false) else { throw Self.fileNotFound }
         guard exists(to.deletingLastPathComponent(), isDirectory: true) else { throw Self.pathNotFound }
         guard !openFiles.values.contains(where: { $0.url.path == from.path && $0.isWritable }), !isOpen(to) else {
@@ -167,7 +168,8 @@ final class VBAFileSystem {
     }
 
     func rename(_ source: String, to destination: String) throws {
-        let from = try resolve(source), to = try resolve(destination)
+        let from = try resolve(source)
+        let to = try resolve(destination)
         guard exists(from) else { throw Self.fileNotFound }
         guard !exists(to) else { throw Self.fileExists }
         guard exists(to.deletingLastPathComponent(), isDirectory: true) else { throw Self.pathNotFound }

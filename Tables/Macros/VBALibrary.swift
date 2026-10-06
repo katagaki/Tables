@@ -37,11 +37,13 @@ enum VBALibrary {
                 offset = 1
             }
             guard start >= 1 else { throw VBAError.invalidCall }
-            let haystack = try call.string(offset), needle = try call.string(offset + 1)
+            let haystack = try call.string(offset)
+            let needle = try call.string(offset + 1)
             let textCompare = try call.optionalInteger(offset + 2).map { $0 == 1 } ?? frame.module.syntax.optionCompareText
             return .integer(instr(haystack, needle, start: start, textCompare: textCompare))
         case "instrrev":
-            let haystack = Array(try call.string(0)), needle = Array(try call.string(1))
+            let haystack = Array(try call.string(0))
+            let needle = Array(try call.string(1))
             var start = try call.optionalInteger(2) ?? -1
             if start == -1 { start = haystack.count }
             let textCompare = try call.optionalInteger(3) == 1
@@ -56,7 +58,9 @@ enum VBALibrary {
             }
             return .integer(0)
         case "replace":
-            let text = try call.string(0), find = try call.string(1), replacement = try call.string(2)
+            let text = try call.string(0)
+            let find = try call.string(1)
+            let replacement = try call.string(2)
             let start = try call.optionalInteger(3) ?? 1
             let count = try call.optionalInteger(4) ?? -1
             let textCompare = try call.optionalInteger(5) == 1
@@ -242,7 +246,9 @@ enum VBALibrary {
             return .array(VBAArray(arguments.positional.map { $0 ?? .missing },
                                    lowerBound: frame.module.syntax.optionBase))
         case "rgb":
-            let red = try call.integer(0) & 0xFF, green = try call.integer(1) & 0xFF, blue = try call.integer(2) & 0xFF
+            let red = try call.integer(0) & 0xFF
+            let green = try call.integer(1) & 0xFF
+            let blue = try call.integer(2) & 0xFF
             return .integer(red | green << 8 | blue << 16)
         case "qbcolor":
             let palette = [0x000000, 0x800000, 0x008000, 0x808000, 0x000080, 0x800080, 0x008080, 0xC0C0C0,
@@ -655,7 +661,8 @@ enum VBALibrary {
             return .double(Double(Int(upper.dropFirst(2).prefix { ("0"..."7").contains($0) }, radix: 8) ?? 0))
         }
         var number = ""
-        var seenDot = false, seenExponent = false
+        var seenDot = false
+        var seenExponent = false
         for character in compact {
             if character.isNumber { number.append(character) }
             else if character == ".", !seenDot, !seenExponent { seenDot = true; number.append(character) }
@@ -733,7 +740,8 @@ enum VBALibrary {
     }
 
     private static func dateDiff(_ interval: String, _ first: Double, _ second: Double) throws -> Int {
-        let a = VBADate.components(first), b = VBADate.components(second)
+        let a = VBADate.components(first)
+        let b = VBADate.components(second)
         switch interval.lowercased() {
         case "yyyy": return b.year! - a.year!
         case "q": return (b.year! * 4 + (b.month! - 1) / 3) - (a.year! * 4 + (a.month! - 1) / 3)
@@ -742,7 +750,8 @@ enum VBALibrary {
         case "w": return Int((second.rounded(.down) - first.rounded(.down)) / 7)
         case "ww":
             // Sundays crossed, as VBA counts calendar weeks.
-            let start = first.rounded(.down) - Double((a.weekday! - 1)), end = second.rounded(.down) - Double((b.weekday! - 1))
+            let start = first.rounded(.down) - Double((a.weekday! - 1))
+            let end = second.rounded(.down) - Double((b.weekday! - 1))
             return Int((end - start) / 7)
         case "h": return Int(((second - first) * 24).rounded(.towardZero))
         case "n": return Int(((second - first) * 1440).rounded(.towardZero))

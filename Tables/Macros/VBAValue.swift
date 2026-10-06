@@ -555,7 +555,8 @@ enum VBAOperators {
             return .integer(try lhs.asInteger() % divisor)
         case "^":
             if isNull(lhs) || isNull(rhs) { return .null }
-            let base = try lhs.asDouble(), exponent = try rhs.asDouble()
+            let base = try lhs.asDouble()
+            let exponent = try rhs.asDouble()
             guard base >= 0 || exponent == exponent.rounded() else { throw VBAError.invalidCall }
             return .double(pow(base, exponent))
         case "=", "<>", "<", ">", "<=", ">=":
@@ -633,7 +634,8 @@ enum VBAOperators {
             }
             return .null
         }
-        let left = try lhs.asInteger(), right = try rhs.asInteger()
+        let left = try lhs.asInteger()
+        let right = try rhs.asInteger()
         switch op {
         case "and": return .integer(left & right)
         case "or": return .integer(left | right)

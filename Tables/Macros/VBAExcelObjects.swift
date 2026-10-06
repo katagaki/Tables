@@ -98,8 +98,10 @@ final class VBAApplicationObject: VBAObject {
     private func intersect(_ arguments: VBAArguments, in interpreter: VBAInterpreter) throws -> VBAValue {
         let all = try ranges(arguments)
         guard let first = all.first else { throw VBAError.invalidCall }
-        var top = first.range.start.row, left = first.range.start.column
-        var bottom = first.range.end.row, right = first.range.end.column
+        var top = first.range.start.row
+        var left = first.range.start.column
+        var bottom = first.range.end.row
+        var right = first.range.end.column
         for range in all.dropFirst() {
             guard range.sheetID == first.sheetID else { return .nothing }
             top = max(top, range.range.start.row)

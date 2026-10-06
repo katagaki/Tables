@@ -326,7 +326,8 @@ private struct Builder {
     /// The order the format keeps siblings in: shorter names first, then by
     /// the upper-cased name.
     private static func precedes(_ lhs: String, _ rhs: String) -> Bool {
-        let left = Array(lhs.uppercased().utf16), right = Array(rhs.uppercased().utf16)
+        let left = Array(lhs.uppercased().utf16)
+        let right = Array(rhs.uppercased().utf16)
         return left.count != right.count ? left.count < right.count : left.lexicographicallyPrecedes(right)
     }
 

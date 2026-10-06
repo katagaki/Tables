@@ -162,7 +162,8 @@ struct Line {
     private static func inkInsets(
         of text: String, attributes: [NSAttributedString.Key: Any], size: NSSize
     ) -> (CGFloat, CGFloat) {
-        let width = Int(size.width.rounded(.up)), height = Int(size.height.rounded(.up))
+        let width = Int(size.width.rounded(.up))
+        let height = Int(size.height.rounded(.up))
         guard width > 0, height > 0, let bitmap = NSBitmapImageRep(
             bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height,
             bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,

@@ -537,7 +537,8 @@ final class VBAInterpreter {
                         let value = try letValue(evaluate(expression, frame))
                         matched = try isTrue(VBAOperators.binary("=", subject, value, textCompare: textCompare))
                     case .range(let low, let high):
-                        let lower = try letValue(evaluate(low, frame)), upper = try letValue(evaluate(high, frame))
+                        let lower = try letValue(evaluate(low, frame))
+                        let upper = try letValue(evaluate(high, frame))
                         matched = try isTrue(VBAOperators.binary(">=", subject, lower, textCompare: textCompare))
                             && isTrue(VBAOperators.binary("<=", subject, upper, textCompare: textCompare))
                     case .comparison(let op, let expression):

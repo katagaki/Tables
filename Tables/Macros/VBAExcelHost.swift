@@ -346,12 +346,16 @@ final class VBAExcelHost: VBAHost {
     /// VBA colours are BGR integers; Tables keeps AARRGGBB hex.
     static func colorValue(_ hex: String?) -> Int? {
         guard let hex, let value = UInt32(hex.suffix(6), radix: 16) else { return nil }
-        let red = Int(value >> 16 & 0xFF), green = Int(value >> 8 & 0xFF), blue = Int(value & 0xFF)
+        let red = Int(value >> 16 & 0xFF)
+        let green = Int(value >> 8 & 0xFF)
+        let blue = Int(value & 0xFF)
         return red | green << 8 | blue << 16
     }
 
     static func colorHex(_ value: Int) -> String {
-        let red = value & 0xFF, green = value >> 8 & 0xFF, blue = value >> 16 & 0xFF
+        let red = value & 0xFF
+        let green = value >> 8 & 0xFF
+        let blue = value >> 16 & 0xFF
         return String(format: "FF%02X%02X%02X", red, green, blue)
     }
 }

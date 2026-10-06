@@ -58,7 +58,10 @@ final class VBARangeObject: VBAObject {
     static func usedRange(of sheet: Worksheet) -> CellRange {
         let addresses = sheet.cells.filter { !$0.value.isEmptyEntirely }.keys
         guard let first = addresses.first else { return CellRange(CellAddress(row: 0, column: 0)) }
-        var top = first.row, left = first.column, bottom = first.row, right = first.column
+        var top = first.row
+        var left = first.column
+        var bottom = first.row
+        var right = first.column
         for address in addresses {
             top = min(top, address.row)
             left = min(left, address.column)
@@ -128,7 +131,8 @@ final class VBARangeObject: VBAObject {
             try host.modifySheet(sheetID, extent: area) { sheet in
                 for row in area.rowRange {
                     for column in area.columnRange {
-                        let r = row - area.start.row, c = column - area.start.column
+                        let r = row - area.start.row
+                        let c = column - area.start.column
                         let element: VBAValue
                         // A one-dimensional array is a row, repeated down the range.
                         if array.dimensions == 1, c < columns {
@@ -585,7 +589,10 @@ final class VBARangeObject: VBAObject {
         func filled(_ row: Int, _ column: Int) -> Bool {
             row >= 0 && column >= 0 && !sheet[CellAddress(row: row, column: column)].isBlank
         }
-        var top = range.start.row, left = range.start.column, bottom = range.end.row, right = range.end.column
+        var top = range.start.row
+        var left = range.start.column
+        var bottom = range.end.row
+        var right = range.end.column
         var grew = true
         while grew {
             grew = false
@@ -669,13 +676,15 @@ final class VBARangeObject: VBAObject {
 
     private func insert() throws {
         if spansAllColumns {
-            let start = range.start.row, count = rowCount
+            let start = range.start.row
+            let count = rowCount
             try structural { workbook, index in
                 workbook.sheets[index].insertRows(count, at: start)
                 return (.insert(index: start, count: count), .row)
             }
         } else if spansAllRows {
-            let start = range.start.column, count = columnCount
+            let start = range.start.column
+            let count = columnCount
             try structural { workbook, index in
                 workbook.sheets[index].insertColumns(count, at: start)
                 return (.insert(index: start, count: count), .column)
@@ -759,10 +768,12 @@ final class VBARangeObject: VBAObject {
             for key in keys {
                 let offset = key.column - area.start.column
                 guard offset >= 0, offset < area.columnRange.count else { continue }
-                let left = snapshot[a][offset].value, right = snapshot[b][offset].value
+                let left = snapshot[a][offset].value
+                let right = snapshot[b][offset].value
                 // Blanks sort last whichever way the sort runs.
                 if left.isEmpty != right.isEmpty { return right.isEmpty }
-                let leftRank = rank(left), rightRank = rank(right)
+                let leftRank = rank(left)
+                let rightRank = rank(right)
                 var comparison: ComparisonResult
                 if leftRank != rightRank {
                     comparison = leftRank < rightRank ? .orderedAscending : .orderedDescending
