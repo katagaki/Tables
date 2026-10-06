@@ -4,13 +4,29 @@ import SwiftUI
 /// sheet, the app's table glyph above the title, and a few cells of work
 /// floating around it.
 enum DocumentLaunch {
-    /// The app icon's green, a little deeper at the foot so the white title and
-    /// the system's buttons stay legible over it.
-    static let topColor = Color(red: 0.16, green: 0.66, blue: 0.39)
-    static let bottomColor = Color(red: 0.05, green: 0.40, blue: 0.22)
+    /// A wash of the app icon's green, kept quiet: near white in light mode,
+    /// near black in dark, so the system's black or white title reads over it
+    /// and the colour comes from the artwork rather than the whole page.
+    static let topColor = adaptive(
+        light: UIColor(red: 0.86, green: 0.95, blue: 0.89, alpha: 1),
+        dark: UIColor(red: 0.07, green: 0.20, blue: 0.13, alpha: 1)
+    )
+    static let bottomColor = adaptive(
+        light: UIColor(red: 0.95, green: 0.98, blue: 0.96, alpha: 1),
+        dark: UIColor(red: 0.04, green: 0.09, blue: 0.06, alpha: 1)
+    )
+    /// The colour the glyph, chips and gridlines are drawn in.
+    static let ink = adaptive(
+        light: UIColor(red: 0.10, green: 0.56, blue: 0.31, alpha: 1),
+        dark: UIColor(red: 0.66, green: 0.90, blue: 0.75, alpha: 1)
+    )
+
+    private static func adaptive(light: UIColor, dark: UIColor) -> Color {
+        Color(UIColor { $0.userInterfaceStyle == .dark ? dark : light })
+    }
 }
 
-/// The green gradient, ruled with faint gridlines that fade out towards the
+/// The green wash, ruled with faint gridlines that fade out towards the
 /// title so the page reads as a sheet without the lines competing with text.
 struct DocumentLaunchBackground: View {
     private let cellSize = CGSize(width: 64, height: 26)
@@ -36,7 +52,7 @@ struct DocumentLaunchBackground: View {
                     lines.addLine(to: CGPoint(x: size.width, y: y))
                     y += cellSize.height
                 }
-                context.stroke(lines, with: .color(.white.opacity(0.14)), lineWidth: 0.5)
+                context.stroke(lines, with: .color(DocumentLaunch.ink.opacity(0.12)), lineWidth: 0.5)
             }
             .mask {
                 LinearGradient(
@@ -65,7 +81,7 @@ struct DocumentLaunchGlyph: View {
                 HStack(spacing: spacing) {
                     ForEach(0..<2, id: \.self) { column in
                         UnevenRoundedRectangle(cornerRadii: corners(row: row, column: column))
-                            .fill(.white.opacity(opacities[row][column]))
+                            .fill(DocumentLaunch.ink.opacity(opacities[row][column]))
                             .frame(width: cellSize.width, height: cellSize.height)
                     }
                 }
@@ -128,33 +144,33 @@ struct DocumentLaunchOverlay: View {
         HStack(spacing: 6) {
             Text(verbatim: "fx")
                 .font(.system(size: 12, weight: .semibold, design: .serif).italic())
-                .foregroundStyle(.white.opacity(0.7))
+                .foregroundStyle(DocumentLaunch.ink.opacity(0.7))
             Text(verbatim: "=SUM(B2:B9)")
                 .font(.system(size: 13, weight: .medium, design: .monospaced))
-                .foregroundStyle(.white)
+                .foregroundStyle(DocumentLaunch.ink)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(.white.opacity(0.18), in: .capsule)
+        .background(DocumentLaunch.ink.opacity(0.14), in: .capsule)
     }
 
     private var referenceChip: some View {
         Text(verbatim: "A1")
             .font(.system(size: 14, weight: .bold, design: .rounded))
-            .foregroundStyle(.white)
+            .foregroundStyle(DocumentLaunch.ink)
             .frame(width: 44, height: 32)
-            .background(.white.opacity(0.18), in: .rect(cornerRadius: 10))
+            .background(DocumentLaunch.ink.opacity(0.14), in: .rect(cornerRadius: 10))
     }
 
     private var chartChip: some View {
         HStack(alignment: .bottom, spacing: 4) {
             ForEach([0.45, 0.8, 0.6, 1.0], id: \.self) { height in
                 Capsule()
-                    .fill(.white.opacity(0.4 + height * 0.5))
+                    .fill(DocumentLaunch.ink.opacity(0.4 + height * 0.5))
                     .frame(width: 6, height: 22 * height)
             }
         }
         .frame(width: 60, height: 46)
-        .background(.white.opacity(0.18), in: .rect(cornerRadius: 12))
+        .background(DocumentLaunch.ink.opacity(0.14), in: .rect(cornerRadius: 12))
     }
 }
