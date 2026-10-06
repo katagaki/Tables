@@ -16,6 +16,9 @@ struct WorkbookView: View {
     @State private var hasAllowedMacros = false
     @State private var macroInput = ""
     @Environment(\.undoManager) private var undoManager
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
     @Namespace private var panelTransition
 
     private var workbook: Binding<Workbook> { $document.workbook }
@@ -180,17 +183,28 @@ struct WorkbookView: View {
                 .disabled(!history.canUndo)
                 .keyboardShortcut("z", modifiers: .command)
                 .accessibilityIdentifier("undo")
-            Button("Toolbar.Redo", systemImage: "arrow.uturn.forward") { history.redo() }
-                .disabled(!history.canRedo)
-                .keyboardShortcut("z", modifiers: [.command, .shift])
-                .accessibilityIdentifier("redo")
+            if horizontalSizeClass != .compact {
+                redoButton
+            }
         }
+    }
+
+    private var redoButton: some View {
+        Button("Toolbar.Redo", systemImage: "arrow.uturn.forward") { history.redo() }
+            .disabled(!history.canRedo)
+            .keyboardShortcut("z", modifiers: [.command, .shift])
+            .accessibilityIdentifier("redo")
     }
 
     /// Secondary actions are gathered into the navigation bar's "…" menu.
     @ToolbarContentBuilder
     private var moreToolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .secondaryAction) {
+            // A narrow bar has no room for Redo and would push it into this
+            // menu itself, below everything here. Placing it keeps Source Code last.
+            if horizontalSizeClass == .compact {
+                redoButton
+            }
             Section {
                 Link(destination: URL(string: "https://github.com/katagaki/Tables")!) {
                     Label("Toolbar.SourceCode", systemImage: "chevron.left.forwardslash.chevron.right")
