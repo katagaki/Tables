@@ -371,7 +371,8 @@ struct WorkbookView: View {
             let outcome = await macroRunner.run(
                 macro.procedure, in: macro.module, project: project, workbook: before,
                 workbookName: fileName ?? String(localized: "Macros.DefaultWorkbookName"),
-                activeSheet: state.activeSheetID, selection: state.selection
+                activeSheet: state.activeSheetID, selection: state.selection,
+                workingFolder: MacroFiles.folder(forWorkbookNamed: fileName)
             )
             if outcome.workbook != before { document.workbook = outcome.workbook }
             if outcome.activeSheetID != state.activeSheetID, outcome.workbook.index(of: outcome.activeSheetID) != nil {

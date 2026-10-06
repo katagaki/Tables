@@ -103,6 +103,9 @@ final class VBAInterpreter {
 
     private(set) var modules: [Module] = []
     weak var host: (any VBAHost)?
+    /// The workbook's working folder, where file statements read and write.
+    /// Without one they report that files are unavailable.
+    var fileSystem: VBAFileSystem?
     /// Checked between statements; returning true stops the macro.
     var isCancelled: () -> Bool = { false }
 
@@ -491,7 +494,7 @@ final class VBAInterpreter {
             } else {
                 value = try letValue(value)
             }
-            try assign(value, to: target, isSet: isSet, frame)
+            try assignValue(value, to: target, isSet: isSet, frame)
 
         case .call(let expression):
             try callStatement(expression, frame)
@@ -533,7 +536,7 @@ final class VBAInterpreter {
             let start = try letValue(evaluate(startExpression, frame))
             let end = try letValue(evaluate(endExpression, frame))
             let step = try stepExpression.map { try letValue(evaluate($0, frame)) } ?? .integer(1)
-            try assign(start, to: variableExpression, isSet: false, frame)
+            try assignValue(start, to: variableExpression, isSet: false, frame)
             let stepValue = try step.asDouble()
             let limit = try end.asDouble()
             while true {
@@ -546,7 +549,7 @@ final class VBAInterpreter {
                     break
                 }
                 let next = try VBAOperators.binary("+", evaluate(variableExpression, frame), step, textCompare: false)
-                try assign(next, to: variableExpression, isSet: false, frame)
+                try assignValue(next, to: variableExpression, isSet: false, frame)
             }
 
         case .forEach(let variableExpression, let collectionExpression, let body):
@@ -559,7 +562,7 @@ final class VBAInterpreter {
             default: throw VBAError(number: 92, "For loop not initialized")
             }
             for item in items {
-                try assign(item, to: variableExpression, isSet: item.isObjectLike, frame)
+                try assignValue(item, to: variableExpression, isSet: item.isObjectLike, frame)
                 do {
                     try run(body, from: 0, frame)
                 } catch VBAControl.exitFor {
@@ -604,6 +607,9 @@ final class VBAInterpreter {
         case .goSub, .returnFromGoSub:
             throw VBAError.notSupported("GoSub")
 
+        case .file(let fileStatement):
+            try execute(fileStatement, frame)
+
         case .label:
             break
 
@@ -629,22 +635,8 @@ final class VBAInterpreter {
             }
 
         case .debugPrint(let items):
-            var text = ""
-            for (expression, separator) in items {
-                if let expression {
-                    let value = try letValue(evaluate(expression, frame))
-                    // Numbers print with a leading space for the sign, as in VBA.
-                    switch value {
-                    case .integer, .double: text += (try value.asDouble() < 0 ? "" : " ") + (try value.asString()) + " "
-                    case .null: text += "Null"
-                    default: text += try value.asString()
-                    }
-                }
-                if separator == "," {
-                    let column = text.count % 14
-                    text += String(repeating: " ", count: 14 - column)
-                }
-            }
+            var formatter = VBAPrintFormatter(column: 0)
+            let (text, _) = try formatter.format(items) { try self.letValue(self.evaluate($0, frame)) }
             host?.debugPrint(text)
 
         case .end:
@@ -695,7 +687,7 @@ final class VBAInterpreter {
     }
 
     /// The variable a name refers to, when it refers to one.
-    private func existingVariable(_ name: String, _ frame: Frame) -> VBAVariable? {
+    func existingVariable(_ name: String, _ frame: Frame) -> VBAVariable? {
         let key = name.lowercased()
         if let local = frame.locals[key] { return local }
         if let instance = frame.instance, let field = instance.variables[key] { return field }
@@ -707,7 +699,7 @@ final class VBAInterpreter {
         return nil
     }
 
-    private func assign(_ value: VBAValue, to target: VBAExpression, isSet: Bool, _ frame: Frame) throws {
+    func assignValue(_ value: VBAValue, to target: VBAExpression, isSet: Bool, _ frame: Frame) throws {
         switch target {
         case .identifier(let name):
             if let variable = existingVariable(name, frame) {
@@ -764,7 +756,7 @@ final class VBAInterpreter {
             }
 
         case .parenthesized(let inner):
-            try assign(value, to: inner, isSet: isSet, frame)
+            try assignValue(value, to: inner, isSet: isSet, frame)
 
         default:
             throw VBAError(number: 0, "This cannot be assigned to")

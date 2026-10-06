@@ -48,7 +48,7 @@ final class MacroRunner {
     /// failed, or been stopped.
     func run(
         _ procedure: String, in module: String, project: VBAProject, workbook: Workbook, workbookName: String,
-        activeSheet: Worksheet.ID?, selection: CellRange
+        activeSheet: Worksheet.ID?, selection: CellRange, workingFolder: URL? = nil
     ) async -> Outcome {
         let cancellation = MacroCancellation()
         let channel = MacroPromptChannel(cancellation: cancellation)
@@ -85,7 +85,8 @@ final class MacroRunner {
 
         let outcome = await Self.execute(
             procedure, in: module, project: project, workbook: workbook, workbookName: workbookName,
-            activeSheet: activeSheet, selection: selection, interaction: interaction, cancellation: cancellation
+            activeSheet: activeSheet, selection: selection, workingFolder: workingFolder,
+            interaction: interaction, cancellation: cancellation
         )
         output = lines.withLock { $0 }
         return outcome
@@ -108,7 +109,7 @@ final class MacroRunner {
     /// which it would also be wrong to block while a question is up.
     private nonisolated static func execute(
         _ procedure: String, in module: String, project: VBAProject, workbook: Workbook, workbookName: String,
-        activeSheet: Worksheet.ID?, selection: CellRange, interaction: VBAInteraction,
+        activeSheet: Worksheet.ID?, selection: CellRange, workingFolder: URL?, interaction: VBAInteraction,
         cancellation: MacroCancellation
     ) async -> Outcome {
         await withCheckedContinuation { continuation in
@@ -116,9 +117,13 @@ final class MacroRunner {
                 let host = VBAExcelHost(workbook: workbook, name: workbookName, activeSheet: activeSheet,
                                         selection: selection, interaction: interaction)
                 var failure: String?
+                // Without a folder, file statements say files are unavailable
+                // rather than the whole macro failing to start.
+                let files = workingFolder.flatMap { try? VBAFileSystem(root: $0) }
                 do {
                     let interpreter = try VBAInterpreter(project: project, host: host)
                     interpreter.isCancelled = { cancellation.isCancelled }
+                    interpreter.fileSystem = files
                     _ = try interpreter.run(procedure, in: module)
                 } catch let error as VBAError {
                     failure = Self.describe(error)
@@ -129,6 +134,9 @@ final class MacroRunner {
                 } catch {
                     failure = error.localizedDescription
                 }
+                // Files a macro left open are written out however it ended,
+                // before anything can show the folder.
+                files?.closeAll()
                 continuation.resume(returning: Outcome(
                     workbook: host.finishedWorkbook, activeSheetID: host.activeSheetID,
                     selection: host.selection, failure: failure

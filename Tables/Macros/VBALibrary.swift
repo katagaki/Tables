@@ -340,8 +340,78 @@ enum VBALibrary {
             return .object(object)
         case "doevents": return .integer(0)
         case "environ", "environ$": return .string("")
-        case "shell", "getobject", "callbyname", "dir", "freefile", "eof", "lof", "curdir", "filelen", "filedatetime":
+        case "shell", "getobject", "callbyname":
             throw VBAError.notSupported(name)
+
+        // MARK: Files, inside the workbook's working folder
+        case "dir", "dir$":
+            let files = try fileSystem(interpreter)
+            guard let pattern = try call.optionalString(0, "PathName") else { return .string(files.nextMatch()) }
+            return .string(try files.firstMatch(pattern, attributes: try call.optionalInteger(1, "Attributes") ?? 0))
+        case "curdir", "curdir$":
+            return .string(VBAFileSystem.displayPath(try fileSystem(interpreter).currentDirectory))
+        case "chdir":
+            try fileSystem(interpreter).changeDirectory(try call.string(0, "Path"))
+            return .empty
+        case "chdrive":
+            // One drive: the working folder.
+            return .empty
+        case "mkdir":
+            try fileSystem(interpreter).makeDirectory(try call.string(0, "Path"))
+            return .empty
+        case "rmdir":
+            try fileSystem(interpreter).removeDirectory(try call.string(0, "Path"))
+            return .empty
+        case "kill":
+            try fileSystem(interpreter).delete(try call.string(0, "PathName"))
+            return .empty
+        case "filecopy":
+            try fileSystem(interpreter).copy(try call.string(0, "Source"), to: try call.string(1, "Destination"))
+            return .empty
+        case "filelen":
+            return .integer(try fileSystem(interpreter).length(of: try call.string(0, "PathName")))
+        case "filedatetime":
+            let date = try fileSystem(interpreter).modificationDate(of: try call.string(0, "PathName"))
+            return .date(VBADate.serial(date) + Double(TimeZone.current.secondsFromGMT(for: date)) / 86_400)
+        case "getattr":
+            return .integer(try fileSystem(interpreter).attributes(of: try call.string(0, "PathName")))
+        case "setattr":
+            try fileSystem(interpreter).setAttributes(of: try call.string(0, "PathName"),
+                                                      to: try call.integer(1, "Attributes"))
+            return .empty
+        case "reset":
+            try fileSystem(interpreter).closeAll()
+            return .empty
+        case "freefile":
+            return .integer(try fileSystem(interpreter).freeNumber(upperRange: (try call.optionalInteger(0) ?? 0) == 1))
+        case "eof":
+            let file = try fileSystem(interpreter).file(try call.integer(0))
+            if file.mode == .binary || file.mode == .random { return .boolean(file.readPastEnd) }
+            return .boolean(file.position >= file.bytes.count)
+        case "lof":
+            return .integer(try fileSystem(interpreter).file(try call.integer(0)).bytes.count)
+        case "loc":
+            let file = try fileSystem(interpreter).file(try call.integer(0))
+            switch file.mode {
+            case .random: return .integer(file.position / file.recordLength)
+            case .binary: return .integer(file.position)
+            // Sequential files count in 128-byte blocks.
+            default: return .integer((file.position + 127) / 128)
+            }
+        case "seek":
+            let file = try fileSystem(interpreter).file(try call.integer(0))
+            return .integer(file.mode == .random ? file.position / file.recordLength + 1 : file.position + 1)
+        case "fileattr":
+            let file = try fileSystem(interpreter).file(try call.integer(0))
+            let codes: [VBAFileMode: Int] = [.input: 1, .output: 2, .random: 4, .append: 8, .binary: 32]
+            return .integer(codes[file.mode] ?? 0)
+        case "input", "input$":
+            let count = max(0, try call.integer(0))
+            let files = try fileSystem(interpreter)
+            let file = try files.file(try call.integer(1))
+            guard file.mode == .input || file.mode == .binary else { throw VBAFileSystem.badFileMode }
+            guard file.position + count <= file.bytes.count else { throw VBAFileSystem.pastEndOfFile }
+            return .string(VBAFileSystem.decode(files.readBytes(count, from: file)))
         case "__debugassert":
             if try !interpreter.isTrue(call.raw(0)) { throw VBAControl.end }
             return .empty
@@ -421,6 +491,14 @@ enum VBALibrary {
         case "vbvariant": return .integer(12)
         case "vbarray": return .integer(8192)
         case "vbobjecterror": return .integer(-2_147_221_504)
+        case "vbnormal": return .integer(0)
+        case "vbreadonly": return .integer(1)
+        case "vbhidden": return .integer(2)
+        case "vbsystem": return .integer(4)
+        case "vbvolume": return .integer(8)
+        case "vbdirectory": return .integer(16)
+        case "vbarchive": return .integer(32)
+        case "vbalias": return .integer(64)
         case "vbblack": return .integer(0x000000)
         case "vbred": return .integer(0x0000FF)
         case "vbgreen": return .integer(0x00FF00)
@@ -460,6 +538,13 @@ enum VBALibrary {
     }
 
     // MARK: - Helpers
+
+    private static func fileSystem(_ interpreter: VBAInterpreter) throws -> VBAFileSystem {
+        guard let files = interpreter.fileSystem else {
+            throw VBAError.notSupported(String(localized: "Macro.Unavailable.Files"))
+        }
+        return files
+    }
 
     /// The device's offset from UTC, in days, so `Now` reads as a wall clock.
     private static var localOffset: Double { Double(TimeZone.current.secondsFromGMT()) / 86_400 }

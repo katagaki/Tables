@@ -13654,6 +13654,41 @@
         }
       }
     },
+    "Macro.Unavailable.Files" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Files aren’t available to this macro here."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ここではこのマクロからファイルを使用できません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "여기서는 이 매크로가 파일을 사용할 수 없습니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此宏在这里无法使用文件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此巨集在這裡無法使用檔案。"
+          }
+        }
+      }
+    },
     "Macros.AddClassModule" : {
       "extractionState" : "manual",
       "localizations" : {

@@ -141,6 +141,7 @@ final class VBAApplicationObject: VBAObject {
         case "operatingsystem": return .string("Tables")
         case "username": return .string("")
         case "pathseparator": return .string("/")
+        case "defaultfilepath": return .string(interpreter.fileSystem.map { VBAFileSystem.displayPath($0.root) } ?? "")
         case "international": return .empty
         case "decimalseparator": return .string(".")
         case "thousandsseparator": return .string(",")
@@ -237,8 +238,13 @@ final class VBAWorkbookObject: VBAObject {
 
     func member(_ name: String, _ arguments: VBAArguments, in interpreter: VBAInterpreter) throws -> VBAValue {
         switch name.lowercased() {
-        case "", "name", "fullname": return .string(host.workbookName)
-        case "path": return .string("")
+        case "", "name": return .string(host.workbookName)
+        // The workbook's working folder stands in for the folder it is in, so
+        // `ThisWorkbook.Path & "\data.csv"` lands where file statements look.
+        case "path": return .string(interpreter.fileSystem.map { VBAFileSystem.displayPath($0.root) } ?? "")
+        case "fullname":
+            guard let files = interpreter.fileSystem else { return .string(host.workbookName) }
+            return .string(VBAFileSystem.displayPath(files.root.appendingPathComponent(host.workbookName)))
         case "codename": return .string(host.workbook.codeName ?? "ThisWorkbook")
         case "worksheets", "sheets":
             let collection = VBASheetsObject(host: host, worksheetsOnly: name.lowercased() == "worksheets")

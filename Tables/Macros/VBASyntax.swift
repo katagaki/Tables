@@ -114,7 +114,8 @@ struct VBAStatement: Sendable {
         case resume(VBAResumeTarget)
         case erase([VBAExpression])
         /// `Debug.Print a; b, c` keeps its separators, which decide spacing.
-        case debugPrint([(VBAExpression?, String)])
+        case debugPrint([VBAPrintItem])
+        case file(VBAFileStatement)
         /// The `End` statement, which stops everything at once.
         case end
         case stop
@@ -175,4 +176,37 @@ struct VBAModuleSyntax: Sendable {
     /// Names declared with `Declare`: calls into Windows libraries, which
     /// cannot run here. Remembered so calling one says so plainly.
     var externalProcedures: Set<String> = []
+}
+
+/// One part of a `Print` or `Debug.Print` list.
+enum VBAPrintItem: Sendable {
+    case value(VBAExpression)
+    /// `Spc(n)`: that many spaces.
+    case spaces(VBAExpression)
+    /// `Tab(n)` moves to a column; a bare `Tab` to the next print zone.
+    case tab(VBAExpression?)
+    /// `;` keeps on the same line; `,` moves to the next 14-column zone.
+    case separator(String)
+}
+
+enum VBAFileMode: String, Sendable {
+    case input, output, append, binary, random
+}
+
+/// VBA's file statements, which take a `#` file number.
+enum VBAFileStatement: Sendable {
+    case open(path: VBAExpression, mode: VBAFileMode, number: VBAExpression, recordLength: VBAExpression?)
+    /// No numbers closes every file.
+    case close([VBAExpression])
+    case print(number: VBAExpression, items: [VBAPrintItem])
+    case write(number: VBAExpression, items: [VBAExpression?])
+    case input(number: VBAExpression, targets: [VBAExpression])
+    case lineInput(number: VBAExpression, target: VBAExpression)
+    case get(number: VBAExpression, record: VBAExpression?, target: VBAExpression)
+    case put(number: VBAExpression, record: VBAExpression?, value: VBAExpression)
+    case seek(number: VBAExpression, position: VBAExpression)
+    /// `Lock` and `Unlock`, which matter only between processes sharing a file.
+    case lock(number: VBAExpression)
+    case width(number: VBAExpression, width: VBAExpression)
+    case rename(from: VBAExpression, to: VBAExpression)
 }

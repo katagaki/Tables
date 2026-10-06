@@ -458,9 +458,7 @@ struct VBAParser {
             advance()
             return statement(.call(.call(.identifier("__DebugAssert"), [VBAArgument(value: try parseExpression())])))
         }
-        for keyword in ["Open", "Close", "Print", "Write", "Input", "Line", "Get", "Put", "Seek", "Lock", "Unlock",
-                        "RaiseEvent", "Load", "Unload", "SendKeys", "AppActivate", "ChDir", "ChDrive", "Kill",
-                        "MkDir", "RmDir", "Name", "FileCopy", "Randomize", "Beep", "Reset", "Width", "LSet", "RSet"]
+        for keyword in ["RaiseEvent", "Load", "Unload", "SendKeys", "AppActivate", "Randomize", "Beep", "LSet", "RSet"]
         where isKeyword(keyword) && !(peek(1) == .symbol("=") || peek(1) == .symbol(".")) {
             if keyword == "Randomize" || keyword == "Beep" {
                 skipToEndOfLine()
@@ -475,6 +473,11 @@ struct VBAParser {
             }
             return [VBAStatement(kind: .unsupported(text), line: start)]
         }
+        // Statements with syntax of their own. A name followed by `=` or `.`
+        // is a variable or object that happens to share the word.
+        if case .identifier(let word) = current, peek(1) != .symbol("="), peek(1) != .symbol(".") {
+            if let kind = try parseKeywordStatement(word.lowercased()) { return statement(kind) }
+        }
 
         // An assignment, or a call written without `Call` and without
         // parentheses around its arguments.
@@ -485,6 +488,123 @@ struct VBAParser {
         if atEndOfStatement { return statement(.call(target)) }
         let arguments = try parseArgumentList(closing: nil)
         return statement(.call(.call(target, arguments)))
+    }
+
+    /// The statements whose syntax is not that of a call: file I/O with its
+    /// `#` numbers. Nil for any other word.
+    private mutating func parseKeywordStatement(_ word: String) throws -> VBAStatement.Kind? {
+        switch word {
+        case "open":
+            advance()
+            let path = try parseExpression()
+            try expect("For")
+            let modeWord = try identifier().lowercased()
+            guard let mode = VBAFileMode(rawValue: modeWord) else {
+                throw error(VBASyntaxError.text("Macro.Syntax.ExpectedFound", "Input, Output, Append, Binary, Random", modeWord))
+            }
+            // Access and locking are accepted and ignored: nothing else
+            // shares the working folder while a macro runs.
+            if accept("Access") {
+                if accept("Read") { accept("Write") } else { try expect("Write") }
+            }
+            if accept("Shared") {
+            } else if accept("Lock") {
+                if accept("Read") { accept("Write") } else { try expect("Write") }
+            }
+            try expect("As")
+            let number = try parseFileNumber()
+            var recordLength: VBAExpression?
+            if accept("Len") {
+                try expectSymbol("=")
+                recordLength = try parseExpression()
+            }
+            return .file(.open(path: path, mode: mode, number: number, recordLength: recordLength))
+        case "close":
+            advance()
+            var numbers: [VBAExpression] = []
+            while !atEndOfStatement {
+                numbers.append(try parseFileNumber())
+                if !acceptSymbol(",") { break }
+            }
+            return .file(.close(numbers))
+        case "print":
+            advance()
+            let number = try parseFileNumber()
+            if !atEndOfStatement { try expectSymbol(",") }
+            return .file(.print(number: number, items: try parsePrintList()))
+        case "write":
+            advance()
+            let number = try parseFileNumber()
+            var items: [VBAExpression?] = []
+            if !atEndOfStatement {
+                try expectSymbol(",")
+                while !atEndOfStatement {
+                    if isSymbol(",") || isSymbol(";") {
+                        advance()
+                        continue
+                    }
+                    items.append(try parseExpression())
+                }
+            }
+            return .file(.write(number: number, items: items))
+        case "input":
+            guard peek(1) == .symbol("#") else { return nil }
+            advance()
+            let number = try parseFileNumber()
+            try expectSymbol(",")
+            var targets: [VBAExpression] = []
+            repeat { targets.append(try parsePostfix(statementStart: false)) } while acceptSymbol(",")
+            return .file(.input(number: number, targets: targets))
+        case "line":
+            guard isKeyword("Input", peek(1)) else { return nil }
+            advance()
+            advance()
+            let number = try parseFileNumber()
+            try expectSymbol(",")
+            return .file(.lineInput(number: number, target: try parsePostfix(statementStart: false)))
+        case "get", "put":
+            advance()
+            let number = try parseFileNumber()
+            try expectSymbol(",")
+            let record = isSymbol(",") ? nil : try parseExpression()
+            try expectSymbol(",")
+            if word == "get" {
+                return .file(.get(number: number, record: record, target: try parsePostfix(statementStart: false)))
+            }
+            return .file(.put(number: number, record: record, value: try parseExpression()))
+        case "seek":
+            advance()
+            let number = try parseFileNumber()
+            try expectSymbol(",")
+            return .file(.seek(number: number, position: try parseExpression()))
+        case "lock", "unlock":
+            advance()
+            let number = try parseFileNumber()
+            // An optional record or `start To end`, which changes nothing here.
+            if acceptSymbol(",") {
+                _ = try parseExpression()
+                if accept("To") { _ = try parseExpression() }
+            }
+            return .file(.lock(number: number))
+        case "width":
+            advance()
+            let number = try parseFileNumber()
+            try expectSymbol(",")
+            return .file(.width(number: number, width: try parseExpression()))
+        case "name":
+            advance()
+            let from = try parseExpression()
+            try expect("As")
+            return .file(.rename(from: from, to: try parseExpression()))
+        default:
+            return nil
+        }
+    }
+
+    /// A file number, with or without the `#` VBA lets it carry.
+    private mutating func parseFileNumber() throws -> VBAExpression {
+        acceptSymbol("#")
+        return try parseExpression()
     }
 
     private var atEndOfStatementAfterOne: Bool {
@@ -500,22 +620,28 @@ struct VBAParser {
         return try identifier().lowercased()
     }
 
-    private mutating func parsePrintList() throws -> [(VBAExpression?, String)] {
-        var items: [(VBAExpression?, String)] = []
+    private mutating func parsePrintList() throws -> [VBAPrintItem] {
+        var items: [VBAPrintItem] = []
         while !atEndOfStatement {
             if isSymbol(";") || isSymbol(",") {
-                let separator = isSymbol(";") ? ";" : ","
+                items.append(.separator(isSymbol(";") ? ";" : ","))
                 advance()
-                items.append((nil, separator))
-                continue
-            }
-            let value = try parseExpression()
-            var separator = ""
-            if isSymbol(";") || isSymbol(",") {
-                separator = isSymbol(";") ? ";" : ","
+            } else if isKeyword("Spc"), peek(1) == .symbol("(") {
                 advance()
+                advance()
+                items.append(.spaces(try parseExpression()))
+                try expectSymbol(")")
+            } else if isKeyword("Tab") {
+                advance()
+                if acceptSymbol("(") {
+                    items.append(.tab(try parseExpression()))
+                    try expectSymbol(")")
+                } else {
+                    items.append(.tab(nil))
+                }
+            } else {
+                items.append(.value(try parseExpression()))
             }
-            items.append((value, separator))
         }
         return items
     }
@@ -807,6 +933,10 @@ struct VBAParser {
         case .date(let serial):
             advance()
             return .literal(.date(serial))
+        case .symbol("#"):
+            // A file number inside an argument list: `Input(10, #1)`, `EOF(#1)`.
+            advance()
+            return try parsePrimary()
         case .symbol("("):
             advance()
             let inner = try parseExpression()
