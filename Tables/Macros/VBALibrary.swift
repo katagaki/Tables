@@ -358,8 +358,10 @@ enum VBALibrary {
             // shown them instead, to type or paste where they were meant to go.
             interpreter.host?.showSendKeys(try call.string(0, "String"))
             return .empty
-        case "getobject", "callbyname":
+        case "getobject":
             throw VBAError.notSupported(name)
+        case "callbyname":
+            return try callByName(call, arguments, interpreter: interpreter)
 
         // MARK: Files, inside the workbook's working folder
         case "dir", "dir$":
@@ -509,6 +511,10 @@ enum VBALibrary {
         case "vbvariant": return .integer(12)
         case "vbarray": return .integer(8192)
         case "vbobjecterror": return .integer(-2_147_221_504)
+        case "vbmethod": return .integer(1)
+        case "vbget": return .integer(2)
+        case "vblet": return .integer(4)
+        case "vbset": return .integer(8)
         case "vbnormal": return .integer(0)
         case "vbreadonly": return .integer(1)
         case "vbhidden": return .integer(2)
@@ -573,6 +579,26 @@ enum VBALibrary {
               scheme.allSatisfy({ $0.isLetter || $0.isNumber || "+-.".contains($0) }),
               !["file", "javascript", "vbscript", "data"].contains(scheme) else { return nil }
         return url
+    }
+
+    /// `CallByName(object, name, kind, arguments…)`: vbMethod 1 and vbGet 2
+    /// call or read, vbLet 4 and vbSet 8 assign the last argument.
+    private static func callByName(_ call: LibraryCall, _ arguments: VBAArguments,
+                                   interpreter: VBAInterpreter) throws -> VBAValue {
+        guard case .object(let object) = try call.raw(0, "Object") else { throw VBAError.objectRequired }
+        let name = try call.string(1, "ProcName")
+        let kind = try call.integer(2, "CallType")
+        let rest = Array(arguments.positional.dropFirst(3))
+        switch kind {
+        case 1, 2:
+            return try object.member(name, VBAArguments(rest), in: interpreter)
+        case 4, 8:
+            guard let value = rest.last, let assigned = value else { throw VBAError(number: 449, "Argument not optional") }
+            try object.setMember(name, VBAArguments(Array(rest.dropLast())), to: assigned, in: interpreter)
+            return .empty
+        default:
+            throw VBAError.invalidCall
+        }
     }
 
     /// The device's offset from UTC, in days, so `Now` reads as a wall clock.

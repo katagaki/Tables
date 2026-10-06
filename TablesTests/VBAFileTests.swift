@@ -331,3 +331,29 @@ struct VBAFileTests {
         #expect(host.sentKeys == ["Hello{ENTER}"])
     }
 }
+
+@Suite("VBA language additions")
+struct VBALanguageAdditionTests {
+    private func run(_ source: String, extraModules: [(String, VBAProject.Module.Kind, String)] = []) throws -> [String] {
+        let host = FileTestHost()
+        let interpreter = try VBAInterpreter(modules: [("Module1", .standard, source)] + extraModules, host: host)
+        _ = try interpreter.run("Main")
+        return host.printed
+    }
+
+    @Test("CallByName calls, reads and assigns members by name")
+    func callByName() throws {
+        let counter = "Public Count As Long\nPublic Sub Add(n As Long)\nCount = Count + n\nEnd Sub"
+        let printed = try run("""
+        Sub Main()
+            Dim c As New Counter, col As New Collection
+            CallByName c, "Add", vbMethod, 5
+            CallByName c, "Count", vbLet, CallByName(c, "Count", vbGet) * 10
+            col.Add "x"
+            Debug.Print c.Count; CallByName(col, "Count", vbGet)
+        End Sub
+        """, extraModules: [("Counter", .classModule, counter)])
+        #expect(printed == [" 50  1 "])
+    }
+
+}
