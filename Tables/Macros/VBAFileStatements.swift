@@ -257,7 +257,11 @@ extension VBAInterpreter {
             // A Variant variable goes out with its type in front, as VBA
             // writes one; an expression goes out as the type its value has.
             var type = try declaredType(of: expression, frame)
-            if case .identifier = expression {} else { type = Self.naturalType(of: value) }
+            if case .identifier = expression {
+                // A variable keeps the type it was declared with.
+            } else {
+                type = Self.naturalType(of: value)
+            }
             return try Self.encode(try letValue(value), as: type, randomAccess: randomAccess)
         }
     }

@@ -218,7 +218,11 @@ final class VBAWorkbooksObject: VBAObject {
                !text.lowercased().hasPrefix(host.workbookName.lowercased() + ".") {
                 throw VBAError.subscriptOutOfRange
             }
-            if case .string = selector {} else if try selector.asInteger() != 1 { throw VBAError.subscriptOutOfRange }
+            if case .string = selector {
+                // A name was matched against the workbook's above.
+            } else if try selector.asInteger() != 1 {
+                throw VBAError.subscriptOutOfRange
+            }
             return .object(host.workbookObject)
         case "open", "add":
             throw VBAError.notSupported("Opening or creating other workbooks")

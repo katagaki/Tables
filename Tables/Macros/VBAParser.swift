@@ -495,8 +495,7 @@ struct VBAParser {
             if accept("Access") {
                 if accept("Read") { accept("Write") } else { try expect("Write") }
             }
-            if accept("Shared") {
-            } else if accept("Lock") {
+            if !accept("Shared"), accept("Lock") {
                 if accept("Read") { accept("Write") } else { try expect("Write") }
             }
             try expect("As")
