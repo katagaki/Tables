@@ -335,12 +335,17 @@ private struct ModuleEditorView: View {
                 MacroHelpButton()
             }
             ToolbarItem(placement: .primaryAction) {
-                Toggle(isOn: $wrapsLines) {
-                    Label("Macros.WrapLines", systemImage: "text.word.spacing")
+                // A menu rather than a bare toggle: its glyph alone did not
+                // say what it switched.
+                Menu {
+                    Toggle(isOn: $wrapsLines) {
+                        Label("Macros.WrapLines", systemImage: "text.word.spacing")
+                    }
+                    .accessibilityIdentifier("wrapLines")
+                } label: {
+                    Label("Macros.EditorOptions", systemImage: "ellipsis")
                 }
-                .toggleStyle(.button)
-                .help(String(localized: "Macros.WrapLines"))
-                .accessibilityIdentifier("wrapLines")
+                .accessibilityIdentifier("editorOptions")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button("Macros.Save") { commit() }
