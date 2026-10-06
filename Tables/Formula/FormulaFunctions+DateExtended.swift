@@ -266,18 +266,13 @@ extension FormulaDates {
             var d2 = end.day
             let startIsFebruaryEnd = start.month == 2 && isLastDayOfMonth(start)
             let endIsFebruaryEnd = end.month == 2 && isLastDayOfMonth(end)
-            if d1 == 31, d2 == 31 {
+            if (d1 == 31 && d2 == 31) || (startIsFebruaryEnd && endIsFebruaryEnd) {
                 d1 = 30
                 d2 = 30
-            } else if d1 == 31 {
+            } else if d1 == 31 || startIsFebruaryEnd {
                 d1 = 30
             } else if d1 == 30, d2 == 31 {
                 d2 = 30
-            } else if startIsFebruaryEnd, endIsFebruaryEnd {
-                d1 = 30
-                d2 = 30
-            } else if startIsFebruaryEnd {
-                d1 = 30
             }
             let days = (end.year - start.year) * 360 + (end.month - start.month) * 30 + (d2 - d1)
             return Double(days) / 360
