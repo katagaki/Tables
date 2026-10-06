@@ -544,24 +544,55 @@ struct SheetGridView: View {
         // range is positioned by its own offset, which is what lets the active
         // one keep the grip and the anchor hole the others do not have.
         ZStack(alignment: .topLeading) {
-            if !state.isEnteringFormula {
+            if state.isEnteringFormula {
+                // The one being pointed at is drawn by the active overlay,
+                // which carries the grip for growing it.
+                let pending = state.pendingReferenceRange?.normalized
+                ForEach(Array(formulaReferences.enumerated()), id: \.offset) { _, reference in
+                    if reference.cells != pending {
+                        rangeBox(reference.cells, color: FormulaReferenceColors.color(at: reference.colorIndex))
+                    }
+                }
+            } else {
                 ForEach(state.additionalSelections, id: \.self) { range in
-                    additionalSelectionBox(range)
+                    rangeBox(range, color: .accentColor)
                 }
             }
             activeSelectionOverlay
         }
     }
 
-    /// One of the ranges held alongside the active one: the same wash, and a
+    /// The references on this sheet in the formula being typed, each outlined
+    /// in the colour it is written in, the way a spreadsheet shows them.
+    private var formulaReferences: [FormulaReferenceScanner.Reference] {
+        let name = activeSheet.name
+        return FormulaReferenceScanner.references(in: state.editingText).filter { reference in
+            reference.sheetName.map { $0.caseInsensitiveCompare(name) == .orderedSame } ?? true
+        }
+    }
+
+    /// The colour of the reference being pointed at, or of the one the next
+    /// tap will write, so the grip matches the outline it is growing.
+    private var pointingTint: Color {
+        let references = formulaReferences
+        if let pending = state.pendingReferenceRange?.normalized,
+           let reference = references.last(where: { $0.cells == pending }) {
+            return FormulaReferenceColors.color(at: reference.colorIndex)
+        }
+        let nextIndex = (references.map(\.colorIndex).max() ?? -1) + 1
+        return FormulaReferenceColors.color(at: nextIndex)
+    }
+
+    /// A range outlined beside the active one: one of the ranges held alongside
+    /// it, or a reference in the formula being typed. The same wash, and a
     /// quieter border, since it is not what the next edit reads its style from.
-    private func additionalSelectionBox(_ range: CellRange) -> some View {
+    private func rangeBox(_ range: CellRange, color: Color) -> some View {
         let frame = metrics.frame(for: range)
         return RoundedRectangle(cornerRadius: 2, style: .continuous)
-            .fill(Color.accentColor.opacity(0.14))
+            .fill(color.opacity(0.14))
             .overlay {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .strokeBorder(Color.accentColor.opacity(0.55), lineWidth: 1.5)
+                    .strokeBorder(color.opacity(0.55), lineWidth: 1.5)
             }
             .frame(width: max(frame.width, 1), height: max(frame.height, 1))
             .allowsHitTesting(false)
@@ -574,7 +605,7 @@ struct SheetGridView: View {
             : state.selection.normalized
         let frame = metrics.frame(for: box)
         let isEditing = state.editingAddress != nil && !state.isEnteringFormula
-        let tint: Color = state.isEnteringFormula ? .purple : .accentColor
+        let tint: Color = state.isEnteringFormula ? pointingTint : .accentColor
 
         return ZStack(alignment: .topLeading) {
             // Fill everything but the anchor cell, the way a spreadsheet does.
