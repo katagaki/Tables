@@ -778,7 +778,7 @@ final class VBARangeObject: VBAObject {
                 if leftRank != rightRank {
                     comparison = leftRank < rightRank ? .orderedAscending : .orderedDescending
                 } else if case .number(let x) = left, case .number(let y) = right {
-                    comparison = x < y ? .orderedAscending : x > y ? .orderedDescending : .orderedSame
+                    comparison = if x < y { .orderedAscending } else if x > y { .orderedDescending } else { .orderedSame }
                 } else {
                     comparison = left.stringValue.compare(right.stringValue, options: [.caseInsensitive, .numeric])
                 }
@@ -947,13 +947,24 @@ final class VBABordersObject: VBAObject {
             if code == -4142 {
                 try apply { $0 = nil }
             } else {
-                let style: BorderLineStyle = code == -4115 ? .dashed : code == -4118 ? .dotted : code == -4119 ? .double
-                    : code == 4 ? .dashDot : code == 5 ? .dashDotDot : .thin
+                let style: BorderLineStyle = switch code {
+                case -4115: .dashed
+                case -4118: .dotted
+                case -4119: .double
+                case 4: .dashDot
+                case 5: .dashDotDot
+                default: .thin
+                }
                 try apply { side in side = BorderSide(lineStyle: style, colorHex: side?.colorHex) }
             }
         case "weight":
             let code = try value.asInteger()
-            let style: BorderLineStyle = code == 1 ? .hair : code == -4138 ? .medium : code == 4 ? .thick : .thin
+            let style: BorderLineStyle = switch code {
+            case 1: .hair
+            case -4138: .medium
+            case 4: .thick
+            default: .thin
+            }
             try apply { side in side = BorderSide(lineStyle: style, colorHex: side?.colorHex) }
         case "color":
             let hex = VBAExcelHost.colorHex(try value.asInteger())

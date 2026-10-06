@@ -389,7 +389,8 @@ enum VBAValue {
     /// Doubles print with up to fifteen significant digits, in scientific
     /// notation only when that is shorter to read, as `CStr` does.
     static func format(_ value: Double) -> String {
-        guard value.isFinite else { return value.isNaN ? "NaN" : (value > 0 ? "inf" : "-inf") }
+        if value.isNaN { return "NaN" }
+        guard value.isFinite else { return value > 0 ? "inf" : "-inf" }
         if value == value.rounded(), abs(value) < 1e15 { return String(Int64(value)) }
         let magnitude = abs(value)
         if magnitude >= 1e15 || magnitude < 1e-4 {
@@ -659,7 +660,7 @@ enum VBAOperators {
     /// read as.
     static func compare(_ lhs: VBAValue, _ rhs: VBAValue, textCompare: Bool) throws -> ComparisonResult {
         func order<T: Comparable>(_ a: T, _ b: T) -> ComparisonResult {
-            a < b ? .orderedAscending : a > b ? .orderedDescending : .orderedSame
+            if a < b { .orderedAscending } else if a > b { .orderedDescending } else { .orderedSame }
         }
         switch (lhs, rhs) {
         case (.string(let left), .string(let right)):
@@ -684,8 +685,8 @@ enum VBAOperators {
     static func compareText(_ lhs: String, _ rhs: String, textCompare: Bool) -> ComparisonResult {
         if textCompare { return lhs.compare(rhs, options: [.caseInsensitive]) }
         // Binary comparison orders by code unit, as VBA's does.
-        return lhs.utf16.lexicographicallyPrecedes(rhs.utf16) ? .orderedAscending
-            : (lhs == rhs ? .orderedSame : .orderedDescending)
+        if lhs.utf16.lexicographicallyPrecedes(rhs.utf16) { return .orderedAscending }
+        return lhs == rhs ? .orderedSame : .orderedDescending
     }
 
     /// `Like` patterns: `?` any one character, `*` any run, `#` a digit,

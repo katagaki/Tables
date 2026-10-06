@@ -316,7 +316,8 @@ extension FormulaStatistics {
         guard let first = sorted.first, let last = sorted.last, x >= first, x <= last else { throw .notAvailable }
         let n = Double(sorted.count)
         func rank(at index: Int) -> Double {
-            exclusive ? Double(index + 1) / (n + 1) : (sorted.count == 1 ? 1 : Double(index) / (n - 1))
+            if exclusive { return Double(index + 1) / (n + 1) }
+            return sorted.count == 1 ? 1 : Double(index) / (n - 1)
         }
         let result: Double
         if let index = sorted.firstIndex(of: x) {
@@ -525,8 +526,9 @@ enum FormulaRegression {
         let fit = try fit(y: y, x: x, constant: constant)
         let k = x.first?.count ?? 0
         func transform(_ value: Double) -> Double { logarithmic ? exp(value) : value }
+        let fixedConstant: Double = logarithmic ? 1 : 0
         let coefficients = (0..<k).reversed().map { transform(fit.coefficients[$0]) }
-            + [constant ? transform(fit.coefficients[k]) : (logarithmic ? 1 : 0)]
+            + [constant ? transform(fit.coefficients[k]) : fixedConstant]
         guard statistics else { return .block([coefficients.map(CellValue.number)]) }
         let errors = (0..<k).reversed().map { fit.standardErrors[$0] } + [constant ? fit.standardErrors[k] : .nan]
         let width = k + 1

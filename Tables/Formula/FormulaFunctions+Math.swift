@@ -3,7 +3,10 @@ import Foundation
 extension FormulaFunctions {
     static let mathFunctions: [String: FunctionSpec] = [
         "ABS": .unary { abs($0) },
-        "SIGN": .unary { $0 > 0 ? 1 : ($0 < 0 ? -1 : 0) },
+        "SIGN": .unary { value in
+            if value > 0 { return 1 }
+            return value < 0 ? -1 : 0
+        },
         "INT": .unary { FormulaMath.significant($0).rounded(.down) },
         "TRUNC": FunctionSpec(1...2) { call throws(CellError) in
             .number(FormulaMath.round(try call.number(0), digits: try call.integer(1, default: 0), rule: .towardZero))

@@ -227,12 +227,11 @@ extension FormulaFunctions {
             let lower = whole ? low.rounded(.up) : low
             let upper = whole ? high.rounded(.down) : high
             guard lower <= upper else { throw .valueError }
-            return .block((0..<rows).map { _ in
-                (0..<columns).map { _ in
-                    .number(whole ? Double(Int.random(in: Int(lower)...Int(upper)))
-                            : (lower == upper ? lower : Double.random(in: lower..<upper)))
-                }
-            })
+            func draw() -> CellValue {
+                if whole { return .number(Double(Int.random(in: Int(lower)...Int(upper)))) }
+                return .number(lower == upper ? lower : Double.random(in: lower..<upper))
+            }
+            return .block((0..<rows).map { _ in (0..<columns).map { _ in draw() } })
         },
         "SEQUENCE": FunctionSpec(1...4, lifts: .none) { call throws(CellError) in
             let rows = try call.integer(0, default: 1)

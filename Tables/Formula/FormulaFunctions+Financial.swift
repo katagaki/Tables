@@ -266,7 +266,8 @@ extension FormulaFunctions {
                   basis != 2 else { throw .numberError }
             // The French declining-balance coefficient depends on the asset's life.
             let usefulLife = 1 / rate
-            rate *= usefulLife < 3 ? 1 : (usefulLife < 5 ? 1.5 : (usefulLife <= 6 ? 2 : 2.5))
+            let coefficient: Double = if usefulLife < 3 { 1 } else if usefulLife < 5 { 1.5 } else if usefulLife <= 6 { 2 } else { 2.5 }
+            rate *= coefficient
             var depreciation = (FormulaDates.yearFraction(purchased, firstPeriod, basis: basis) * rate * cost).rounded()
             cost -= depreciation
             var rest = cost - salvage
@@ -599,7 +600,8 @@ enum FormulaFinance {
     /// which may be fractional, never taking the value below salvage.
     static func decliningBalance(cost: Double, salvage: Double, life: Double, period: Double, factor: Double) -> Double {
         let rate = min(1, factor / life)
-        let previous = rate >= 1 ? (period <= 1 ? cost : 0) : cost * pow(1 - rate, period - 1)
+        let firstPeriodOnly: Double = period <= 1 ? cost : 0
+        let previous = rate >= 1 ? firstPeriodOnly : cost * pow(1 - rate, period - 1)
         let current = rate >= 1 ? 0 : cost * pow(1 - rate, period)
         let depreciation = current < salvage ? previous - salvage : previous - current
         return max(0, depreciation)
@@ -816,6 +818,13 @@ enum FormulaFinance {
     }
 
     /// A security whose last coupon period is odd.
+    /// Days in a quasi-coupon period: actual under basis 1, otherwise a
+    /// fixed share of a 365- or 360-day year.
+    static func quasiPeriodLength(_ start: Double, _ end: Double, basis: Int, frequency: Double) -> Double {
+        if basis == 1 { return end - start }
+        return (basis == 3 ? 365 : 360) / frequency
+    }
+
     struct OddLastPeriod {
         let settlement: Double
         let maturity: Double
@@ -847,7 +856,7 @@ enum FormulaFinance {
             var accrued = 0.0
             var remaining = 0.0
             for (start, end) in periods {
-                let length = basis == 1 ? end - start : (basis == 3 ? 365 / frequency : 360 / frequency)
+                let length = FormulaFinance.quasiPeriodLength(start, end, basis: basis, frequency: frequency)
                 let from = max(start, lastInterest)
                 let to = min(end, maturity)
                 counted += FormulaFinance.days(from, to, basis: basis) / length
@@ -901,7 +910,7 @@ enum FormulaFinance {
         }
 
         private func length(_ start: Double, _ end: Double) -> Double {
-            basis == 1 ? end - start : (basis == 3 ? 365 / frequency : 360 / frequency)
+            FormulaFinance.quasiPeriodLength(start, end, basis: basis, frequency: frequency)
         }
 
         func price(yield: Double) -> Double {

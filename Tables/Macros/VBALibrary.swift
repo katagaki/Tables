@@ -92,7 +92,7 @@ enum VBALibrary {
         case "strcomp":
             let order = VBAOperators.compareText(try call.string(0), try call.string(1),
                                                  textCompare: try call.optionalInteger(2) == 1)
-            return .integer(order == .orderedAscending ? -1 : order == .orderedSame ? 0 : 1)
+            return .integer(order.rawValue)
         case "strreverse": return .string(String(try call.string(0).reversed()))
         case "space", "space$": return .string(String(repeating: " ", count: max(0, try call.integer(0))))
         case "string", "string$":
@@ -155,7 +155,8 @@ enum VBALibrary {
             return .double(abs(try value.asDouble()))
         case "sgn":
             let number = try call.scalar(0).asDouble()
-            return .integer(number > 0 ? 1 : number < 0 ? -1 : 0)
+            let sign = if number > 0 { 1 } else if number < 0 { -1 } else { 0 }
+            return .integer(sign)
         case "int":
             let value = try call.scalar(0)
             if case .integer = value { return value }

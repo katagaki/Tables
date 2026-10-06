@@ -180,7 +180,7 @@ enum VBALexer {
             }
             let two = peek(1).map { String([character, $0]) }
             if let two, ["<>", "<=", ">=", ":=", "=<", "=>"].contains(two) {
-                emit(.symbol(two == "=<" ? "<=" : two == "=>" ? ">=" : two))
+                emit(.symbol(["=<": "<=", "=>": ">="][two] ?? two))
                 index += 2
                 continue
             }

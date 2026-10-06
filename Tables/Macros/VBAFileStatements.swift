@@ -169,7 +169,8 @@ extension VBAInterpreter {
             let date = String(format: "%04d-%02d-%02d", parts.year!, parts.month!, parts.day!)
             let time = String(format: "%02d:%02d:%02d", parts.hour!, parts.minute!, parts.second!)
             let wholeDay = serial == serial.rounded(.down)
-            return "#" + (serial.rounded(.down) == 0 && !wholeDay ? time : wholeDay ? date : date + " " + time) + "#"
+            if serial.rounded(.down) == 0 && !wholeDay { return "#" + time + "#" }
+            return "#" + (wholeDay ? date : date + " " + time) + "#"
         case .integer, .double: return try value.asString()
         case .object, .nothing, .array: throw VBAError.typeMismatch
         }
