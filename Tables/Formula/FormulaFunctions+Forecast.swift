@@ -167,8 +167,12 @@ struct FormulaSmoothing {
             level = values[0]
             trend = values[1] - values[0]
         }
-        var errors: [Double] = []
+        // The nonseasonal initial level already represents the first observation.
+        // Updating it again predicts the second point against the first and biases
+        // an otherwise exact linear trend. Keep its initialization residual zero.
+        var errors: [Double] = season == 0 ? [0] : []
         for (index, value) in values.enumerated() {
+            if season == 0 && index == 0 { continue }
             let s = season > 0 ? seasonal[index % m] : 0
             let prediction = level + trend + s
             errors.append(value - prediction)

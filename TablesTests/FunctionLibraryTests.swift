@@ -888,8 +888,10 @@ struct ForecastTests {
         #expect(close(evaluate("=FORECAST.ETS(13,B1:B12,A1:A12)", with: seasonal), 129, tolerance: 0.02))
         #expect(close(evaluate("=FORECAST.ETS(14,B1:B12,A1:A12)", with: seasonal), 124, tolerance: 0.02))
         #expect(evaluate("=FORECAST.ETS.STAT(B1:B12,A1:A12,8)", with: seasonal) == .number(1))
+        // A noisy series must have a finite, positive interval; detailed
+        // confidence and scale contracts live in FormulaContractTests.
         if case .number(let width) = evaluate("=FORECAST.ETS.CONFINT(13,B1:B12,A1:A12)", with: seasonal) {
-            #expect(width >= 0)
+            #expect(width.isFinite && width > 0)
         } else {
             Issue.record("No confidence interval")
         }
