@@ -393,4 +393,54 @@ struct VBALanguageAdditionTests {
         #expect((try #require(throws: VBAError.self) { try interpreter.run("Main") }).number == 3)
     }
 
+    @Test("RaiseEvent reaches WithEvents variables in classes and document modules, ByRef arguments included")
+    func events() throws {
+        let source = """
+        Public Event Changed(ByVal value As Long, Cancel As Boolean)
+        Private mValue As Long
+
+        Public Property Let Value(ByVal v As Long)
+            Dim cancel As Boolean
+            RaiseEvent Changed(v, cancel)
+            If Not cancel Then mValue = v
+        End Property
+
+        Public Property Get Value() As Long
+            Value = mValue
+        End Property
+        """
+        let watcher = """
+        Private WithEvents mSource As Source
+        Public Log As String
+
+        Public Sub Watch(s As Source)
+            Set mSource = s
+        End Sub
+
+        Private Sub mSource_Changed(ByVal value As Long, Cancel As Boolean)
+            Log = Log & value & ";"
+            If value < 0 Then Cancel = True
+        End Sub
+        """
+        let sheet = """
+        Public WithEvents Feed As Source
+
+        Private Sub Feed_Changed(ByVal value As Long, Cancel As Boolean)
+            Debug.Print "sheet saw"; value
+        End Sub
+        """
+        let printed = try run("""
+        Sub Main()
+            Dim s As New Source, w As New Watcher
+            w.Watch s
+            Set Sheet1.Feed = s
+            s.Value = 5
+            s.Value = -1
+            Debug.Print s.Value; w.Log
+        End Sub
+        """, extraModules: [("Source", .classModule, source), ("Watcher", .classModule, watcher),
+                            ("Sheet1", .document, sheet)])
+        #expect(printed == ["sheet saw 5 ", "sheet saw-1 ", " 5 5;-1;"])
+    }
+
 }

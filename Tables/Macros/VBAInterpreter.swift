@@ -119,6 +119,13 @@ final class VBAInterpreter {
     /// The workbook's working folder, where file statements read and write.
     /// Without one they report that files are unavailable.
     var fileSystem: VBAFileSystem?
+    /// Instances alive somewhere, weakly: the ones `RaiseEvent` may need to
+    /// tell through their `WithEvents` variables.
+    private var liveInstances: [WeakInstance] = []
+
+    private struct WeakInstance {
+        weak var instance: VBAClassInstance?
+    }
     /// Checked between statements; returning true stops the macro.
     var isCancelled: () -> Bool = { false }
 
@@ -648,6 +655,9 @@ final class VBAInterpreter {
             let padding = String(repeating: " ", count: width - text.count)
             try assignValue(.string(isRight ? padding + text : text + padding), to: target, isSet: false, frame)
 
+        case .raiseEvent(let name, let argumentExpressions):
+            try raiseEvent(name, argumentExpressions, frame)
+
         case .label:
             break
 
@@ -1095,12 +1105,50 @@ final class VBAInterpreter {
         return variable.value
     }
 
+    // MARK: - Events
+
+    /// `RaiseEvent`: every `WithEvents` variable holding the object raising
+    /// it — in a document module or another class's instance — has its
+    /// `variable_Event` procedure called. Arguments pass by reference, so a
+    /// handler can set a `Cancel` flag the raiser then reads.
+    private func raiseEvent(_ name: String, _ argumentExpressions: [VBAArgument], _ frame: Frame) throws {
+        guard let source = frame.instance else { return }
+        guard frame.module.syntax.events.contains(name.lowercased()) else {
+            throw VBAError(number: 0, "Event not found (\(name))")
+        }
+        var subscribers: [(Module, VBAClassInstance?, String)] = []
+        for module in modules where module.kind != .classModule {
+            for (declaration, _) in module.syntax.variables where declaration.isWithEvents {
+                if case .object(let object)? = module.variables[declaration.name.lowercased()]?.value,
+                   object === source {
+                    subscribers.append((module, nil, declaration.name))
+                }
+            }
+        }
+        for instance in liveInstances.compactMap(\.instance) {
+            for (declaration, _) in instance.module.syntax.variables where declaration.isWithEvents {
+                if case .object(let object)? = instance.variables[declaration.name.lowercased()]?.value,
+                   object === source {
+                    subscribers.append((instance.module, instance, declaration.name))
+                }
+            }
+        }
+        for (module, instance, variable) in subscribers {
+            guard let handler = module.procedure("\(variable)_\(name)", kinds: [.sub]) else { continue }
+            let (positional, named, writeBacks) = try procedureArguments(argumentExpressions, frame)
+            _ = try invoke(handler, in: module, instance: instance, arguments: positional, named: named)
+            for writeBack in writeBacks { try writeBack() }
+        }
+    }
+
     // MARK: - Objects
 
     func instantiate(_ className: String, _ frame: Frame) throws -> any VBAObject {
         if let module = module(named: className), module.kind == .classModule {
             try ensureInitialized()
             let instance = VBAClassInstance(module: module)
+            liveInstances.removeAll { $0.instance == nil }
+            liveInstances.append(WeakInstance(instance: instance))
             let context = try moduleFrame(for: module)
             for (declaration, _) in module.syntax.variables {
                 instance.variables[declaration.name.lowercased()] = try makeVariable(declaration, context)

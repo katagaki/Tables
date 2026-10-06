@@ -54,6 +54,9 @@ struct VBAVariableDeclaration: Hashable, Sendable {
     /// with them. Nil for a scalar.
     var bounds: [VBABound]?
     var isArray: Bool { bounds != nil }
+    /// `Dim WithEvents x As Class`: its object's events reach this module's
+    /// `x_EventName` procedures.
+    var isWithEvents = false
 }
 
 struct VBABound: Hashable, Sendable {
@@ -119,6 +122,7 @@ struct VBAStatement: Sendable {
         /// `LSet` and `RSet`: a string placed left or right within the length
         /// the variable already has.
         case alignedAssign(target: VBAExpression, value: VBAExpression, isRight: Bool)
+        case raiseEvent(String, [VBAArgument])
         /// The `End` statement, which stops everything at once.
         case end
         case stop
@@ -179,6 +183,8 @@ struct VBAModuleSyntax: Sendable {
     /// Names declared with `Declare`: calls into Windows libraries, which
     /// cannot run here. Remembered so calling one says so plainly.
     var externalProcedures: Set<String> = []
+    /// Events a class module declares with `Event`.
+    var events: Set<String> = []
 }
 
 /// One part of a `Print` or `Debug.Print` list.

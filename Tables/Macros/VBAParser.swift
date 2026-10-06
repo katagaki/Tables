@@ -146,13 +146,13 @@ struct VBAParser {
             } else if accept("Enum") {
                 module.enums.append(try parseEnum())
             } else if accept("Event") {
+                module.events.insert(try identifier().lowercased())
                 skipToEndOfLine()
             } else if accept("Const") {
                 for (constantName, value) in try parseConstants() {
                     module.constants.append((constantName, value, isPrivate))
                 }
             } else if accept("Dim") || sawVisibility || isStatic {
-                accept("WithEvents")
                 for declaration in try parseDeclarations() {
                     module.variables.append((declaration, isPrivate))
                 }
@@ -278,7 +278,7 @@ struct VBAParser {
     }
 
     private mutating func parseDeclarator() throws -> VBAVariableDeclaration {
-        accept("WithEvents")
+        let isWithEvents = accept("WithEvents")
         let name = try identifier()
         var bounds: [VBABound]?
         if acceptSymbol("(") {
@@ -287,7 +287,9 @@ struct VBAParser {
         }
         var type: VBATypeName?
         if accept("As") { type = try parseTypeName() }
-        return VBAVariableDeclaration(name: name, type: type, bounds: bounds)
+        var declaration = VBAVariableDeclaration(name: name, type: type, bounds: bounds)
+        declaration.isWithEvents = isWithEvents
+        return declaration
     }
 
     private mutating func parseBounds() throws -> [VBABound] {
@@ -458,7 +460,7 @@ struct VBAParser {
             advance()
             return statement(.call(.call(.identifier("__DebugAssert"), [VBAArgument(value: try parseExpression())])))
         }
-        for keyword in ["RaiseEvent", "Load", "Unload"]
+        for keyword in ["Load", "Unload"]
         where isKeyword(keyword) && !(peek(1) == .symbol("=") || peek(1) == .symbol(".")) {
             let start = line
             var text = keyword
@@ -487,7 +489,7 @@ struct VBAParser {
     }
 
     /// The statements whose syntax is not that of a call: file I/O with its
-    /// `#` numbers, `LSet`/`RSet`. Nil for any other word.
+    /// `#` numbers, `LSet`/`RSet`, `RaiseEvent`. Nil for any other word.
     private mutating func parseKeywordStatement(_ word: String) throws -> VBAStatement.Kind? {
         switch word {
         case "open":
@@ -597,6 +599,15 @@ struct VBAParser {
             let target = try parsePostfix(statementStart: false)
             try expectSymbol("=")
             return .alignedAssign(target: target, value: try parseExpression(), isRight: word == "rset")
+        case "raiseevent":
+            advance()
+            let name = try identifier()
+            var arguments: [VBAArgument] = []
+            if acceptSymbol("(") {
+                arguments = try parseArgumentList(closing: ")")
+                try expectSymbol(")")
+            }
+            return .raiseEvent(name, arguments)
         default:
             return nil
         }
