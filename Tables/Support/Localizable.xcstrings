@@ -13024,41 +13024,6 @@
         }
       }
     },
-    "Macro.Syntax.AddressOf" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AddressOf isn’t supported in Tables"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tables では AddressOf を使用できません"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tables에서는 AddressOf를 지원하지 않습니다"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tables 不支持 AddressOf"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tables 不支援 AddressOf"
-          }
-        }
-      }
-    },
     "Macro.Syntax.CannotExit" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13654,6 +13619,76 @@
         }
       }
     },
+    "Macro.Unavailable.AddressOf" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AddressOf isn’t available in Tables. It is only used with Windows functions, which can’t be called here."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables では AddressOf を使用できません。AddressOf は Windows の関数と組み合わせてのみ使われますが、ここでは Windows の関数を呼び出せません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables에서는 AddressOf를 사용할 수 없습니다. AddressOf는 Windows 함수와 함께만 사용되며, 여기서는 Windows 함수를 호출할 수 없습니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables 不支持 AddressOf。它只与 Windows 函数一起使用，而这里无法调用 Windows 函数。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables 不支援 AddressOf。它只與 Windows 函數一起使用，而這裡無法呼叫 Windows 函數。"
+          }
+        }
+      }
+    },
+    "Macro.Unavailable.Declare" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is a Windows function, which Tables can’t call."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ は Windows の関数のため、Tables から呼び出すことはできません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@은(는) Windows 함수이므로 Tables에서 호출할 수 없습니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 是 Windows 函数，Tables 无法调用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 是 Windows 函數，Tables 無法呼叫。"
+          }
+        }
+      }
+    },
     "Macro.Unavailable.Files" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13689,6 +13724,41 @@
         }
       }
     },
+    "Macro.Unavailable.GetObject" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GetObject isn’t available in Tables. There are no other applications or their files for a macro to connect to."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables では GetObject を使用できません。マクロから接続できる他のアプリケーションやそのファイルはありません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables에서는 GetObject를 사용할 수 없습니다. 매크로가 연결할 다른 응용 프로그램이나 그 파일이 없습니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables 不支持 GetObject。没有可供宏连接的其他应用程序或其文件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables 不支援 GetObject。沒有可供巨集連接的其他應用程式或其檔案。"
+          }
+        }
+      }
+    },
     "Macro.Unavailable.Shell" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13720,6 +13790,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在 Tables 中，Shell 只能打開網頁和 App 連結（例如 https:// 位址），不能啟動程式或打開檔案。"
+          }
+        }
+      }
+    },
+    "Macro.Unavailable.UserForms" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "UserForms aren’t available in Tables, so Load and Unload can’t run."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables ではユーザーフォームを使用できないため、Load と Unload は実行できません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables에서는 사용자 정의 폼을 사용할 수 없으므로 Load와 Unload를 실행할 수 없습니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables 不支持用户窗体，因此无法运行 Load 和 Unload。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables 不支援使用者表單，因此無法執行 Load 和 Unload。"
           }
         }
       }

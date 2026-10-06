@@ -460,17 +460,6 @@ struct VBAParser {
             advance()
             return statement(.call(.call(.identifier("__DebugAssert"), [VBAArgument(value: try parseExpression())])))
         }
-        for keyword in ["Load", "Unload"]
-        where isKeyword(keyword) && !(peek(1) == .symbol("=") || peek(1) == .symbol(".")) {
-            let start = line
-            var text = keyword
-            advance()
-            while !atEndOfStatement {
-                text += " " + describe(current)
-                advance()
-            }
-            return [VBAStatement(kind: .unsupported(text), line: start)]
-        }
         // Statements with syntax of their own. A name followed by `=` or `.`
         // is a variable or object that happens to share the word.
         if case .identifier(let word) = current, peek(1) != .symbol("="), peek(1) != .symbol(".") {
@@ -608,6 +597,10 @@ struct VBAParser {
                 try expectSymbol(")")
             }
             return .raiseEvent(name, arguments)
+        case "load", "unload":
+            advance()
+            while !atEndOfStatement { advance() }
+            return .unsupported(String(localized: "Macro.Unavailable.UserForms"))
         default:
             return nil
         }
@@ -982,7 +975,8 @@ struct VBAParser {
                 while acceptSymbol(".") { className = try identifier() }
                 return .typeOfIs(subject, className)
             case "addressof":
-                throw error(VBASyntaxError.text("Macro.Syntax.AddressOf"))
+                advance()
+                return .addressOf(try identifier())
             default:
                 if Self.reservedWords.contains(name.lowercased()) {
                     throw error(VBASyntaxError.text("Macro.Syntax.Unexpected", name))

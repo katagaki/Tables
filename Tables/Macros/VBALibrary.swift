@@ -359,7 +359,7 @@ enum VBALibrary {
             interpreter.host?.showSendKeys(try call.string(0, "String"))
             return .empty
         case "getobject":
-            throw VBAError.notSupported(name)
+            throw VBAError(number: 445, String(localized: "Macro.Unavailable.GetObject"))
         case "callbyname":
             return try callByName(call, arguments, interpreter: interpreter)
 

@@ -29,6 +29,9 @@ indirect enum VBAExpression: Hashable, Sendable {
     case new(String)
     case me
     case typeOfIs(VBAExpression, String)
+    /// `AddressOf Name`, which only means something to Windows API calls.
+    /// Parsed so the module still loads; evaluating it fails.
+    case addressOf(String)
 }
 
 struct VBAArgument: Hashable, Sendable {

@@ -443,4 +443,38 @@ struct VBALanguageAdditionTests {
         #expect(printed == ["sheet saw 5 ", "sheet saw-1 ", " 5 5;-1;"])
     }
 
+    @Test("AddressOf, Declare, UserForms and GetObject are explicitly unavailable, without stopping the module")
+    func unavailable() throws {
+        let source = """
+        Private Declare PtrSafe Function GetTickCount Lib "kernel32" () As Long
+
+        Sub Main()
+            Debug.Print "runs"
+        End Sub
+
+        Sub UsesAddressOf()
+            Dim p
+            p = AddressOf Main
+        End Sub
+
+        Sub UsesDeclare()
+            Debug.Print GetTickCount()
+        End Sub
+
+        Sub UsesForm()
+            Load UserForm1
+        End Sub
+
+        Sub UsesGetObject()
+            Dim o
+            Set o = GetObject(, "Excel.Application")
+        End Sub
+        """
+        #expect(try run(source) == ["runs"])
+        let interpreter = try VBAInterpreter(modules: [("Module1", .standard, source)], host: FileTestHost())
+        for procedure in ["UsesAddressOf", "UsesDeclare", "UsesForm", "UsesGetObject"] {
+            let error = try #require(throws: VBAError.self, "\(procedure)") { try interpreter.run(procedure) }
+            #expect(error.number == 445, "\(procedure)")
+        }
+    }
 }
