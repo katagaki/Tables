@@ -69,33 +69,26 @@ final class MacroRunner {
         let lines = Mutex<[String]>([])
         // The closures live only as long as the run, so holding the runner
         // strongly costs nothing.
+        let show: @Sendable (Prompt.Kind, String?, String) -> Void = { kind, title, text in
+            Task { @MainActor in self.prompt = Prompt(kind: kind, title: title, text: text) }
+        }
         let interaction = VBAInteraction(
             messageBox: { text, buttons, title in
-                let answer = channel.ask {
-                    Task { @MainActor in self.prompt = Prompt(kind: .message(buttons: buttons), title: title, text: text) }
-                }
+                let answer = channel.ask { show(.message(buttons: buttons), title, text) }
                 // Stopping mid-question answers Cancel, or OK where there is none.
                 return answer.button ?? (buttons & 0xF == 0 ? 1 : 2)
             },
             inputBox: { text, title, defaultText in
-                channel.ask {
-                    Task { @MainActor in
-                        self.prompt = Prompt(kind: .input(defaultText: defaultText), title: title, text: text)
-                    }
-                }.text
+                channel.ask { show(.input(defaultText: defaultText), title, text) }.text
             },
             debugPrint: { line in lines.withLock { $0.append(line) } },
             openURL: { url in
                 // The link opens on the main thread when the user agrees;
                 // the macro only learns whether it did.
-                channel.ask {
-                    Task { @MainActor in self.prompt = Prompt(kind: .openLink(url), title: nil, text: url.absoluteString) }
-                }.button == 1
+                channel.ask { show(.openLink(url), nil, url.absoluteString) }.button == 1
             },
             showSendKeys: { keys in
-                _ = channel.ask {
-                    Task { @MainActor in self.prompt = Prompt(kind: .sendKeys(keys), title: nil, text: keys) }
-                }
+                _ = channel.ask { show(.sendKeys(keys), nil, keys) }
             }
         )
 
