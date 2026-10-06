@@ -30,7 +30,12 @@ struct WorkbookView: View {
                 .onKeyPress(action: handleKeyPress)
                 .overlay(alignment: .bottom) {
                     #if os(iOS)
-                    FloatingActionBar(workbook: workbook, state: state, namespace: panelTransition)
+                    FloatingActionBar(
+                        workbook: workbook, state: state, namespace: panelTransition,
+                        // Any workbook can be given macros; delimited text has nowhere to keep them.
+                        showMacros: document.isPlainText ? nil : { isShowingMacros = true },
+                        isMacroRunning: macroRunner.isRunning
+                    )
                         .padding(.bottom, 8)
                     #endif
                 }
@@ -184,7 +189,8 @@ struct WorkbookView: View {
 
     @ToolbarContentBuilder
     private var sharingToolbar: some ToolbarContent {
-        // Any workbook can be given macros; delimited text has nowhere to keep them.
+        #if os(macOS)
+        // On iOS this lives in the floating action bar instead.
         if !document.isPlainText {
             ToolbarItem(placement: .primaryAction) {
                 Button("Toolbar.Macros", systemImage: "curlybraces") { isShowingMacros = true }
@@ -193,6 +199,7 @@ struct WorkbookView: View {
                     .accessibilityIdentifier("macros")
             }
         }
+        #endif
         // Declared before the share button so it sits beside it on the inside.
         if !document.unsupportedFeatures.isEmpty {
             ToolbarItem(placement: .primaryAction) {

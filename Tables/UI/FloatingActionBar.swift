@@ -8,6 +8,9 @@ struct FloatingActionBar: View {
     @Bindable var state: EditorState
     /// Lets the panels this bar opens zoom out of the button that opened them.
     var namespace: Namespace.ID
+    /// Opens the Macros sheet; nil where a file has nowhere to keep macros.
+    var showMacros: (() -> Void)?
+    var isMacroRunning = false
 
     private var style: CellStyle { state.representativeStyle(in: workbook) }
 
@@ -57,6 +60,13 @@ struct FloatingActionBar: View {
                     }
                     panelAction("function", label: "Panel.Functions.Title", panel: .functions)
                     insertChartMenu
+                    // Here rather than in the navigation bar, which on iPhone
+                    // has no room for it beside Undo and Redo.
+                    if let showMacros {
+                        action("curlybraces", isOn: false, label: "Toolbar.Macros", perform: showMacros)
+                            .disabled(isMacroRunning)
+                            .accessibilityIdentifier("macros")
+                    }
                 }
 
                 if state.selectedChartID != nil {
