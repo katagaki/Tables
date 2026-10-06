@@ -110,6 +110,28 @@ def placeholder_sheets(wb, *names):
         wb.create_sheet(name)["A1"] = name
 
 
+def style_row(ws, row, cols, **attributes):
+    """Sets the same attributes on each cell of `row` in `cols`, given as
+    column letters or numbers."""
+    for col in cols:
+        cell = ws.cell(row=row, column=col) if isinstance(col, int) else ws[f"{col}{row}"]
+        for name, value in attributes.items():
+            setattr(cell, name, value)
+
+
+def without_tags(data, tag, marker):
+    """Drops each `tag` element whose attributes contain `marker`."""
+    return re.sub(rb"<" + tag + rb"\b[^>]*>", lambda m: b"" if marker in m.group(0) else m.group(0), data)
+
+
+def task_status(done, note):
+    if done == 1:
+        return "done"
+    if note.startswith("Waiting"):
+        return "blocked"
+    return "doing" if done > 0 else "todo"
+
+
 def save(wb, name):
     """Writes the workbook without the parts Tables would flag.
 
@@ -126,9 +148,9 @@ def save(wb, name):
                 continue
             data = src.read(item.filename)
             if item.filename == "[Content_Types].xml":
-                data = re.sub(rb'<Override[^>]*PartName="/docProps/[^"]*"[^>]*/>', b"", data)
+                data = without_tags(data, b"Override", b'PartName="/docProps/')
             if item.filename == "_rels/.rels":
-                data = re.sub(rb'<Relationship[^>]*Target="[^"]*docProps/[^"]*"[^>]*/>', b"", data)
+                data = without_tags(data, b"Relationship", b'docProps/')
             if item.filename == "xl/styles.xml":
                 data = data.replace(b'rgb="00', b'rgb="FF')
             dst.writestr(item, data)
@@ -161,12 +183,10 @@ def budget_iphone():
     over = []
     for i, ((en, ja, budget, _), s) in enumerate(zip(EXPENSES, spent), start=4):
         ws.append([t(en, ja), budget, s, f"=B{i}-C{i}", f"=C{i}/B{i}"])
-        for col in "BCD":
-            ws[f"{col}{i}"].number_format = CREDITS
+        style_row(ws, i, "BCD", number_format=CREDITS)
         ws[f"E{i}"].number_format = "0.0%"
         if i % 2 == 0:
-            for col in "ABCDE":
-                ws[f"{col}{i}"].fill = fill("EAF1FB")
+            style_row(ws, i, "ABCDE", fill=fill("EAF1FB"))
         if s > budget:
             over.append(i)
     last = 3 + len(EXPENSES)
@@ -191,8 +211,7 @@ def budget_iphone():
                                       ("Scrap sales", "スクラップ売却", 64000, 81000, 77300),
                                       ("Nonomi's card", "ノノミのカード", 300000, 300000, 300000)], start=2):
         inc.append([t(en, ja), *m, f"=SUM(B{i}:D{i})"])
-        for col in "BCDE":
-            inc[f"{col}{i}"].number_format = CREDITS
+        style_row(inc, i, "BCDE", number_format=CREDITS)
     grid(inc, 2, 5, 1, 5)
     widths(inc, {"A": 16, "B": 11, "C": 11, "D": 11, "E": 12})
 
@@ -232,19 +251,15 @@ def budget_ipad():
         ws.cell(row=row, column=14, value=f"=SUM(B{row}:M{row})").number_format = CREDITS
         ws.cell(row=row, column=14).font = Font(bold=True)
         if stripe:
-            for c in range(1, 15):
-                ws.cell(row=row, column=c).fill = fill(stripe)
+            style_row(ws, row, range(1, 15), fill=fill(stripe))
 
     def total_row(row, label, first, last, color):
         ws.cell(row=row, column=1, value=label)
         for c in range(2, 15):
             col = L(c)
             ws.cell(row=row, column=c, value=f"=SUM({col}{first}:{col}{last})").number_format = CREDITS
-        for c in range(1, 15):
-            cell = ws.cell(row=row, column=c)
-            cell.font = Font(bold=True)
-            cell.fill = fill(color)
-            cell.border = Border(top=med, bottom=dbl, left=thin, right=thin)
+        style_row(ws, row, range(1, 15), font=Font(bold=True), fill=fill(color),
+                  border=Border(top=med, bottom=dbl, left=thin, right=thin))
 
     section(3, t("Income", "収入"), "375623")
     income = [("Bounties", "賞金", 600000, 0.25), ("Part-time jobs", "アルバイト", 120000, 0.1),
@@ -272,10 +287,7 @@ def budget_ipad():
         if c < 14:
             ws.cell(row=net + 1, column=c, value=f"=SUM($B${net}:{col}{net})").number_format = CREDITS
     for r in (net, net + 1):
-        for c in range(1, 15):
-            ws.cell(row=r, column=c).font = Font(bold=True, color="1F3864")
-            ws.cell(row=r, column=c).border = box
-            ws.cell(row=r, column=c).fill = fill("FFF2CC")
+        style_row(ws, r, range(1, 15), font=Font(bold=True, color="1F3864"), border=box, fill=fill("FFF2CC"))
     widths(ws, {"A": 19, **{L(c): 11 for c in range(2, 14)}, "N": 14})
     placeholder_sheets(wb, t("Income", "収入"), t("Debt", "借金"))
     save(wb, t("Abydos Budget.xlsx", "アビドス予算.xlsx"))
@@ -374,7 +386,7 @@ def plan_ipad():
         ws.cell(row=r, column=1).fill = fill(color)
         r += 1
         for ten, tja, oen, oja, s, e, done, nen, nja in tasks:
-            st = "done" if done == 1 else ("blocked" if nen.startswith("Waiting") else ("doing" if done > 0 else "todo"))
+            st = task_status(done, nen)
             ws.append([t(ten, tja), t(oen, oja), dt.date(2026, *s), dt.date(2026, *e), f"=D{r}-C{r}+1", done,
                        None, t(nen, nja)])
             ws[f"C{r}"].number_format = DAY
@@ -383,14 +395,12 @@ def plan_ipad():
             ws[f"F{r}"].number_format = "0%"
             status_cell(ws[f"G{r}"], st)
             ws[f"H{r}"].font = Font(italic=True, color="595959")
-            for c in range(1, 9):
-                ws.cell(row=r, column=c).border = box
+            style_row(ws, r, range(1, 9), border=box)
             r += 1
     ws.cell(row=r, column=1, value=t("Overall progress", "全体の進捗")).font = Font(bold=True)
     ws.cell(row=r, column=6, value=f"=AVERAGE(F4:F{r - 1})").number_format = "0%"
     ws.cell(row=r, column=6).font = Font(bold=True)
-    for c in range(1, 9):
-        ws.cell(row=r, column=c).border = Border(top=med)
+    style_row(ws, r, range(1, 9), border=Border(top=med))
     widths(ws, {"A": 24, "B": 10, "C": 9, "D": 9, "E": 8, "F": 9, "G": 15, "H": 40})
     placeholder_sheets(wb, t("Schools", "学園"), t("Budget", "予算"), t("Notes", "メモ"))
     save(wb, t("Festival Plan.xlsx", "合同祭計画.xlsx"))
@@ -477,7 +487,7 @@ def grades_ipad():
             cell.number_format = "0.0"
             cell.alignment = Alignment(horizontal="center")
     grid(ws, 2, n, 1, 14)
-    widths(ws, {"A": 12, "B": 14, **{c: 11 for c in "CDEFGHIJK"}, "L": 11, "M": 9, "N": 8})
+    widths(ws, {"A": 12, "B": 14, **dict.fromkeys("CDEFGHIJK", 11), "L": 11, "M": 9, "N": 8})
     placeholder_sheets(wb, t("Term 1", "1学期"), t("Attendance", "出欠"))
     save(wb, t("Supplementary Lessons.xlsx", "補習授業.xlsx"))
 
@@ -527,7 +537,7 @@ def clubs_ipad():
         cell.fill = fill("843C0C")
         cell.number_format = "0.0%" if c == "M" else CREDITS
     grid(ws, 2, n, 1, 13)
-    widths(ws, {"A": 26, "B": 16, **{c: 12 for c in "CDEFGHIJK"}, "L": 13, "M": 11})
+    widths(ws, {"A": 26, "B": 16, **dict.fromkeys("CDEFGHIJK", 12), "L": 13, "M": 11})
 
     by_school = wb.create_sheet(t("By School", "学園別"))
     by_school.append([t("School", "学園"), t("Total", "合計"), t("Share", "割合")])
