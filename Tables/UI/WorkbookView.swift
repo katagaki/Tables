@@ -134,7 +134,7 @@ struct WorkbookView: View {
         if activeSheet.isChartSheet {
             ChartSheetView(workbook: workbook, state: state, sheet: activeSheet)
         } else {
-            SheetGridView(workbook: workbook, state: state)
+            SheetGridView(workbook: workbook, state: state, runMacro: runControlMacro)
         }
     }
 
@@ -414,6 +414,27 @@ struct WorkbookView: View {
             if let failure = outcome.failure {
                 state.errorMessage = String(format: String(localized: "Macros.Failed"), failure)
             }
+        }
+    }
+
+    /// Runs the macro a form control names, asking first as the macro list
+    /// does. Excel lets the name leave out the module.
+    private func runControlMacro(_ control: FormControl) {
+        guard let target = control.macroTarget else { return }
+        let catalog = document.workbook.macroProject
+            .flatMap { try? VBAProject(data: $0) }
+            .map { MacroCatalog(project: $0) } ?? MacroCatalog()
+        func same(_ lhs: String, _ rhs: String) -> Bool { lhs.caseInsensitiveCompare(rhs) == .orderedSame }
+        guard let macro = catalog.macros.first(where: { macro in
+            same(macro.procedure, target.procedure) && (target.module.map { same($0, macro.module) } ?? true)
+        }) else {
+            state.errorMessage = String(format: String(localized: "FormControl.MacroNotFound"), control.macro ?? "")
+            return
+        }
+        if hasAllowedMacros {
+            runMacro(macro)
+        } else {
+            pendingMacro = macro
         }
     }
 

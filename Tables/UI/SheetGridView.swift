@@ -14,6 +14,8 @@ import SwiftUI
 struct SheetGridView: View {
     @Binding var workbook: Workbook
     @Bindable var state: EditorState
+    /// Runs the macro a form control was clicked for.
+    var runMacro: (FormControl) -> Void = { _ in }
 
     /// Room past the last row and column so the final cells can scroll clear of
     /// the floating controls.
@@ -662,15 +664,18 @@ struct SheetGridView: View {
     @ViewBuilder
     private var chartOverlay: some View {
         let sheet = activeSheet
-        if !sheet.charts.isEmpty || !sheet.preservedDrawingAnchors.isEmpty {
+        if !sheet.charts.isEmpty || !sheet.preservedDrawingAnchors.isEmpty || !sheet.formControls.isEmpty {
             let window = CGRect(
                 x: state.scrollOffset.x, y: state.scrollOffset.y,
                 width: state.viewportSize.width, height: state.viewportSize.height
             ).insetBy(dx: -200, dy: -200)
 
+            // A form control's hidden DrawingML twin gives way to the control.
+            let controlIDs = Set(sheet.formControls.map(\.id))
+
             ZStack(alignment: .topLeading) {
                 ForEach(sheet.preservedDrawingAnchors) { anchor in
-                    if let placement = anchor.placement {
+                    if let placement = anchor.placement, !(anchor.vmlShapeID.map(controlIDs.contains) ?? false) {
                         let frame = placement.frame(in: metrics)
                         if frame.intersects(window), frame.width > 0, frame.height > 0 {
                             keptDrawing(anchor, frame: frame)
@@ -683,8 +688,51 @@ struct SheetGridView: View {
                         embeddedChart(chart, frame: frame)
                     }
                 }
+                ForEach(sheet.formControls) { control in
+                    let frame = control.placement.frame(in: metrics)
+                    if !control.isHidden, frame.intersects(window), frame.width > 0, frame.height > 0 {
+                        formControl(control, frame: frame)
+                    }
+                }
             }
         }
+    }
+
+    private func formControl(_ control: FormControl, frame: CGRect) -> some View {
+        let sheet = activeSheet
+        let checkState: FormControl.CheckState
+        if control.kind == .optionButton, let index = sheet.formControls.firstIndex(where: { $0.id == control.id }) {
+            checkState = sheet.isOptionChosen(index, in: workbook) ? .checked : .unchecked
+        } else {
+            checkState = control.checkState(in: workbook)
+        }
+        func finishEditing() {
+            if state.editingAddress != nil { state.commitEditing(in: &workbook, then: nil) }
+        }
+        return FormControlView(
+            control: control,
+            checkState: checkState,
+            selection: control.selection(in: workbook),
+            items: control.kind == .dropDown ? control.items(in: workbook) : [],
+            zoom: metrics.zoom,
+            onPress: {
+                finishEditing()
+                switch control.kind {
+                case .checkBox: workbook.toggleCheckBox(control.id, on: sheet.id)
+                case .optionButton: workbook.chooseOptionButton(control.id, on: sheet.id)
+                default: break
+                }
+                if control.macroTarget != nil { runMacro(control) }
+            },
+            onSelect: { item in
+                finishEditing()
+                workbook.selectDropDownItem(item, in: control.id, on: sheet.id)
+                if control.macroTarget != nil { runMacro(control) }
+            },
+            onEditText: { text in workbook.setEditBoxText(text, in: control.id, on: sheet.id) }
+        )
+        .frame(width: frame.width, height: frame.height)
+        .offset(x: frame.minX, y: frame.minY)
     }
 
     private func embeddedChart(_ chart: Chart, frame: CGRect) -> some View {
