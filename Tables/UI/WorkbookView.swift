@@ -109,7 +109,7 @@ struct WorkbookView: View {
                     }
             }
             .navigationTransition(.zoom(sourceID: panel, in: panelTransition))
-            .presentationDetents([.medium, .large])
+            .presentationDetents(panelDetents(panel))
             .presentationDragIndicator(.visible)
             .presentationBackground(.regularMaterial)
         }
@@ -151,6 +151,16 @@ struct WorkbookView: View {
         case .comment: CommentPanel(workbook: workbook, state: state)
         }
     }
+
+    #if os(iOS)
+    /// Formatting panels stay at half height so the cells they change stay in view.
+    private func panelDetents(_ panel: EditorPanel) -> Set<PresentationDetent> {
+        switch panel {
+        case .format, .numberFormat, .rowsAndColumns: return [.medium]
+        case .functions, .chart, .comment: return [.medium, .large]
+        }
+    }
+    #endif
 
     // MARK: - Toolbars
 
