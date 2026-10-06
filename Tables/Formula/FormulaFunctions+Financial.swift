@@ -475,20 +475,26 @@ enum FormulaFinance {
 
     static func presentValue(rate: Double, periods: Double, payment: Double, future: Double, due: Double) -> Double {
         if rate == 0 { return -(future + payment * periods) }
-        let growth = pow(1 + rate, periods)
-        return -(future + payment * (1 + rate * due) * (growth - 1) / rate) / growth
+        // expm1/log1p preserve the annuity factor when the rate is near zero.
+        let increment = rate > -1 ? expm1(periods * log1p(rate)) : pow(1 + rate, periods) - 1
+        let growth = increment + 1
+        return -(future + payment * (1 + rate * due) * increment / rate) / growth
     }
 
     static func futureValue(rate: Double, periods: Double, payment: Double, present: Double, due: Double) -> Double {
         if rate == 0 { return -(present + payment * periods) }
-        let growth = pow(1 + rate, periods)
-        return -(present * growth + payment * (1 + rate * due) * (growth - 1) / rate)
+        // expm1/log1p preserve the annuity factor when the rate is near zero.
+        let increment = rate > -1 ? expm1(periods * log1p(rate)) : pow(1 + rate, periods) - 1
+        let growth = increment + 1
+        return -(present * growth + payment * (1 + rate * due) * increment / rate)
     }
 
     static func payment(rate: Double, periods: Double, present: Double, future: Double, due: Double) -> Double {
         if rate == 0 { return -(present + future) / periods }
-        let growth = pow(1 + rate, periods)
-        return -(present * growth + future) * rate / ((1 + rate * due) * (growth - 1))
+        // expm1/log1p preserve the annuity factor when the rate is near zero.
+        let increment = rate > -1 ? expm1(periods * log1p(rate)) : pow(1 + rate, periods) - 1
+        let growth = increment + 1
+        return -(present * growth + future) * rate / ((1 + rate * due) * increment)
     }
 
     /// The interest part of one payment, arguments as `IPMT` takes them.
