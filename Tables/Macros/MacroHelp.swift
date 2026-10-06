@@ -48,9 +48,13 @@ enum MacroHelp {
     }
 
     static var entries: [Entry] {
-        topics.flatMap { topic in
-            topic.groups.flatMap { group in group.items.map { Entry(name: $0, topic: topic, group: group) } }
+        var entries: [Entry] = []
+        for topic in topics {
+            for group in topic.groups {
+                entries += group.items.map { Entry(name: $0, topic: topic, group: group) }
+            }
         }
+        return entries
     }
 
     static func search(_ query: String) -> [Entry] {

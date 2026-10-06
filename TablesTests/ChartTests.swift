@@ -1116,7 +1116,7 @@ struct ChartTests {
         func rows(_ workbook: Workbook) throws -> [[Int]] {
             try workbook.sheets[0].preservedDrawingAnchors.map { anchor in
                 let root = try XMLLite.parse(Data(anchor.xml.utf8))
-                return ["from", "to"].compactMap { root.firstDescendant(atPath: "\($0)/row").flatMap { Int($0.text) } }
+                return ["from", "to"].compactMap { root.firstDescendant(atPath: "\($0)/row")?.text }.compactMap(Int.init)
             }
         }
         #expect(try rows(workbook) == [[16, 30], [16, 30], [16, 30], [1]])
