@@ -4,8 +4,8 @@ import SwiftUI
 /// and whichever platform chrome belongs on top.
 struct WorkbookView: View {
     @Binding var document: TablesDocument
-    /// The file's name, which macros see as `ThisWorkbook.Name`.
-    var fileName: String?
+    /// Where the file lives, which is what converting it moves.
+    var fileURL: URL?
     @State private var state = EditorState()
     @State private var history = WorkbookHistory()
     @State private var macroRunner = MacroRunner()
@@ -15,6 +15,8 @@ struct WorkbookView: View {
     /// Asked once per window: after that, running a macro just runs it.
     @State private var hasAllowedMacros = false
     @State private var macroInput = ""
+    /// A conversion waiting on the user's say-so because it would drop macros.
+    @State private var pendingConversion: DocumentConversion.Target?
     @Environment(\.undoManager) private var undoManager
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -22,6 +24,8 @@ struct WorkbookView: View {
     @Namespace private var panelTransition
 
     private var workbook: Binding<Workbook> { $document.workbook }
+    /// The file's name, which macros see as `ThisWorkbook.Name`.
+    private var fileName: String? { fileURL?.lastPathComponent }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -68,6 +72,17 @@ struct WorkbookView: View {
             }
         } message: { _ in
             Text("Macros.Confirm.Message")
+        }
+        .toolbarTitleMenu { titleMenu }
+        .confirmationDialog(
+            "Convert.DropMacros.Title",
+            isPresented: Binding(get: { pendingConversion != nil }, set: { if !$0 { pendingConversion = nil } }),
+            titleVisibility: .visible,
+            presenting: pendingConversion
+        ) { target in
+            Button("Convert.DropMacros.Confirm", role: .destructive) { convert(to: target) }
+        } message: { _ in
+            Text("Convert.DropMacros.Message")
         }
         .onAppear {
             state.allowsFormatting = !document.isPlainText
@@ -161,6 +176,53 @@ struct WorkbookView: View {
         }
     }
     #endif
+
+    // MARK: - Title menu
+
+    /// The menu under the file's name: renaming it, and turning it into
+    /// another kind of workbook — which is how a CSV gains formatting.
+    @ViewBuilder
+    private var titleMenu: some View {
+        RenameButton()
+        if let fileURL {
+            Section {
+                ForEach(DocumentConversion.targets(for: fileURL)) { target in
+                    Button(conversionTitle(for: target), systemImage: "arrow.triangle.2.circlepath") {
+                        // An `.xlsx` has nowhere to keep macros; say so first.
+                        if target == .workbook, document.workbook.hasMacros {
+                            pendingConversion = target
+                        } else {
+                            convert(to: target)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func conversionTitle(for target: DocumentConversion.Target) -> LocalizedStringKey {
+        switch target {
+        case .workbook: return "TitleMenu.ConvertToXLSX"
+        case .macroEnabledWorkbook: return "TitleMenu.ConvertToXLSM"
+        }
+    }
+
+    private func convert(to target: DocumentConversion.Target) {
+        guard let fileURL else { return }
+        state.commitEditing(in: &document.workbook, then: nil)
+        let workbook = document.workbook
+        Task {
+            do {
+                _ = try await DocumentConversion.convert(fileAt: fileURL, workbook: workbook, to: target)
+            } catch {
+                state.errorMessage = error.localizedDescription
+                return
+            }
+            document.isPlainText = false
+            document.isMacroEnabled = target == .macroEnabledWorkbook
+            state.allowsFormatting = true
+        }
+    }
 
     // MARK: - Toolbars
 

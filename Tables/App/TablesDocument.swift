@@ -26,10 +26,11 @@ struct TablesDocument: FileDocument {
     /// saved it just for being opened.
     let csvExport = CSVExportChoice()
     /// Whether the file is delimited text, which keeps values but no styling,
-    /// so formatting applied to it would be thrown away on save.
-    let isPlainText: Bool
+    /// so formatting applied to it would be thrown away on save. Settable
+    /// because the file can be converted into a workbook while open.
+    var isPlainText: Bool
     /// Whether the file is an `.xlsm`, the only kind that keeps macros.
-    let isMacroEnabled: Bool
+    var isMacroEnabled: Bool
 
     /// What the opened file used that Tables cannot edit. Empty for anything we
     /// authored ourselves and for CSV, which has no such features to begin with.
