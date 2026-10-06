@@ -3411,7 +3411,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "オブジェクトはそのまま保持されます"
+            "value" : "対応できないオブジェクト"
           }
         },
         "ko" : {
