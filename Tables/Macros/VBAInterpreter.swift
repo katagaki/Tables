@@ -1267,13 +1267,13 @@ final class VBARecord: VBAObject {
         return copy
     }
 
-    func member(_ name: String, _ arguments: VBAArguments, in interpreter: VBAInterpreter) throws -> VBAValue {
+    func member(_ name: String, _: VBAArguments, in _: VBAInterpreter) throws -> VBAValue {
         guard let field = fields[name.lowercased()] else { throw VBAError.unsupportedMember(name) }
         return field.value
     }
 
     func setMember(_ name: String, _ arguments: VBAArguments, to value: VBAValue,
-                   in interpreter: VBAInterpreter) throws {
+                   in _: VBAInterpreter) throws {
         guard let field = fields[name.lowercased()] else { throw VBAError.unsupportedMember(name) }
         if arguments.isEmpty {
             try field.assign(value)
@@ -1358,7 +1358,7 @@ final class VBAErrObject: VBAObject {
         }
     }
 
-    func setMember(_ name: String, _ arguments: VBAArguments, to value: VBAValue,
+    func setMember(_ name: String, _: VBAArguments, to value: VBAValue,
                    in interpreter: VBAInterpreter) throws {
         var error = interpreter.lastError ?? VBAError(number: 0, "")
         switch name.lowercased() {

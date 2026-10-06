@@ -149,7 +149,7 @@ final class VBAExcelHost: VBAHost {
         return true
     }
 
-    func documentObject(codeName: String, in interpreter: VBAInterpreter) -> (any VBAObject)? {
+    func documentObject(codeName: String, in _: VBAInterpreter) -> (any VBAObject)? {
         if let workbookCodeName = workbook.codeName, workbookCodeName.caseInsensitiveCompare(codeName) == .orderedSame {
             return workbookObject
         }
@@ -166,7 +166,7 @@ final class VBAExcelHost: VBAHost {
         VBAExcelConstants.values[name.lowercased()].map(VBAValue.integer)
     }
 
-    func createObject(_ className: String, in interpreter: VBAInterpreter) -> (any VBAObject)? { nil }
+    func createObject(_: String, in _: VBAInterpreter) -> (any VBAObject)? { nil }
 
     func messageBox(prompt: String, buttons: Int, title: String?) -> Int {
         interaction.messageBox(prompt, buttons, title)

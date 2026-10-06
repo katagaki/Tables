@@ -9,14 +9,14 @@ private final class FileTestHost: VBAHost {
     var allowsLinks = true
     var sentKeys: [String] = []
 
-    func globalMember(_ name: String, _ arguments: VBAArguments, in interpreter: VBAInterpreter) throws -> VBAValue? { nil }
-    func setGlobalMember(_ name: String, _ arguments: VBAArguments, to value: VBAValue,
-                         in interpreter: VBAInterpreter) throws -> Bool { false }
-    func documentObject(codeName: String, in interpreter: VBAInterpreter) -> (any VBAObject)? { nil }
-    func constant(named name: String) -> VBAValue? { nil }
-    func createObject(_ className: String, in interpreter: VBAInterpreter) -> (any VBAObject)? { nil }
-    func messageBox(prompt: String, buttons: Int, title: String?) -> Int { 1 }
-    func inputBox(prompt: String, title: String?, defaultText: String) -> String? { nil }
+    func globalMember(_: String, _: VBAArguments, in _: VBAInterpreter) throws -> VBAValue? { nil }
+    func setGlobalMember(_: String, _: VBAArguments, to _: VBAValue,
+                         in _: VBAInterpreter) throws -> Bool { false }
+    func documentObject(codeName _: String, in _: VBAInterpreter) -> (any VBAObject)? { nil }
+    func constant(named _: String) -> VBAValue? { nil }
+    func createObject(_: String, in _: VBAInterpreter) -> (any VBAObject)? { nil }
+    func messageBox(prompt _: String, buttons _: Int, title _: String?) -> Int { 1 }
+    func inputBox(prompt _: String, title _: String?, defaultText _: String) -> String? { nil }
     func debugPrint(_ text: String) { printed.append(text) }
     func openURL(_ url: URL) -> Bool {
         openedURLs.append(url)

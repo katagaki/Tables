@@ -9,17 +9,17 @@ private final class RecordingHost: VBAHost {
     var messageReply = 1
     var inputReply: String? = "typed"
 
-    func globalMember(_ name: String, _ arguments: VBAArguments, in interpreter: VBAInterpreter) throws -> VBAValue? { nil }
-    func setGlobalMember(_ name: String, _ arguments: VBAArguments, to value: VBAValue,
-                         in interpreter: VBAInterpreter) throws -> Bool { false }
-    func documentObject(codeName: String, in interpreter: VBAInterpreter) -> (any VBAObject)? { nil }
-    func constant(named name: String) -> VBAValue? { nil }
-    func createObject(_ className: String, in interpreter: VBAInterpreter) -> (any VBAObject)? { nil }
-    func messageBox(prompt: String, buttons: Int, title: String?) -> Int {
+    func globalMember(_: String, _: VBAArguments, in _: VBAInterpreter) throws -> VBAValue? { nil }
+    func setGlobalMember(_: String, _: VBAArguments, to _: VBAValue,
+                         in _: VBAInterpreter) throws -> Bool { false }
+    func documentObject(codeName _: String, in _: VBAInterpreter) -> (any VBAObject)? { nil }
+    func constant(named _: String) -> VBAValue? { nil }
+    func createObject(_: String, in _: VBAInterpreter) -> (any VBAObject)? { nil }
+    func messageBox(prompt: String, buttons _: Int, title _: String?) -> Int {
         messages.append(prompt)
         return messageReply
     }
-    func inputBox(prompt: String, title: String?, defaultText: String) -> String? { inputReply }
+    func inputBox(prompt _: String, title _: String?, defaultText _: String) -> String? { inputReply }
     func debugPrint(_ text: String) { printed.append(text) }
 }
 

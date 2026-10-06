@@ -157,7 +157,7 @@ private struct GroupView: View {
 private struct FlowLayout: Layout {
     var spacing: CGFloat
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache _: inout ()) -> CGSize {
         let rows = arrange(subviews, width: proposal.width ?? .infinity)
         let width = rows.map { row in row.map(\.size.width).reduce(0, +) + spacing * CGFloat(max(0, row.count - 1)) }
             .max() ?? 0
@@ -165,7 +165,7 @@ private struct FlowLayout: Layout {
         return CGSize(width: min(width, proposal.width ?? width), height: height)
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    func placeSubviews(in bounds: CGRect, proposal _: ProposedViewSize, subviews: Subviews, cache _: inout ()) {
         var y = bounds.minY
         for row in arrange(subviews, width: bounds.width) {
             var x = bounds.minX

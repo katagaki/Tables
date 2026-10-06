@@ -489,7 +489,7 @@ final class VBARangeObject: VBAObject {
         }
     }
 
-    func elements(in interpreter: VBAInterpreter) throws -> [VBAValue] {
+    func elements(in _: VBAInterpreter) throws -> [VBAValue] {
         let area = covered(in: try host.sheet(sheetID))
         switch mode {
         case .cells:
@@ -807,7 +807,7 @@ final class VBAFontObject: VBAObject {
         self.range = range
     }
 
-    func member(_ name: String, _ arguments: VBAArguments, in interpreter: VBAInterpreter) throws -> VBAValue {
+    func member(_ name: String, _: VBAArguments, in _: VBAInterpreter) throws -> VBAValue {
         switch name.lowercased() {
         case "bold": return try range.style { .boolean($0.isBold) }
         case "italic": return try range.style { .boolean($0.isItalic) }
@@ -821,7 +821,7 @@ final class VBAFontObject: VBAObject {
         }
     }
 
-    func setMember(_ name: String, _ arguments: VBAArguments, to value: VBAValue,
+    func setMember(_ name: String, _: VBAArguments, to value: VBAValue,
                    in interpreter: VBAInterpreter) throws {
         let value = try interpreter.letValue(value)
         switch name.lowercased() {
@@ -866,7 +866,7 @@ final class VBAInteriorObject: VBAObject {
         self.range = range
     }
 
-    func member(_ name: String, _ arguments: VBAArguments, in interpreter: VBAInterpreter) throws -> VBAValue {
+    func member(_ name: String, _: VBAArguments, in _: VBAInterpreter) throws -> VBAValue {
         switch name.lowercased() {
         case "", "color": return try range.style { .integer(VBAExcelHost.colorValue($0.fillColorHex) ?? 0xFFFFFF) }
         case "colorindex", "pattern":
@@ -875,7 +875,7 @@ final class VBAInteriorObject: VBAObject {
         }
     }
 
-    func setMember(_ name: String, _ arguments: VBAArguments, to value: VBAValue,
+    func setMember(_ name: String, _: VBAArguments, to value: VBAValue,
                    in interpreter: VBAInterpreter) throws {
         let value = try interpreter.letValue(value)
         switch name.lowercased() {
@@ -926,7 +926,7 @@ final class VBABordersObject: VBAObject {
         }
     }
 
-    func setMember(_ name: String, _ arguments: VBAArguments, to value: VBAValue,
+    func setMember(_ name: String, _: VBAArguments, to value: VBAValue,
                    in interpreter: VBAInterpreter) throws {
         let value = try interpreter.letValue(value)
         let outline = range.range

@@ -130,18 +130,18 @@ protocol FormulaContext: AnyObject {
 extension FormulaContext {
     /// A context with no workbook behind it has no names to resolve.
     func resolveDefinedName(_ name: String, sheetName: String?) -> FormulaValue? { nil }
-    func definedNameReference(_ name: String, sheetName: String?) -> FormulaReference? { nil }
+    func definedNameReference(_: String, sheetName _: String?) -> FormulaReference? { nil }
 
     /// The sheets a 3-D reference spans, in tab order, or nil when either end
     /// does not exist.
-    func sheetNames(from first: String, to last: String) -> [String]? { nil }
-    func cell(at address: CellAddress, sheetName: String?) -> Cell? { nil }
-    func isRowHidden(_ row: Int, sheetName: String?) -> Bool { false }
+    func sheetNames(from _: String, to _: String) -> [String]? { nil }
+    func cell(at _: CellAddress, sheetName _: String?) -> Cell? { nil }
+    func isRowHidden(_: Int, sheetName _: String?) -> Bool { false }
     func sheetNumber(named name: String?) -> Int? { name == nil ? 1 : nil }
     var sheetCount: Int { 1 }
-    func spillRange(anchoredAt address: CellAddress, sheetName: String?) -> CellRange? { nil }
-    func columnWidth(_ column: Int, sheetName: String?) -> Double? { nil }
-    func structuredReference(table: String?, specifier: String, at address: CellAddress?) -> FormulaReference? { nil }
+    func spillRange(anchoredAt _: CellAddress, sheetName _: String?) -> CellRange? { nil }
+    func columnWidth(_: Int, sheetName _: String?) -> Double? { nil }
+    func structuredReference(table _: String?, specifier _: String, at _: CellAddress?) -> FormulaReference? { nil }
 }
 
 struct FormulaEvaluator {

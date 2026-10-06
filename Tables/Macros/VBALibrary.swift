@@ -856,7 +856,7 @@ final class VBACollection: VBAObject {
         }
     }
 
-    func elements(in interpreter: VBAInterpreter) throws -> [VBAValue] { items.map(\.value) }
+    func elements(in _: VBAInterpreter) throws -> [VBAValue] { items.map(\.value) }
 }
 
 // MARK: - Dictionary
@@ -962,7 +962,7 @@ final class VBADictionary: VBAObject {
         }
     }
 
-    func elements(in interpreter: VBAInterpreter) throws -> [VBAValue] { keys }
+    func elements(in _: VBAInterpreter) throws -> [VBAValue] { keys }
 }
 
 // MARK: - RegExp
@@ -1029,7 +1029,7 @@ final class VBARegExp: VBAObject {
         }
     }
 
-    func setMember(_ name: String, _ arguments: VBAArguments, to value: VBAValue,
+    func setMember(_ name: String, _: VBAArguments, to value: VBAValue,
                    in interpreter: VBAInterpreter) throws {
         let value = try interpreter.letValue(value)
         switch name.lowercased() {
@@ -1094,5 +1094,5 @@ final class VBAListObject: VBAObject {
         }
     }
 
-    func elements(in interpreter: VBAInterpreter) throws -> [VBAValue] { items }
+    func elements(in _: VBAInterpreter) throws -> [VBAValue] { items }
 }

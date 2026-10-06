@@ -20,12 +20,12 @@ protocol VBAObject: AnyObject {
 }
 
 extension VBAObject {
-    func setMember(_ name: String, _ arguments: VBAArguments, to value: VBAValue,
-                   in interpreter: VBAInterpreter) throws {
+    func setMember(_ name: String, _: VBAArguments, to _: VBAValue,
+                   in _: VBAInterpreter) throws {
         throw VBAError.unsupportedMember(name.isEmpty ? typeName : name)
     }
 
-    func elements(in interpreter: VBAInterpreter) throws -> [VBAValue] {
+    func elements(in _: VBAInterpreter) throws -> [VBAValue] {
         throw VBAError(number: 438, "Object doesn't support this property or method")
     }
 }

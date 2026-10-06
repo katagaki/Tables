@@ -73,7 +73,7 @@ final class VBAApplicationObject: VBAObject {
 
     /// Only contiguous unions — a rectangle grown to cover both — can be
     /// represented; anything else would need several areas.
-    private func union(_ arguments: VBAArguments, in interpreter: VBAInterpreter) throws -> VBAValue {
+    private func union(_ arguments: VBAArguments, in _: VBAInterpreter) throws -> VBAValue {
         let all = try ranges(arguments)
         guard let first = all.first else { throw VBAError.invalidCall }
         var box = first.range
@@ -95,7 +95,7 @@ final class VBAApplicationObject: VBAObject {
         return rows * columns
     }
 
-    private func intersect(_ arguments: VBAArguments, in interpreter: VBAInterpreter) throws -> VBAValue {
+    private func intersect(_ arguments: VBAArguments, in _: VBAInterpreter) throws -> VBAValue {
         let all = try ranges(arguments)
         guard let first = all.first else { throw VBAError.invalidCall }
         var top = first.range.start.row
@@ -181,7 +181,7 @@ final class VBAApplicationObject: VBAObject {
         }
     }
 
-    func setMember(_ name: String, _ arguments: VBAArguments, to value: VBAValue,
+    func setMember(_ name: String, _: VBAArguments, to value: VBAValue,
                    in interpreter: VBAInterpreter) throws {
         let key = name.lowercased()
         switch key {
@@ -231,7 +231,7 @@ final class VBAWorkbooksObject: VBAObject {
         }
     }
 
-    func elements(in interpreter: VBAInterpreter) throws -> [VBAValue] { [.object(host.workbookObject)] }
+    func elements(in _: VBAInterpreter) throws -> [VBAValue] { [.object(host.workbookObject)] }
 }
 
 final class VBAWorkbookObject: VBAObject {
@@ -276,8 +276,8 @@ final class VBAWorkbookObject: VBAObject {
         }
     }
 
-    func setMember(_ name: String, _ arguments: VBAArguments, to value: VBAValue,
-                   in interpreter: VBAInterpreter) throws {
+    func setMember(_ name: String, _: VBAArguments, to _: VBAValue,
+                   in _: VBAInterpreter) throws {
         // `ThisWorkbook.Saved = True` is how macros silence the save prompt.
         guard name.lowercased() == "saved" else { throw VBAError.unsupportedMember(name) }
     }
@@ -350,7 +350,7 @@ final class VBASheetsObject: VBAObject {
         }
     }
 
-    func elements(in interpreter: VBAInterpreter) throws -> [VBAValue] {
+    func elements(in _: VBAInterpreter) throws -> [VBAValue] {
         sheets.map { .object(host.worksheetObject($0.id)) }
     }
 }
@@ -455,7 +455,7 @@ final class VBAWorksheetObject: VBAObject {
         }
     }
 
-    func setMember(_ name: String, _ arguments: VBAArguments, to value: VBAValue,
+    func setMember(_ name: String, _: VBAArguments, to value: VBAValue,
                    in interpreter: VBAInterpreter) throws {
         switch name.lowercased() {
         case "", "name":

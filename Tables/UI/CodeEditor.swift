@@ -60,7 +60,7 @@ final class CodeScrollView: UIScrollView {
         addSubview(textView)
     }
 
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+    required init?(coder _: NSCoder) { fatalError("init(coder:) is not used") }
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -108,7 +108,7 @@ extension CodeEditor: UIViewRepresentable {
         return scrollView
     }
 
-    func updateUIView(_ scrollView: CodeScrollView, context: Context) {
+    func updateUIView(_ scrollView: CodeScrollView, context _: Context) {
         scrollView.wrapsLines = wrapsLines
         let view = scrollView.textView
         guard view.text != text else { return }
@@ -139,7 +139,7 @@ extension CodeEditor: UIViewRepresentable {
             scrollView?.revealSelection()
         }
 
-        func textViewDidChangeSelection(_ view: UITextView) {
+        func textViewDidChangeSelection(_: UITextView) {
             scrollView?.revealSelection()
         }
 
@@ -205,7 +205,7 @@ extension CodeEditor: NSViewRepresentable {
         if wraps { view.frame.size.width = scrollView.contentSize.width }
     }
 
-    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+    func updateNSView(_ scrollView: NSScrollView, context _: Context) {
         guard let view = scrollView.documentView as? NSTextView else { return }
         Self.applyWrapping(wrapsLines, to: view, in: scrollView)
         guard view.string != text else { return }
