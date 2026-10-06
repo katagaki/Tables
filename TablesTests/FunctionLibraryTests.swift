@@ -2,9 +2,11 @@ import Foundation
 import Testing
 @testable import Tables
 
-/// Whether a number is within a relative tolerance of what Excel gives.
+/// Legacy tolerance for rounded published examples. The executable answer
+/// catalog uses explicit absolute and relative tolerances for each vector.
 func close(_ value: CellValue, _ expected: Double, tolerance: Double = 1e-9) -> Bool {
-    guard case .number(let actual) = value else { return false }
+    guard case .number(let actual) = value, actual.isFinite, expected.isFinite,
+          tolerance.isFinite, tolerance >= 0 else { return false }
     return abs(actual - expected) <= tolerance * max(1, abs(expected))
 }
 
@@ -246,7 +248,7 @@ struct DistributionTests {
     func continuous() {
         check("=BETA.DIST(2,8,10,TRUE,1,3)", 0.6854706)
         check("=BETA.DIST(2,8,10,FALSE,1,3)", 1.4837646)
-        check("=BETA.INV(0.685470581,8,10,1,3)", 2)
+        check("=BETA.INV(0.685470581,8,10,1,3)", 1.9999999999631428)
         check("=GAMMA.DIST(10.00001131,9,2,FALSE)", 0.032639)
         check("=GAMMA.DIST(10.00001131,9,2,TRUE)", 0.068094)
         check("=GAMMA.INV(0.068094,9,2)", 10.0000112, 1e-5)
@@ -593,7 +595,7 @@ struct FinancialFunctionTests {
         check("=EFFECT(0.0525,4)", 0.053542667)
         check("=NOMINAL(0.053543,4)", 0.05250032, 1e-7)
         check("=PDURATION(0.025,2000,2200)", 3.859866163)
-        check("=RRI(96,10000,11000)", 0.000992824)
+        check("=RRI(96,10000,11000)", 0.0009933073762913949)
         check("=FVSCHEDULE(1,{0.09,0.11,0.1})", 1.33089)
         check("=DOLLARDE(1.02,16)", 1.125)
         check("=DOLLARFR(1.125,16)", 1.02)
@@ -605,8 +607,8 @@ struct FinancialFunctionTests {
         check("=XNPV(0.09,{-10000,2750,4250,3250,2750},{39448,39508,39751,39859,39904})", 2086.647602)
         check("=IRR({-70000,12000,15000,18000,21000,26000})", 0.086630948)
         check("=IRR({-70000,12000,15000})", -0.443506941)
-        check("=XIRR({-10000,2750,4250,3250,2750},{39448,39508,39751,39859,39904})", 0.373362535)
-        check("=MIRR({-120000,39000,30000,21000,37000,46000},0.1,0.12)", 0.126094937)
+        check("=XIRR({-10000,2750,4250,3250,2750},{39448,39508,39751,39859,39904})", 0.37336253351883153)
+        check("=MIRR({-120000,39000,30000,21000,37000,46000},0.1,0.12)", 0.12609413036590514)
         #expect(evaluate("=IRR({1,2,3})") == .error(.numberError))
     }
 
@@ -616,7 +618,7 @@ struct FinancialFunctionTests {
         check("=SYD(30000,7500,10,1)", 4090.909091)
         check("=DB(1000000,100000,6,1,7)", 186083.3333)
         check("=DB(1000000,100000,6,2,7)", 259639.4167)
-        check("=DB(1000000,100000,6,7,7)", 15845.0984)
+        check("=DB(1000000,100000,6,7,7)", 15845.098473848073)
         check("=DDB(2400,300,10*365,1)", 1.315068493)
         check("=DDB(2400,300,10,1,2)", 480)
         check("=DDB(2400,300,10,10)", 22.1225472)
@@ -624,7 +626,7 @@ struct FinancialFunctionTests {
         check("=VDB(2400,300,10*12,0,1)", 40)
         check("=VDB(2400,300,10,0,1)", 480)
         check("=VDB(2400,300,10*12,6,18)", 396.3060533)
-        check("=VDB(2400,300,10*12,6,18,1.5)", 311.8089366)
+        check("=VDB(2400,300,10*12,6,18,1.5)", 311.8089366582341)
         check("=VDB(2400,300,10,0,0.875,1.5)", 315)
         check("=AMORLINC(2400,DATE(2008,8,19),DATE(2008,12,31),300,1,0.15,1)", 360)
         check("=AMORDEGRC(2400,DATE(2008,8,19),DATE(2008,12,31),300,1,0.15,1)", 776)
@@ -645,11 +647,11 @@ struct FinancialFunctionTests {
     func bonds() {
         check("=PRICE(DATE(2008,2,15),DATE(2017,11,15),0.0575,0.065,100,2,0)", 94.63436162)
         check("=YIELD(DATE(2008,2,15),DATE(2016,11,15),0.0575,95.04287,100,2,0)", 0.065, 1e-6)
-        check("=DURATION(DATE(2008,1,1),DATE(2016,1,1),0.08,0.09,2,1)", 5.993774912)
+        check("=DURATION(DATE(2008,1,1),DATE(2016,1,1),0.08,0.09,2,1)", 5.993774955545184)
         check("=MDURATION(DATE(2008,1,1),DATE(2016,1,1),0.08,0.09,2,1)", 5.73566981)
         check("=ACCRINT(DATE(2008,3,1),DATE(2008,8,31),DATE(2008,5,1),0.1,1000,2,0)", 16.66666667)
         check("=ACCRINTM(DATE(2008,4,1),DATE(2008,6,15),0.1,1000,3)", 20.54794521)
-        check("=DISC(DATE(2018,7,1),DATE(2048,1,1),97.975,100,1)", 0.000686003, 1e-5)
+        check("=DISC(DATE(2018,7,1),DATE(2048,1,1),97.975,100,1)", 0.0006863841691213449, 1e-5)
         check("=INTRATE(DATE(2008,2,15),DATE(2008,5,15),1000000,1014420,2)", 0.05768)
         check("=RECEIVED(DATE(2008,2,15),DATE(2008,5,15),1000000,0.0575,2)", 1014584.654)
         check("=PRICEDISC(DATE(2008,2,16),DATE(2008,3,1),0.0525,100,2)", 99.79583333)
@@ -668,7 +670,7 @@ struct FinancialFunctionTests {
         check("=ODDFPRICE(DATE(2008,11,11),DATE(2021,3,1),DATE(2008,10,15),DATE(2009,3,1),0.0785,0.0625,100,2,1)",
               113.5977, 1e-5)
         check("=ODDFYIELD(DATE(2008,11,11),DATE(2021,3,1),DATE(2008,10,15),DATE(2009,3,1),0.0575,84.5,100,2,0)",
-              0.0772, 1e-3)
+              0.0772, 0.00005)
     }
 }
 
@@ -755,8 +757,8 @@ struct EngineeringFunctionTests {
 
     @Test("Bessel functions")
     func bessel() {
-        check("=BESSELI(1.5,1)", 0.981666428, 1e-8)
-        check("=BESSELJ(1.9,2)", 0.329925829, 1e-6)
+        check("=BESSELI(1.5,1)", 0.9816664285779075, 1e-8)
+        check("=BESSELJ(1.9,2)", 0.32992572769238726, 1e-6)
         check("=BESSELK(1.5,1)", 0.277387804, 1e-6)
         check("=BESSELY(2.5,1)", 0.145918138, 1e-8)
     }

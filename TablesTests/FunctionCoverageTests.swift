@@ -60,17 +60,15 @@ struct FunctionCoverageTests {
         #expect(missing.isEmpty, "Missing: \(missing.joined(separator: ", "))")
     }
 
-    @Test("Every function in the library has a test of its answers")
-    func correctness() throws {
-        let folder = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-        let source = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
-            .filter { $0.pathExtension == "swift" && $0.lastPathComponent != URL(fileURLWithPath: #filePath).lastPathComponent }
-            .map { try String(contentsOf: $0, encoding: .utf8) }
-            .joined(separator: "\n")
-        let untested = FormulaFunctions.names.filter { name in
-            let call = "(?<![A-Za-z0-9._])" + NSRegularExpression.escapedPattern(for: name) + "\\("
-            return source.range(of: call, options: .regularExpression) == nil
-        }
-        #expect(untested.isEmpty, "No test calls: \(untested.joined(separator: ", "))")
+    @Test("Every registered function has executable answer vectors or a nondeterministic contract")
+    func answerCoverage() {
+        // NA's specified answer is always an error; every other deterministic
+        // function must have a successful value vector, not just a bad-arity check.
+        let answers = formulaAnswerCases.filter { $0.expected.errorValue == nil || $0.function == "NA" }
+        let covered = Set(answers.map(\.function)).union(nondeterministicFormulaFunctions)
+        let missing = Set(FormulaFunctions.names).subtracting(covered)
+        let stale = covered.subtracting(FormulaFunctions.names)
+        #expect(missing.isEmpty, "No executable answer vectors: \(missing.sorted().joined(separator: ", "))")
+        #expect(stale.isEmpty, "Vectors for unregistered functions: \(stale.sorted().joined(separator: ", "))")
     }
 }

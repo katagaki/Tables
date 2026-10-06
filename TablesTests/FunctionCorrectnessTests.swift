@@ -380,12 +380,6 @@ struct TimeCorrectnessTests {
         #expect(evaluate("=MONTH(-1)") == .error(.numberError))
     }
 
-    @Test("TODAY and NOW follow the device clock")
-    func now() {
-        let today = Calendar(identifier: .gregorian).dateComponents([.year, .month, .day], from: Date())
-        let date = "DATE(\(today.year!),\(today.month!),\(today.day!))"
-        #expect(evaluate("=TODAY()=\(date)") == .boolean(true))
-        #expect(evaluate("=INT(NOW())=\(date)") == .boolean(true))
-        #expect(evaluate("=AND(NOW()>=TODAY(),NOW()<TODAY()+1)") == .boolean(true))
-    }
+    // TODAY/NOW are checked against independent before/after clock samples in
+    // FormulaContractTests, so a midnight crossing does not make the test flaky.
 }
