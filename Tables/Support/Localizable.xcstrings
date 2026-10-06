@@ -8754,6 +8754,216 @@
         }
       }
     },
+    "Help.Files.Folder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Each workbook’s macros have a folder of their own, in Macro Files in the app’s documents, named after the workbook. It is created the first time a macro runs. Open Files in the Macros list to see what is in it, share or delete files, or open it in the Files app to add some."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マクロには、ブックごとに専用のフォルダがあります。App の書類内の「Macro Files」にあり、ブックの名前が付いています。マクロを初めて実行したときに作成されます。マクロ一覧の「ファイル」を開くと、中身の確認、ファイルの共有や削除ができ、「ファイル」App で開いてファイルを追加することもできます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "각 통합 문서의 매크로에는 전용 폴더가 있습니다. 앱 도큐멘트의 Macro Files 안에 통합 문서 이름으로 있으며, 매크로를 처음 실행할 때 만들어집니다. 매크로 목록에서 파일을 열면 내용을 확인하고, 파일을 공유하거나 삭제하거나, 파일 앱에서 열어 파일을 추가할 수 있습니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每个工作簿的宏都有自己的文件夹，位于应用文稿中的 Macro Files 内，以工作簿命名，在第一次运行宏时创建。在宏列表中打开“文件”可查看其中内容、共享或删除文件，也可以在“文件”App 中打开以添加文件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每個活頁簿的巨集都有自己的資料夾，位於 App 文件中的 Macro Files 內，以活頁簿命名，在第一次執行巨集時建立。在巨集列表中打開「檔案」可查看其中內容、分享或刪除檔案，也可以在「檔案」App 中打開以加入檔案。"
+          }
+        }
+      }
+    },
+    "Help.Files.Keys" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SendKeys can’t type into other apps, so it shows you the keys instead, ready to copy. AppActivate does nothing."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SendKeys は他のアプリに入力できないため、代わりに送ろうとしたキーをコピーできる形で表示します。AppActivate は何もしません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SendKeys는 다른 앱에 입력할 수 없으므로 대신 보내려던 키를 복사할 수 있게 보여 줍니다. AppActivate는 아무것도 하지 않습니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SendKeys 无法在其他应用中输入，因此会改为显示这些按键，方便拷贝。AppActivate 不执行任何操作。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SendKeys 無法在其他 App 中輸入，因此會改為顯示這些按鍵，方便拷貝。AppActivate 不執行任何動作。"
+          }
+        }
+      }
+    },
+    "Help.Files.Links" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shell and FollowHyperlink open web and app links, such as https:// and mailto: addresses, after you agree to each one. They can’t start programs or open files."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shell と FollowHyperlink は、https:// や mailto: のアドレスなどの Web やアプリのリンクを、そのつどあなたの許可を得てから開きます。プログラムの起動やファイルを開くことはできません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shell과 FollowHyperlink는 https:// 및 mailto: 주소 같은 웹 및 앱 링크를 매번 사용자의 허락을 받은 후에 엽니다. 프로그램을 시작하거나 파일을 열 수는 없습니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shell 和 FollowHyperlink 会在你每次同意后打开网页和应用链接，例如 https:// 和 mailto: 地址。它们不能启动程序或打开文件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shell 和 FollowHyperlink 會在你每次同意後打開網頁和 App 連結，例如 https:// 和 mailto: 位址。它們不能啟動程式或打開檔案。"
+          }
+        }
+      }
+    },
+    "Help.Files.Paths" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paths in code are relative to that folder. Backslashes work as well as slashes, so paths written for Windows still do, and ThisWorkbook.Path and CurDir return the folder. A path that leads outside it — with .., a drive letter, or a link — stops the macro with a Path/File access error."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コード内のパスはこのフォルダを基準とします。スラッシュだけでなく円記号（\\）も使えるため、Windows 向けに書かれたパスもそのまま使え、ThisWorkbook.Path と CurDir はこのフォルダを返します。..、ドライブ文字、リンクなどでフォルダの外を指すパスを使うと、「ファイル/パス アクセス エラー」でマクロが停止します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "코드의 경로는 이 폴더를 기준으로 합니다. 슬래시뿐 아니라 백슬래시도 사용할 수 있어 Windows용으로 작성한 경로도 그대로 작동하며, ThisWorkbook.Path와 CurDir는 이 폴더를 반환합니다. .., 드라이브 문자, 링크 등으로 폴더 밖을 가리키는 경로를 사용하면 경로/파일 액세스 오류와 함께 매크로가 중지됩니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "代码中的路径以此文件夹为准。反斜杠和斜杠都可以使用，因此为 Windows 编写的路径照样有效，ThisWorkbook.Path 和 CurDir 返回此文件夹。用 ..、驱动器号或链接指向文件夹以外的路径会使宏停止，并报告“路径/文件访问错误”。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "程式碼中的路徑以此資料夾為準。反斜線和斜線都可以使用，因此為 Windows 撰寫的路徑照樣有效，ThisWorkbook.Path 和 CurDir 會傳回此資料夾。用 ..、磁碟機代號或連結指向資料夾以外的路徑會使巨集停止，並報告「路徑/檔案存取錯誤」。"
+          }
+        }
+      }
+    },
+    "Help.Files.Text" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Text is written as UTF-8 with Windows line breaks, so files read back the same in Excel. Files written by Excel on Windows are read too."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テキストは Windows の改行コードを使った UTF-8 で書き込まれるため、Excel でも同じように読み込めます。Windows 版 Excel が書き込んだファイルも読み込めます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "텍스트는 Windows 줄 바꿈을 사용하는 UTF-8로 기록되므로 Excel에서도 똑같이 읽힙니다. Windows용 Excel이 기록한 파일도 읽을 수 있습니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文本以 UTF-8 编码和 Windows 换行符写入，因此在 Excel 中读取的结果相同。也可以读取 Windows 版 Excel 写入的文件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字以 UTF-8 編碼和 Windows 換行字元寫入，因此在 Excel 中讀取的結果相同。也可以讀取 Windows 版 Excel 寫入的檔案。"
+          }
+        }
+      }
+    },
+    "Help.Files.Title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Working with Files"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ファイルの操作"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "파일 작업"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "处理文件"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "處理檔案"
+          }
+        }
+      }
+    },
     "Help.Footer" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8859,6 +9069,76 @@
         }
       }
     },
+    "Help.Functions.Files" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Files and folders"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ファイルとフォルダ"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "파일과 폴더"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件与文件夹"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "檔案與資料夾"
+          }
+        }
+      }
+    },
+    "Help.Functions.FilesNote" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All within the workbook’s own folder of files; see Working with Files."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべてブック専用のファイルフォルダ内で動作します。「ファイルの操作」を参照してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "모두 통합 문서 전용 파일 폴더 안에서 작동합니다. 파일 작업을 참조하십시오."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全部在工作簿的专属文件夹内进行，请参阅“处理文件”。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全部在活頁簿的專屬資料夾內進行，請參閱「處理檔案」。"
+          }
+        }
+      }
+    },
     "Help.Functions.FormatNote" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8960,6 +9240,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "互動"
+          }
+        }
+      }
+    },
+    "Help.Functions.InteractionNote" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shell opens web and app links once you agree; SendKeys shows its keys instead of typing them; AppActivate does nothing."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shell はあなたが許可すると Web やアプリのリンクを開きます。SendKeys はキーを入力する代わりに表示し、AppActivate は何もしません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shell은 사용자가 허용하면 웹 및 앱 링크를 엽니다. SendKeys는 키를 입력하는 대신 보여 주며, AppActivate는 아무것도 하지 않습니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shell 在你同意后打开网页和应用链接；SendKeys 会显示按键而不是输入；AppActivate 不执行任何操作。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shell 在你同意後打開網頁和 App 連結；SendKeys 會顯示按鍵而不是輸入；AppActivate 不執行任何動作。"
           }
         }
       }
@@ -9145,31 +9460,31 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "These work with files, other apps or the system, which macros can’t reach here."
+            "value" : "GetObject connects to other applications and Scripting.FileSystemObject reaches the whole file system; neither exists for macros here. Use the file statements, which work in the workbook’s own folder."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "これらはファイル、他のアプリ、システムを扱うもので、ここではマクロからアクセスできません。"
+            "value" : "GetObject は他のアプリケーションに接続し、Scripting.FileSystemObject はファイルシステム全体にアクセスしますが、どちらもここではマクロから使用できません。ブック専用のフォルダで動作するファイルステートメントを使ってください。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "이 항목들은 파일, 다른 앱 또는 시스템을 다루며, 여기서는 매크로가 접근할 수 없습니다."
+            "value" : "GetObject는 다른 응용 프로그램에 연결하고 Scripting.FileSystemObject는 전체 파일 시스템에 접근하지만, 둘 다 여기서는 매크로가 사용할 수 없습니다. 통합 문서 전용 폴더에서 작동하는 파일 문을 사용하십시오."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "这些函数涉及文件、其他应用或系统，在这里宏无法访问。"
+            "value" : "GetObject 用于连接其他应用程序，Scripting.FileSystemObject 可访问整个文件系统；在这里，宏两者都无法使用。请使用在工作簿专属文件夹中工作的文件语句。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "這些函數涉及檔案、其他 App 或系統，在這裡巨集無法存取。"
+            "value" : "GetObject 用於連接其他應用程式，Scripting.FileSystemObject 可存取整個檔案系統；在這裡，巨集兩者都無法使用。請使用在活頁簿專屬資料夾中運作的檔案陳述式。"
           }
         }
       }
@@ -9205,6 +9520,76 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "錯誤處理"
+          }
+        }
+      }
+    },
+    "Help.Language.Files" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Files"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ファイル"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "파일"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "檔案"
+          }
+        }
+      }
+    },
+    "Help.Language.FilesNote" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In the workbook’s own folder of files; see Working with Files."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ブック専用のファイルフォルダ内で動作します。「ファイルの操作」を参照してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "통합 문서 전용 파일 폴더 안에서 작동합니다. 파일 작업을 참조하십시오."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在工作簿的专属文件夹内进行，请参阅“处理文件”。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在活頁簿的專屬資料夾內進行，請參閱「處理檔案」。"
           }
         }
       }
@@ -9425,31 +9810,31 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Event procedures can be written and kept, but they don’t run by themselves. Call them from another macro if you need them."
+            "value" : "UserForms and Windows functions don’t exist on Apple devices. Excel’s own events, such as Workbook_Open, can be written and kept but don’t run by themselves; events your classes raise do."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "イベントプロシージャは記述して保存できますが、自動では実行されません。必要な場合は別のマクロから呼び出してください。"
+            "value" : "ユーザーフォームと Windows の関数は Apple 製デバイスにはありません。Workbook_Open などの Excel 自体のイベントは記述して保存できますが、自動では実行されません。独自のクラスが発生させるイベントは動作します。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "이벤트 프로시저는 작성하고 저장할 수 있지만 자동으로 실행되지는 않습니다. 필요하면 다른 매크로에서 호출하십시오."
+            "value" : "사용자 정의 폼과 Windows 함수는 Apple 기기에 없습니다. Workbook_Open 같은 Excel 자체 이벤트는 작성하고 저장할 수 있지만 자동으로 실행되지 않습니다. 직접 만든 클래스가 발생시키는 이벤트는 작동합니다."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "事件过程可以编写和保存，但不会自动运行。如有需要，请从其他宏中调用。"
+            "value" : "Apple 设备上没有用户窗体和 Windows 函数。Workbook_Open 等 Excel 自身的事件可以编写和保存，但不会自动运行；你的类引发的事件可以正常工作。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "事件程序可以撰寫和保存，但不會自動執行。如有需要，請從其他巨集中呼叫。"
+            "value" : "Apple 裝置上沒有使用者表單和 Windows 函數。Workbook_Open 等 Excel 本身的事件可以撰寫和保存，但不會自動執行；你的類別引發的事件可以正常運作。"
           }
         }
       }
@@ -9600,31 +9985,31 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Macros run only inside this workbook. They can’t open files, start other apps or reach the internet, so code that tries stops with a message saying it isn’t supported."
+            "value" : "Macros run inside this workbook and its own folder of files. They can’t reach your other files, start other apps or use the internet; they can open web links only with your permission each time."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "マクロはこのブックの中でのみ実行されます。ファイルを開いたり、他のアプリを起動したり、インターネットにアクセスしたりはできないため、そうしたコードはサポートされていない旨のメッセージを表示して停止します。"
+            "value" : "マクロはこのブックと専用のファイルフォルダの中で実行されます。他のファイルへのアクセス、他のアプリの起動、インターネットの使用はできず、Web リンクを開くのもそのつどあなたが許可したときだけです。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "매크로는 이 통합 문서 안에서만 실행됩니다. 파일을 열거나, 다른 앱을 시작하거나, 인터넷에 접근할 수 없으므로 그런 코드는 지원되지 않는다는 메시지와 함께 중지됩니다."
+            "value" : "매크로는 이 통합 문서와 전용 파일 폴더 안에서 실행됩니다. 다른 파일에 접근하거나 다른 앱을 시작하거나 인터넷을 사용할 수 없으며, 웹 링크도 매번 사용자가 허용할 때만 열 수 있습니다."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "宏只在此工作簿内运行，无法打开文件、启动其他应用或访问互联网。尝试这样做的代码会停止，并提示不受支持。"
+            "value" : "宏在此工作簿及其专属文件夹内运行。它们无法访问你的其他文件、启动其他应用或使用互联网；只有在你每次允许时才能打开网页链接。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "巨集只在此活頁簿內執行，無法打開檔案、啟動其他 App 或存取網際網路。嘗試這樣做的程式碼會停止，並提示不支援。"
+            "value" : "巨集在此活頁簿及其專屬資料夾內執行。它們無法存取你的其他檔案、啟動其他 App 或使用網際網路；只有在你每次允許時才能打開網頁連結。"
           }
         }
       }

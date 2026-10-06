@@ -82,17 +82,27 @@ enum MacroHelp {
         "Array", "IsArray", "IsDate", "IsEmpty", "IsError", "IsMissing", "IsNull", "IsNumeric", "IsObject",
         "LBound", "QBColor", "RGB", "TypeName", "UBound", "VarType",
     ]
-    static let interactionFunctions = ["Choose", "CreateObject", "DoEvents", "Environ", "IIf", "InputBox", "MsgBox", "Switch"]
+    static let interactionFunctions = [
+        "AppActivate", "Beep", "CallByName", "Choose", "CreateObject", "DoEvents", "Environ", "IIf", "InputBox",
+        "MsgBox", "SendKeys", "Shell", "Switch",
+    ]
+    static let fileFunctions = [
+        "ChDir", "ChDrive", "CurDir", "Dir", "EOF", "FileAttr", "FileCopy", "FileDateTime", "FileLen", "FreeFile",
+        "GetAttr", "Input", "Kill", "Loc", "LOF", "MkDir", "Reset", "RmDir", "Seek", "SetAttr",
+    ]
     static let unavailableFunctions = ["GetObject"]
 
     static let applicationMembers = [
         "ActiveCell", "ActiveSheet", "ActiveWorkbook", "Calculate", "Calculation", "Cells", "Columns", "CutCopyMode",
+        "DefaultFilePath",
         "DisplayAlerts", "EnableEvents", "Evaluate", "InputBox", "Intersect", "Range", "Rows", "Run", "ScreenUpdating",
         "Selection", "Sheets", "StatusBar", "ThisWorkbook", "Union", "Version", "Wait", "Workbooks", "Worksheets",
         "WorksheetFunction",
     ]
     static let unavailableApplicationMembers = ["FileDialog", "GetOpenFilename", "GetSaveAsFilename", "OnTime", "Quit", "SendKeys"]
-    static let workbookMembers = ["ActiveSheet", "CodeName", "FullName", "Name", "Path", "Save", "Sheets", "Worksheets"]
+    static let workbookMembers = [
+        "ActiveSheet", "CodeName", "FollowHyperlink", "FullName", "Name", "Path", "Save", "Sheets", "Worksheets",
+    ]
     static let unavailableWorkbookMembers = ["Close", "PrintOut", "Protect", "SaveAs", "SaveCopyAs"]
     static let sheetsMembers = ["Add", "Count", "Item"]
     static let worksheetMembers = [
@@ -121,6 +131,9 @@ enum MacroHelp {
         Topic(id: "Running", symbol: "play.circle", paragraphs: [
             "Help.Running.Choose", "Help.Running.Undo", "Help.Running.Sandbox", "Help.Running.Files", "Help.Running.Ask",
         ]),
+        Topic(id: "Files", symbol: "folder", paragraphs: [
+            "Help.Files.Folder", "Help.Files.Paths", "Help.Files.Text", "Help.Files.Links", "Help.Files.Keys",
+        ]),
         Topic(id: "Editor", symbol: "pencil.and.list.clipboard", paragraphs: [
             "Help.Editor.Saving", "Help.Editor.Checking", "Help.Editor.Indent", "Help.Editor.Modules",
             "Help.Editor.Output",
@@ -128,11 +141,11 @@ enum MacroHelp {
         Topic(id: "Language", symbol: "curlybraces", paragraphs: ["Help.Language.Intro"], groups: [
             Group(title: "Help.Language.Procedures", items: [
                 "Sub", "Function", "Property Get", "Property Let", "Property Set", "ByRef", "ByVal", "Optional",
-                "ParamArray", "name:=value", "Call",
+                "ParamArray", "name:=value", "Call", "GoSub … Return",
             ]),
             Group(title: "Help.Language.Variables", items: [
-                "Dim", "Static", "Const", "ReDim", "ReDim Preserve", "Erase", "Type", "Enum", "Option Explicit",
-                "Option Base", "Option Compare",
+                "Dim", "Static", "Const", "ReDim", "ReDim Preserve", "Erase", "LSet", "RSet", "Type", "Enum",
+                "Option Explicit", "Option Base", "Option Compare",
             ]),
             Group(title: "Help.Language.Flow", items: [
                 "If … Then … Else", "Select Case", "For … Next", "For Each … Next", "Do … Loop", "While … Wend", "With",
@@ -143,12 +156,16 @@ enum MacroHelp {
                 "Err.Raise", "Err.Clear",
             ]),
             Group(title: "Help.Language.Objects", items: [
-                "Class modules", "New", "Set", "Me", "Is", "TypeOf … Is", "Nothing",
+                "Class modules", "New", "Set", "Me", "Is", "TypeOf … Is", "Nothing", "Event", "RaiseEvent",
+                "WithEvents",
             ]),
+            Group(title: "Help.Language.Files", items: [
+                "Open … For", "Close", "Print #", "Write #", "Input #", "Line Input #", "Get", "Put", "Seek",
+                "Lock", "Unlock", "Width #", "Name … As",
+            ], note: "Help.Language.FilesNote"),
             Group(title: "Help.Language.Other", items: ["#If … #End If", "Debug.Print", "[A1]"]),
             Group(title: "Help.Unavailable", items: [
-                "GoSub … Return", "UserForms", "Declare", "WithEvents", "RaiseEvent", "Workbook_Open",
-                "Worksheet_Change", "AddressOf", "Open … For", "Print #", "Input #", "Close #",
+                "UserForms", "Load", "Unload", "Declare", "AddressOf", "Workbook_Open", "Worksheet_Change",
             ], isAvailable: false, note: "Help.Language.UnavailableNote"),
         ]),
         Topic(id: "Functions", symbol: "function", paragraphs: ["Help.Functions.Intro"], groups: [
@@ -157,7 +174,8 @@ enum MacroHelp {
             Group(title: "Help.Functions.Conversion", items: conversionFunctions),
             Group(title: "Help.Functions.Dates", items: dateFunctions),
             Group(title: "Help.Functions.Information", items: informationFunctions),
-            Group(title: "Help.Functions.Interaction", items: interactionFunctions),
+            Group(title: "Help.Functions.Interaction", items: interactionFunctions, note: "Help.Functions.InteractionNote"),
+            Group(title: "Help.Functions.Files", items: fileFunctions, note: "Help.Functions.FilesNote"),
             Group(title: "Help.Functions.Objects", items: ["Collection", "Scripting.Dictionary", "VBScript.RegExp"]),
             Group(title: "Help.Unavailable", items: unavailableFunctions + ["Scripting.FileSystemObject"],
                   isAvailable: false, note: "Help.Functions.UnavailableNote"),

@@ -29,10 +29,15 @@ struct MacroHelpTests {
     }
 
     /// The error a one-argument call to `name` stops with, or nil if it runs.
+    /// File functions get a working folder of their own to act on.
     private func errorCalling(_ name: String) throws -> VBAError? {
+        // Shell only takes links, and refuses anything else as unsupported.
+        let argument = name == "Shell" ? "\"https://example.com\"" : "1"
         let interpreter = try VBAInterpreter(
-            modules: [("Module1", .standard, "Sub T()\n    Dim x\n    x = \(name)(1)\nEnd Sub")], host: nil
+            modules: [("Module1", .standard, "Sub T()\n    Dim x\n    x = \(name)(\(argument))\nEnd Sub")], host: nil
         )
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("Help-\(UUID().uuidString)")
+        interpreter.fileSystem = try VBAFileSystem(root: folder)
         do {
             _ = try interpreter.run("T")
             return nil
@@ -45,6 +50,7 @@ struct MacroHelpTests {
     func availableFunctions() throws {
         let listed = MacroHelp.textFunctions + MacroHelp.mathFunctions + MacroHelp.conversionFunctions
             + MacroHelp.dateFunctions + MacroHelp.informationFunctions + MacroHelp.interactionFunctions
+            + MacroHelp.fileFunctions
         for name in listed {
             let error = try errorCalling(name)
             // Number 35 is "Sub or Function not defined"; anything else means it ran.
