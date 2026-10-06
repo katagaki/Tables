@@ -71,6 +71,7 @@ struct CellMenuBuilder {
                     },
                 ]
             }
+            actions += mergeActions()
             actions += [
                 .separator,
                 HeaderMenuAction(
@@ -82,6 +83,40 @@ struct CellMenuBuilder {
             ]
         }
         return actions
+    }
+
+    /// Merging or splitting whichever is possible for the selection the menu
+    /// was raised in. Opened from outside the selection, there is only the
+    /// one cell to act on, which can be split but never merged.
+    private func mergeActions() -> [HeaderMenuAction] {
+        let workbook = workbook.wrappedValue
+        let isInSelection = state.selection.normalized.contains(address)
+        var actions: [HeaderMenuAction] = []
+        if isInSelection, state.canMergeSelection(in: workbook) {
+            actions.append(
+                HeaderMenuAction(
+                    title: String(localized: "Format.Merge.Merge"),
+                    symbol: "arrow.right.and.line.vertical.and.arrow.left"
+                ) {
+                    state.mergeSelection(in: &self.workbook.wrappedValue)
+                }
+            )
+        }
+        let canUnmerge = isInSelection
+            ? state.canUnmergeSelection(in: workbook)
+            : activeSheet.mergedRange(containing: address) != nil
+        if canUnmerge {
+            actions.append(
+                HeaderMenuAction(
+                    title: String(localized: "Format.Merge.Unmerge"),
+                    symbol: "arrow.left.and.line.vertical.and.arrow.right"
+                ) {
+                    target()
+                    state.unmergeSelection(in: &self.workbook.wrappedValue)
+                }
+            )
+        }
+        return actions.isEmpty ? [] : [.separator] + actions
     }
 
     /// Points the selection at the cell this menu belongs to, unless it is
