@@ -83,7 +83,7 @@ enum MacroHelp {
         "LBound", "QBColor", "RGB", "TypeName", "UBound", "VarType",
     ]
     static let interactionFunctions = ["Choose", "CreateObject", "DoEvents", "Environ", "IIf", "InputBox", "MsgBox", "Switch"]
-    static let unavailableFunctions = ["CallByName", "GetObject", "Shell"]
+    static let unavailableFunctions = ["CallByName", "GetObject"]
 
     static let applicationMembers = [
         "ActiveCell", "ActiveSheet", "ActiveWorkbook", "Calculate", "Calculation", "Cells", "Columns", "CutCopyMode",

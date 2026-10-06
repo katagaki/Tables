@@ -13689,6 +13689,41 @@
         }
       }
     },
+    "Macro.Unavailable.Shell" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Tables, Shell can only open web and app links, such as https:// addresses. It can’t start programs or open files."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables の Shell で開けるのは、https:// で始まるアドレスなどの Web やアプリのリンクだけです。プログラムの起動やファイルを開くことはできません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables에서 Shell은 https:// 주소 같은 웹 및 앱 링크만 열 수 있습니다. 프로그램을 시작하거나 파일을 열 수는 없습니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Tables 中，Shell 只能打开网页和应用链接（例如 https:// 地址），不能启动程序或打开文件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Tables 中，Shell 只能打開網頁和 App 連結（例如 https:// 位址），不能啟動程式或打開檔案。"
+          }
+        }
+      }
+    },
     "Macros.AddClassModule" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14745,31 +14780,31 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Macros run inside this workbook only. They cannot reach your files, other apps or the internet, and Undo takes back everything a macro did."
+            "value" : "Macros run inside this workbook and its own folder of files. They open web links only with your permission, and Undo takes back everything a macro did to the workbook."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "マクロはこのブックの中でのみ実行されます。ファイルや他のアプリ、インターネットにはアクセスできず、マクロによる変更はすべて取り消すことができます。"
+            "value" : "マクロはこのブックと専用のファイルフォルダの中で実行されます。Web リンクを開くのはあなたが許可したときだけで、マクロによるブックへの変更はすべて取り消すことができます。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "매크로는 이 통합 문서 안에서만 실행됩니다. 파일, 다른 앱, 인터넷에는 접근할 수 없으며, 매크로가 변경한 내용은 모두 실행 취소할 수 있습니다."
+            "value" : "매크로는 이 통합 문서와 전용 파일 폴더 안에서 실행됩니다. 웹 링크는 사용자가 허용할 때만 열리며, 매크로가 통합 문서에 한 변경 사항은 모두 실행 취소할 수 있습니다."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "宏只在此工作簿内运行，无法访问你的文件、其他应用或互联网。宏所做的一切都可以撤销。"
+            "value" : "宏在此工作簿及其专属文件夹内运行。只有经你允许才会打开网页链接，宏对工作簿所做的一切都可以撤销。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "巨集只會在此活頁簿內執行，無法存取你的檔案、其他 App 或網際網路。巨集所做的一切都可以還原。"
+            "value" : "巨集在此活頁簿及其專屬資料夾內執行。只有經你允許才會打開網頁連結，巨集對活頁簿所做的一切都可以還原。"
           }
         }
       }
@@ -15085,6 +15120,111 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "模組名稱最多只能有 31 個字元。"
+          }
+        }
+      }
+    },
+    "Macros.OpenLink.Message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The macro wants to open %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マクロが %@ を開こうとしています"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "매크로가 %@을(를) 열려고 합니다"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "宏想要打开 %@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "巨集想要打開 %@"
+          }
+        }
+      }
+    },
+    "Macros.OpenLink.Open" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開く"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "열기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打開"
+          }
+        }
+      }
+    },
+    "Macros.OpenLink.Title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Link?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リンクを開きますか？"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "링크를 열겠습니까?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要打开链接吗？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要打開連結嗎？"
           }
         }
       }

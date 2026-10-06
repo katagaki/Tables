@@ -340,7 +340,16 @@ enum VBALibrary {
             return .object(object)
         case "doevents": return .integer(0)
         case "environ", "environ$": return .string("")
-        case "shell", "getobject", "callbyname":
+        case "shell":
+            // Web and app links only, opened once the user agrees; a command
+            // line names a program, and there are none to start.
+            let target = try call.string(0, "PathName").trimmingCharacters(in: .whitespaces)
+            guard let url = openableURL(target) else {
+                throw VBAError(number: 445, String(localized: "Macro.Unavailable.Shell"))
+            }
+            guard interpreter.host?.openURL(url) == true else { throw VBAFileSystem.permissionDenied }
+            return .double(1)
+        case "getobject", "callbyname":
             throw VBAError.notSupported(name)
 
         // MARK: Files, inside the workbook's working folder
@@ -544,6 +553,17 @@ enum VBALibrary {
             throw VBAError.notSupported(String(localized: "Macro.Unavailable.Files"))
         }
         return files
+    }
+
+    /// A link `Shell` and `FollowHyperlink` may open: one with a scheme of
+    /// its own, `https://…`, `mailto:…`, `shortcuts://…`. Local files and
+    /// scripts are not links for this purpose, and a one-letter scheme is
+    /// a Windows drive.
+    static func openableURL(_ text: String) -> URL? {
+        guard let url = URL(string: text), let scheme = url.scheme?.lowercased(), scheme.count > 1,
+              scheme.allSatisfy({ $0.isLetter || $0.isNumber || "+-.".contains($0) }),
+              !["file", "javascript", "vbscript", "data"].contains(scheme) else { return nil }
+        return url
     }
 
     /// The device's offset from UTC, in days, so `Now` reads as a wall clock.

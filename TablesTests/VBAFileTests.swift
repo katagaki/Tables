@@ -2,9 +2,11 @@ import Foundation
 import Testing
 @testable import Tables
 
-/// A host that records what macros print.
+/// A host that records links instead of opening them.
 private final class FileTestHost: VBAHost {
     var printed: [String] = []
+    var openedURLs: [URL] = []
+    var allowsLinks = true
 
     func globalMember(_ name: String, _ arguments: VBAArguments, in interpreter: VBAInterpreter) throws -> VBAValue? { nil }
     func setGlobalMember(_ name: String, _ arguments: VBAArguments, to value: VBAValue,
@@ -15,6 +17,10 @@ private final class FileTestHost: VBAHost {
     func messageBox(prompt: String, buttons: Int, title: String?) -> Int { 1 }
     func inputBox(prompt: String, title: String?, defaultText: String) -> String? { nil }
     func debugPrint(_ text: String) { printed.append(text) }
+    func openURL(_ url: URL) -> Bool {
+        openedURLs.append(url)
+        return allowsLinks
+    }
 }
 
 @Suite("VBA files")
@@ -296,6 +302,23 @@ struct VBAFileTests {
                                                          "Sub Main()\nOpen \"a\" For Output As #1\nEnd Sub")], host: nil)
         let error = try #require(throws: VBAError.self) { try interpreter.run("Main") }
         #expect(error.number == 445)
+    }
+
+    // MARK: - Shell
+
+    @Test("Shell opens web and app links with the user's agreement, and nothing else")
+    func shell() throws {
+        let (_, folder) = try workingFolder()
+        let host = FileTestHost()
+        _ = try run("Sub Main()\nShell \"https://example.com/a?b=1\"\nShell \"mailto:a@example.com\"\nEnd Sub",
+                    in: folder, host: host)
+        #expect(host.openedURLs.map(\.absoluteString) == ["https://example.com/a?b=1", "mailto:a@example.com"])
+        for command in ["notepad.exe", "cmd /c del *.*", "file:///etc/hosts", "C:/Windows/notepad.exe", "javascript:alert(1)"] {
+            #expect(try error(running: "Sub Main()\nShell \"\(command)\"\nEnd Sub", in: folder)?.number == 445, "\(command)")
+        }
+        let declining = FileTestHost()
+        declining.allowsLinks = false
+        #expect(try error(running: "Sub Main()\nShell \"https://example.com\"\nEnd Sub", in: folder, host: declining)?.number == 70)
     }
 
 }

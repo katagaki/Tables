@@ -16,6 +16,8 @@ final class MacroRunner {
             /// Yes/No/Cancel, 4 Yes/No, and so on.
             case message(buttons: Int)
             case input(defaultText: String)
+            /// `Shell` or `FollowHyperlink` asking to open a link.
+            case openLink(URL)
         }
 
         let id = UUID()
@@ -80,7 +82,14 @@ final class MacroRunner {
                     }
                 }.text
             },
-            debugPrint: { line in lines.withLock { $0.append(line) } }
+            debugPrint: { line in lines.withLock { $0.append(line) } },
+            openURL: { url in
+                // The link opens on the main thread when the user agrees;
+                // the macro only learns whether it did.
+                channel.ask {
+                    Task { @MainActor in self.prompt = Prompt(kind: .openLink(url), title: nil, text: url.absoluteString) }
+                }.button == 1
+            }
         )
 
         let outcome = await Self.execute(

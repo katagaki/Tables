@@ -402,6 +402,7 @@ struct MacroCatalog {
 struct MacroPrompts: ViewModifier {
     let runner: MacroRunner
     @Binding var input: String
+    @Environment(\.openURL) private var openURL
 
     private var isPresented: Binding<Bool> {
         Binding(get: { runner.prompt != nil }, set: { _ in })
@@ -409,7 +410,7 @@ struct MacroPrompts: ViewModifier {
 
     func body(content: Content) -> some View {
         content.alert(
-            runner.prompt?.title ?? String(localized: "Macros.Prompt.DefaultTitle"),
+            promptTitle,
             isPresented: isPresented,
             presenting: runner.prompt
         ) { prompt in
@@ -423,9 +424,27 @@ struct MacroPrompts: ViewModifier {
                     .onAppear { input = defaultText }
                 Button("Common.OK") { runner.answer(text: input) }
                 Button("Macros.Button.Cancel", role: .cancel) { runner.answer(text: nil) }
+            case .openLink(let url):
+                Button("Macros.OpenLink.Open") {
+                    openURL(url)
+                    runner.answer(button: 1)
+                }
+                Button("Macros.Button.Cancel", role: .cancel) { runner.answer(button: 2) }
             }
         } message: { prompt in
-            Text(prompt.text)
+            switch prompt.kind {
+            case .openLink(let url):
+                Text(String(format: String(localized: "Macros.OpenLink.Message"), url.absoluteString))
+            default:
+                Text(prompt.text)
+            }
+        }
+    }
+
+    private var promptTitle: String {
+        switch runner.prompt?.kind {
+        case .openLink: return String(localized: "Macros.OpenLink.Title")
+        default: return runner.prompt?.title ?? String(localized: "Macros.Prompt.DefaultTitle")
         }
     }
 
