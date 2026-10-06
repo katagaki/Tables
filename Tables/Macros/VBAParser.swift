@@ -462,8 +462,9 @@ struct VBAParser {
         }
         // Statements with syntax of their own. A name followed by `=` or `.`
         // is a variable or object that happens to share the word.
-        if case .identifier(let word) = current, peek(1) != .symbol("="), peek(1) != .symbol(".") {
-            if let kind = try parseKeywordStatement(word.lowercased()) { return statement(kind) }
+        if case .identifier(let word) = current, peek(1) != .symbol("="), peek(1) != .symbol("."),
+           let kind = try parseKeywordStatement(word.lowercased()) {
+            return statement(kind)
         }
 
         // An assignment, or a call written without `Call` and without

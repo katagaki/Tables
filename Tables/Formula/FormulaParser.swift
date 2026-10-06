@@ -439,11 +439,10 @@ struct FormulaParser {
         }
 
         // Whole columns, `A:C`, and whole rows written with anchors, `$1:$3`.
-        if current == .colon, case .identifier(let endWord)? = peek(1) {
-            if let range = Self.columnRange(word, endWord) ?? Self.rowRange(word, endWord) {
-                index += 2
-                return leaf(.range(sheet: sheet, start: range.start, end: range.end), from: first)
-            }
+        if current == .colon, case .identifier(let endWord)? = peek(1),
+           let range = Self.columnRange(word, endWord) ?? Self.rowRange(word, endWord) {
+            index += 2
+            return leaf(.range(sheet: sheet, start: range.start, end: range.end), from: first)
         }
 
         // Anything that is not an address is a defined name. Whether one exists
