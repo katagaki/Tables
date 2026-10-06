@@ -144,8 +144,8 @@ struct Worksheet: Identifiable, Hashable, Sendable {
     var spills: [CellAddress: CellRange] = [:]
     /// Notes and threaded comments, by the cell they belong to.
     var comments: [CellAddress: CellComment] = [:]
-    /// Shapes from the file's VML drawing that are not notes — form controls,
-    /// mostly — carried verbatim into the drawing written with the notes.
+    /// Shapes from the file's VML drawing that are neither notes nor form
+    /// controls, carried verbatim into the drawing written with the notes.
     var preservedVMLShapes: String?
     /// That drawing's own relationships, for the pictures those shapes show.
     var preservedVMLRelationships: Data?
@@ -164,6 +164,8 @@ struct Worksheet: Identifiable, Hashable, Sendable {
     /// Everything else the sheet's drawing held — pictures, shapes, charts we
     /// cannot model — carried through untouched.
     var preservedDrawingAnchors: [PreservedDrawingAnchor] = []
+    /// Buttons, check boxes and the other Form Controls, in drawing order.
+    var formControls: [FormControl] = []
 
     var isChartSheet: Bool { kind == .chart }
 
@@ -420,6 +422,9 @@ struct Worksheet: Identifiable, Hashable, Sendable {
         }
         for index in preservedDrawingAnchors.indices {
             preservedDrawingAnchors[index].shift(operation, axis: axis)
+        }
+        for index in formControls.indices {
+            formControls[index].placement = formControls[index].placement.shifted(operation, axis: axis)
         }
     }
 

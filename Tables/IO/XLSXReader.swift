@@ -155,6 +155,13 @@ enum XLSXReader {
             workbook.sheets[index].comments = found.comments
             workbook.sheets[index].preservedVMLShapes = found.preservedShapes
             workbook.sheets[index].preservedVMLRelationships = found.preservedShapeRelationships
+            let controls = FormControlParts.read(
+                shapes: found.controlShapes, sheetIndex: index, sheetPath: sheetPaths[index],
+                workbook: workbook, entries: entries)
+            workbook.sheets[index].formControls = controls.controls
+            if !controls.unplaced.isEmpty {
+                workbook.sheets[index].preservedVMLShapes = (found.preservedShapes ?? "") + controls.unplaced.joined()
+            }
             commentParts.formUnion(found.parts)
             commentRelationshipIDs[workbook.sheets[index].id] = found.relationshipIDs
             shapeTargets += found.shapeTargets

@@ -502,6 +502,7 @@ enum DrawingReader {
             var named: Set<String> = []
             var largestShapeID = 0
             var isChart = false
+            var vmlShapeID: String?
             visit(anchor) { element in
                 for (key, value) in element.qualifiedAttributes where key.contains(":") && !key.hasPrefix("xmlns") {
                     named.insert(value)
@@ -510,6 +511,7 @@ enum DrawingReader {
                     largestShapeID = max(largestShapeID, id)
                 }
                 if element.name == "graphicFrame" { isChart = true }
+                if element.name == "compatExt" { vmlShapeID = element.attribute("spid") }
             }
             let kept = relationships.compactMap { entry -> PreservedDrawingRelationship? in
                 guard let id = entry.id, named.contains(id) else { return nil }
@@ -526,7 +528,8 @@ enum DrawingReader {
                 xml: xml, relationships: kept, largestShapeID: largestShapeID,
                 placement: placement, isChart: isChart,
                 picture: inner.lazy.compactMap { picture(in: $0, relationships: kept) }.first,
-                locks: inner.first.map(locks(in:)) ?? DrawingLocks()
+                locks: inner.first.map(locks(in:)) ?? DrawingLocks(),
+                vmlShapeID: vmlShapeID
             ))
         }
         return result

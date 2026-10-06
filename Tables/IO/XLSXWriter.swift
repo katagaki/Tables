@@ -67,7 +67,9 @@ enum XLSXWriter {
                 }
                 legacyDrawingID = relate(CommentParts.vmlType, sheetComments.vmlPath)
                 parts.append((sheetComments.vmlPath, CommentParts.vmlPart(
-                    sheet.comments, preservedShapes: sheet.preservedVMLShapes, sheetNumber: index + 1).utf8Data))
+                    sheet.comments, preservedShapes: sheet.preservedVMLShapes,
+                    controlShapes: sheet.formControls.map { FormControlParts.vml(for: $0, on: sheet, in: workbook) },
+                    sheetNumber: index + 1).utf8Data))
                 if let payload = sheet.preservedVMLRelationships {
                     parts.append((XLSXReader.PackagePreservation.relationshipsPath(for: sheetComments.vmlPath), payload))
                 }
@@ -88,6 +90,12 @@ enum XLSXWriter {
                     mainNamespace: mainNamespace
                 )
             } else {
+                // The `<controls>` list repeats where each control sits.
+                var sheet = sheet
+                sheet.preservedElements = sheet.preservedElements.map { element in
+                    element.name == "controls"
+                        ? FormControlParts.controlsElement(element, controls: sheet.formControls) : element
+                }
                 body = sheetPart(
                     sheet, strings: strings, styles: styles, formulas: formulas.forms[sheet.id] ?? [:],
                     hasRelationshipsPart: preservedRelationships != nil, drawingRelationshipID: drawingID,
@@ -153,8 +161,18 @@ enum XLSXWriter {
                 ))
             }
         }
+        // A control's `ctrlProps` part is kept, with its state brought up to date.
+        var controlProperties: [String: Data] = [:]
+        for sheet in workbook.sheets {
+            for control in sheet.formControls {
+                guard let path = control.source.propertiesPart, let data = preserved.parts[path],
+                      let updated = FormControlParts.properties(data, for: control, on: sheet, in: workbook)
+                else { continue }
+                controlProperties[path] = updated
+            }
+        }
         for path in preserved.parts.keys.sorted() {
-            parts.append((path, preserved.parts[path] ?? Data()))
+            parts.append((path, controlProperties[path] ?? preserved.parts[path] ?? Data()))
         }
         return try ZipArchive.archive(entries: parts)
     }

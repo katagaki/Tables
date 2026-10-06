@@ -335,6 +335,11 @@ struct Workbook: Hashable, Sendable {
             // chart, and they are how a save matches them to the file's XML.
             copy.charts[chart].retarget(from: sheetID, to: copy.id)
         }
+        // The copy's controls get no `ctrlProps` parts of their own; the
+        // original's stay the original's.
+        for control in copy.formControls.indices {
+            copy.formControls[control].source.propertiesPart = nil
+        }
         sheets.insert(copy, at: index + 1)
         return copy.id
     }

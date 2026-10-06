@@ -383,6 +383,9 @@ struct PreservedDrawingAnchor: Identifiable, Hashable, Sendable {
     var picture: DrawingPicture?
     /// What the file forbids doing to the object by hand.
     var locks = DrawingLocks()
+    /// The VML shape this stands in for, from its `a14:compatExt`. A form
+    /// control's twin carries one, and the control draws in its place.
+    var vmlShapeID: String?
 }
 
 /// The `noMove`, `noResize` and `noChangeAspect` locks DrawingML puts on an

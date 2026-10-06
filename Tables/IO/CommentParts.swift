@@ -24,6 +24,8 @@ enum CommentParts {
     struct SheetComments {
         var comments: [CellAddress: CellComment] = [:]
         var preservedShapes: String?
+        /// The `<v:shape>` of each form control, in drawing order.
+        var controlShapes: [String] = []
         var preservedShapeRelationships: Data?
         /// Relationship ids in the sheet's `_rels` that the writer replaces.
         var relationshipIDs: Set<String> = []
@@ -77,8 +79,9 @@ enum CommentParts {
                 let drawing = String(decoding: data, as: UTF8.self)
                 let shapes = splitShapes(drawing)
                 visibleNotes = shapes.visibleNotes
-                if !shapes.kept.isEmpty {
-                    result.preservedShapes = shapes.kept
+                result.controlShapes = shapes.controls
+                if !shapes.kept.isEmpty || !shapes.controls.isEmpty {
+                    result.preservedShapes = shapes.kept.isEmpty ? nil : shapes.kept
                     let relationshipsPath = XLSXReader.PackagePreservation.relationshipsPath(for: path)
                     if let payload = entries[relationshipsPath] {
                         result.preservedShapeRelationships = payload
@@ -155,16 +158,19 @@ enum CommentParts {
     }
 
     /// Splits a VML drawing into the notes it draws, which are written afresh,
-    /// and everything else, kept verbatim.
-    private static func splitShapes(_ drawing: String) -> (kept: String, visibleNotes: Set<CellAddress>) {
+    /// the form controls, which are read into the model, and everything
+    /// else, kept verbatim.
+    private static func splitShapes(_ drawing: String)
+        -> (kept: String, controls: [String], visibleNotes: Set<CellAddress>) {
         var kept = ""
+        var controls: [String] = []
         var visible: Set<CellAddress> = []
         for block in blocks(in: drawing, tag: "v:shapetype") where !block.contains("_x0000_t202") {
             kept += block
         }
         for block in blocks(in: drawing, tag: "v:shape") {
             guard block.contains("ObjectType=\"Note\"") else {
-                kept += block
+                if block.contains("<x:ClientData") { controls.append(block) } else { kept += block }
                 continue
             }
             if block.contains("<x:Visible"), let row = number(after: "<x:Row>", in: block),
@@ -172,11 +178,11 @@ enum CommentParts {
                 visible.insert(CellAddress(row: row, column: column))
             }
         }
-        return (kept, visible)
+        return (kept, controls, visible)
     }
 
     /// Every `<tag …>…</tag>` (or self-closed `<tag …/>`) block in the text.
-    private static func blocks(in text: String, tag: String) -> [String] {
+    static func blocks(in text: String, tag: String) -> [String] {
         var result: [String] = []
         var searchStart = text.startIndex
         while let open = text.range(of: "<" + tag, range: searchStart..<text.endIndex) {
@@ -300,16 +306,17 @@ enum CommentParts {
     }
 
     /// The VML drawing: a hidden sticky note for each comment, beside its cell,
-    /// plus whatever other shapes the file had.
-    static func vmlPart(_ comments: [CellAddress: CellComment], preservedShapes: String?, sheetNumber: Int) -> String {
+    /// plus the form controls and whatever other shapes the file had.
+    static func vmlPart(
+        _ comments: [CellAddress: CellComment], preservedShapes: String?, controlShapes: [String] = [],
+        sheetNumber: Int
+    ) -> String {
         // Shape ids come in blocks of 1024 named by `o:idmap`; ours take a
         // block clear of any the kept shapes use.
-        let keptIDs = preservedShapes.map { text in
-            blocks(in: text, tag: "v:shape").compactMap { block -> Int? in
-                guard let range = block.range(of: "_x0000_s") else { return nil }
-                return Int(block[range.upperBound...].prefix { $0.isNumber })
-            }
-        } ?? []
+        let keptIDs = (blocks(in: preservedShapes ?? "", tag: "v:shape") + controlShapes).compactMap { block -> Int? in
+            guard let range = block.range(of: "_x0000_s") else { return nil }
+            return Int(block[range.upperBound...].prefix { $0.isNumber })
+        }
         let keptBlocks = Set(keptIDs.map { $0 / 1024 })
         var block = max(1, sheetNumber)
         while keptBlocks.contains(block) { block += 1 }
@@ -321,6 +328,7 @@ enum CommentParts {
         xml += "<v:shapetype id=\"_x0000_t202\" coordsize=\"21600,21600\" o:spt=\"202\" path=\"m,l,21600r21600,l21600,xe\">"
         xml += "<v:stroke joinstyle=\"miter\"/><v:path gradientshapeok=\"t\" o:connecttype=\"rect\"/></v:shapetype>"
         xml += preservedShapes ?? ""
+        xml += controlShapes.joined()
         for (offset, (address, comment)) in ordered(comments).enumerated() {
             let visible = comment.kind == .note && comment.isAlwaysVisible
             let id = block * 1024 + 1 + offset
@@ -373,7 +381,8 @@ struct CommentPlan {
             return path
         }
         for sheet in workbook.sheets where !sheet.isChartSheet {
-            guard !sheet.comments.isEmpty || sheet.preservedVMLShapes != nil else { continue }
+            guard !sheet.comments.isEmpty || sheet.preservedVMLShapes != nil || !sheet.formControls.isEmpty
+            else { continue }
             let hasThreads = sheet.comments.values.contains { $0.kind == .thread }
             sheets[sheet.id] = SheetParts(
                 vmlPath: allocate("xl/drawings/vmlDrawing", "vml"),
