@@ -82,6 +82,7 @@ struct WorkbookView: View {
         }
         #if os(iOS)
         .toolbar { undoToolbar }
+        .toolbar { moreToolbar }
         #endif
         .toolbar { sharingToolbar }
         #if os(macOS)
@@ -183,6 +184,18 @@ struct WorkbookView: View {
                 .disabled(!history.canRedo)
                 .keyboardShortcut("z", modifiers: [.command, .shift])
                 .accessibilityIdentifier("redo")
+        }
+    }
+
+    /// Secondary actions are gathered into the navigation bar's "…" menu.
+    @ToolbarContentBuilder
+    private var moreToolbar: some ToolbarContent {
+        ToolbarItemGroup(placement: .secondaryAction) {
+            Section {
+                Link(destination: URL(string: "https://github.com/katagaki/Tables")!) {
+                    Label("Toolbar.SourceCode", systemImage: "chevron.left.forwardslash.chevron.right")
+                }
+            }
         }
     }
     #endif
