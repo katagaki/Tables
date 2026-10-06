@@ -27,4 +27,27 @@ enum MacroFiles {
         return cleaned.isEmpty ? "Workbook" : cleaned
     }
 
+    struct Entry: Identifiable, Hashable {
+        var url: URL
+        var isDirectory: Bool
+        var size: Int
+        var modified: Date
+        var id: URL { url }
+        var name: String { url.lastPathComponent }
+    }
+
+    /// What a folder holds, folders first, then by name.
+    static func contents(of folder: URL) -> [Entry] {
+        let keys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey]
+        let urls = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: keys)) ?? []
+        return urls.compactMap { url in
+            let values = try? url.resourceValues(forKeys: Set(keys))
+            return Entry(url: url, isDirectory: values?.isDirectory ?? false, size: values?.fileSize ?? 0,
+                         modified: values?.contentModificationDate ?? .distantPast)
+        }
+        .sorted { lhs, rhs in
+            lhs.isDirectory != rhs.isDirectory ? lhs.isDirectory
+                : lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+        }
+    }
 }

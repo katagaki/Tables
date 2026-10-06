@@ -8,6 +8,8 @@ struct MacrosView: View {
     let loadError: String?
     /// Whether the file is an `.xlsm`. An `.xlsx` drops macros when saved.
     let isMacroEnabledFile: Bool
+    /// Where this workbook's macros read and write files.
+    let workingFolder: URL
     let output: [String]
     let run: (_ module: String, _ procedure: String) -> Void
     /// Applies a change to the workbook's project as it is now, and saves it.
@@ -42,6 +44,7 @@ struct MacrosView: View {
                 if project != nil {
                     macrosSection
                     codeSection
+                    filesSection
                 } else if loadError == nil {
                     createSection
                 }
@@ -73,6 +76,23 @@ struct MacrosView: View {
             } message: {
                 Text(editError ?? "")
             }
+        }
+    }
+
+    private var filesSection: some View {
+        Section {
+            NavigationLink {
+                MacroFilesView(folder: workingFolder)
+            } label: {
+                LabeledContent {
+                    Text(workingFolder.lastPathComponent)
+                } label: {
+                    Label("Macros.Files.Title", systemImage: "folder")
+                }
+            }
+            .accessibilityIdentifier("macroFiles")
+        } footer: {
+            Text("Macros.Files.Footer")
         }
     }
 

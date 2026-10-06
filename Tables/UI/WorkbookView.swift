@@ -338,6 +338,7 @@ struct WorkbookView: View {
             project: (try? loaded.get()) ?? nil,
             loadError: loaded.failureDescription,
             isMacroEnabledFile: document.isMacroEnabled,
+            workingFolder: MacroFiles.folder(forWorkbookNamed: fileName),
             output: macroRunner.output,
             run: { module, procedure in
                 let macro = MacroCatalog.Macro(module: module, procedure: procedure)
