@@ -104,18 +104,18 @@ struct SheetTabBarView: View {
             if renamingSheetID == sheet.id {
                 TextField("SheetTabBar.RenameField.Placeholder", text: $draftName)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 13))
                     .focused($isRenaming)
                     .frame(minWidth: 80)
                     .onSubmit { commitRename(for: sheet) }
             } else if sheet.isChartSheet {
                 Label(sheet.name, systemImage: "chart.bar.xaxis")
                     .labelStyle(.titleAndIcon)
-                    .font(.system(size: 13, weight: isActive ? .semibold : .regular))
+                    .font(.system(size: 13))
                     .lineLimit(1)
             } else {
                 Text(sheet.name)
-                    .font(.system(size: 13, weight: isActive ? .semibold : .regular))
+                    .font(.system(size: 13))
                     .lineLimit(1)
             }
         }
