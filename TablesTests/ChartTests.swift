@@ -1141,6 +1141,105 @@ struct ChartTests {
         #expect(try text(written, "xl/drawings/drawing1.xml").contains("r:embed=\"rIdImage\""))
     }
 
+    /// A picture as Excel inserts one: pinned by its corner, its proportions
+    /// locked, its transform spelled out.
+    private static let lockedPictureAnchor = """
+    <xdr:oneCellAnchor><xdr:from><xdr:col>1</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>1</xdr:row>\
+    <xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:ext cx="952500" cy="952500"/><xdr:pic><xdr:nvPicPr>\
+    <xdr:cNvPr id="7" name="Picture 7"/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr>\
+    </xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rIdImage"/><a:stretch><a:fillRect/></a:stretch>\
+    </xdr:blipFill><xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="952500" cy="952500"/></a:xfrm>\
+    <a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:oneCellAnchor>
+    """
+
+    @Test("A picture dragged elsewhere is anchored there, its fragment otherwise untouched")
+    func movedPictureIsReanchored() throws {
+        let twoCell = Self.anchor(id: 3, relationship: "rId3D", from: (4, 16), to: (10, 30))
+            .replacingOccurrences(of: " editAs=\"oneCell\"", with: "")
+        let data = try package(
+            anchors: Self.lockedPictureAnchor + twoCell,
+            drawingRelationships: chartRelationship("rId3D", "../charts/chart2.xml")
+                + "<Relationship Id=\"rIdImage\" Type=\"\(Self.relationships)/image\" Target=\"../media/image1.png\"/>",
+            extraParts: [
+                ("xl/charts/chart2.xml", Self.unsupportedChart, Self.chartType),
+                ("xl/media/image1.png", "PNGDATA", nil),
+            ]
+        )
+        var workbook = try XLSXReader.workbook(from: data)
+        let sheet = workbook.sheets[0]
+        #expect(sheet.preservedDrawingAnchors[0].locks == DrawingLocks(noChangeAspect: true))
+        #expect(sheet.preservedDrawingAnchors[1].locks == DrawingLocks())
+
+        let metrics = SheetMetrics(sheet: sheet)
+        let frame = CGRect(x: metrics.x(ofColumn: 2) + 5, y: metrics.y(ofRow: 3) + 4, width: 100, height: 50)
+        workbook.sheets[0].preservedDrawingAnchors[0].place(at: frame, in: sheet)
+        workbook.sheets[0].preservedDrawingAnchors[1].place(at: frame, in: sheet)
+
+        let picture = try XMLLite.parse(Data(workbook.sheets[0].preservedDrawingAnchors[0].xml.utf8))
+        #expect(picture.firstDescendant(atPath: "from/col")?.text == "2")
+        #expect(picture.firstDescendant(atPath: "from/colOff")?.text == "63500")
+        #expect(picture.firstDescendant(atPath: "from/row")?.text == "3")
+        #expect(picture.firstDescendant(atPath: "from/rowOff")?.text == "50800")
+        #expect(picture.firstChild(named: "ext")?.attribute("cx") == "1270000")
+        #expect(picture.firstChild(named: "ext")?.attribute("cy") == "635000")
+        // The picture's own transform follows its anchor.
+        let transform = try #require(picture.firstDescendant(atPath: "pic/spPr/xfrm"))
+        #expect(transform.firstChild(named: "off")?.attribute("x") == String(Int(((frame.minX) * 12_700).rounded())))
+        #expect(transform.firstChild(named: "ext")?.attribute("cx") == "1270000")
+        #expect(picture.firstDescendant(atPath: "pic/blipFill/blip")?.attribute("embed") == "rIdImage")
+
+        // A two-cell anchor has both corners moved, its frame's zeros left alone.
+        let chart = try XMLLite.parse(Data(workbook.sheets[0].preservedDrawingAnchors[1].xml.utf8))
+        #expect(chart.firstDescendant(atPath: "from/col")?.text == "2")
+        #expect(chart.firstDescendant(atPath: "to/rowOff")?.text != nil)
+        #expect(chart.firstDescendant(atPath: "graphicFrame/xfrm/ext")?.attribute("cx") == "0")
+        let moved = try #require(workbook.sheets[0].preservedDrawingAnchors[1].placement)
+        let placed = moved.frame(in: metrics)
+        #expect(abs(placed.minX - frame.minX) < 0.01 && abs(placed.maxY - frame.maxY) < 0.01)
+
+        // And it all reads back where it was put.
+        let written = try ZipArchive.entries(in: XLSXWriter.data(from: workbook))
+        try expectConsistentPackage(written)
+        let reread = try XLSXReader.workbook(from: XLSXWriter.data(from: workbook))
+        let reread0 = try #require(reread.sheets[0].preservedDrawingAnchors.first?.placement)
+        let rereadFrame = reread0.frame(in: SheetMetrics(sheet: reread.sheets[0]))
+        #expect(abs(rereadFrame.minX - frame.minX) < 0.01)
+        #expect(abs(rereadFrame.width - frame.width) < 0.01)
+        #expect(reread.sheets[0].preservedDrawingAnchors.first?.picture?.target == "xl/media/image1.png")
+    }
+
+    @Test("A picture is selected apart from charts, moved, and deleted")
+    @MainActor
+    func pictureSelection() throws {
+        let data = try package(
+            anchors: Self.lockedPictureAnchor,
+            drawingRelationships: "<Relationship Id=\"rIdImage\" Type=\"\(Self.relationships)/image\" Target=\"../media/image1.png\"/>",
+            extraParts: [("xl/media/image1.png", "PNGDATA", nil)]
+        )
+        var workbook = try XLSXReader.workbook(from: data)
+        let state = EditorState()
+        state.selectSheet(workbook.sheets[0].id, in: workbook)
+        let id = workbook.sheets[0].preservedDrawingAnchors[0].id
+
+        state.selectChart(UUID())
+        state.selectDrawing(id)
+        #expect(state.selectedDrawingID == id)
+        #expect(state.selectedChartID == nil)
+        state.selectChart(nil)
+        #expect(state.selectedDrawingID == nil)
+
+        state.selectDrawing(id)
+        state.moveDrawing(id, to: CGRect(x: 300, y: 200, width: 40, height: 40), in: &workbook)
+        let placement = try #require(workbook.sheets[0].preservedDrawingAnchors[0].placement)
+        #expect(abs(placement.frame(in: SheetMetrics(sheet: workbook.sheets[0])).minX - 300) < 0.01)
+
+        state.deleteSelectedDrawing(in: &workbook)
+        #expect(workbook.sheets[0].preservedDrawingAnchors.isEmpty)
+        #expect(state.selectedDrawingID == nil)
+        let written = try ZipArchive.entries(in: XLSXWriter.data(from: workbook))
+        try expectConsistentPackage(written)
+    }
+
     @Test("A chart anchored absolutely stays put; one moving as a block keeps its size")
     func chartAnchoringIsHonoured() throws {
         var placement = ChartPlacement(

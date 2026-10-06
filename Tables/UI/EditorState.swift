@@ -42,6 +42,9 @@ final class EditorState {
     /// The chart picked out on the sheet, which the chart panel edits and the
     /// Delete key removes. On a chart sheet, that sheet's chart.
     var selectedChartID: Chart.ID?
+    /// The picture or other kept object picked out on the sheet, which can
+    /// then be moved, resized or deleted. Never set alongside a chart.
+    var selectedDrawingID: PreservedDrawingAnchor.ID?
 
     /// Distance scrolled from the top-left of the content, insets removed.
     var scrollOffset = CGPoint.zero
@@ -96,6 +99,7 @@ final class EditorState {
         scrollOffset = .zero
         let sheet = workbook[id]
         selectedChartID = sheet?.isChartSheet == true ? sheet?.charts.first?.id : nil
+        selectedDrawingID = nil
         if selectedChartID == nil, presentedPanel == .chart { presentedPanel = nil }
         refreshMetrics(in: workbook)
     }
@@ -116,6 +120,10 @@ final class EditorState {
            !workbook.sheets.contains(where: { $0.charts.contains { $0.id == chart } }) {
             selectedChartID = nil
             if presentedPanel == .chart { presentedPanel = nil }
+        }
+        if let drawing = selectedDrawingID,
+           !activeSheet(in: workbook).preservedDrawingAnchors.contains(where: { $0.id == drawing }) {
+            selectedDrawingID = nil
         }
         clampSelection(to: activeSheet(in: workbook))
         refreshMetrics(in: workbook)

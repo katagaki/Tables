@@ -519,7 +519,8 @@ enum DrawingReader {
             }
             result.anchors.append(PreservedDrawingAnchor(
                 xml: xml, relationships: kept, largestShapeID: largestShapeID,
-                placement: placement, isChart: isChart, picture: picture(in: anchor, relationships: kept)
+                placement: placement, isChart: isChart, picture: picture(in: anchor, relationships: kept),
+                locks: locks(in: anchor)
             ))
         }
         return result
@@ -548,6 +549,21 @@ enum DrawingReader {
             result.cropBottom = edge("b")
         }
         return result
+    }
+
+    /// The objects an anchor can hold, one of which it does.
+    static let drawingObjects: Set<String> = ["sp", "grpSp", "graphicFrame", "cxnSp", "pic", "contentPart"]
+
+    /// The locks on the object an anchor holds: `a:picLocks`, `a:spLocks` and
+    /// their kin, inside the object's non-visual properties.
+    private static func locks(in anchor: XMLElement) -> DrawingLocks {
+        guard let object = anchor.children.first(where: { drawingObjects.contains($0.name) }),
+              let locks = object.children.first(where: { $0.name.hasPrefix("nv") })?
+                .children.first(where: { $0.name.hasPrefix("cNv") && $0.name != "cNvPr" })?
+                .children.first(where: { $0.name.hasSuffix("Locks") })
+        else { return DrawingLocks() }
+        func isOn(_ name: String) -> Bool { ["1", "true"].contains(locks.attribute(name)) }
+        return DrawingLocks(noMove: isOn("noMove"), noResize: isOn("noResize"), noChangeAspect: isOn("noChangeAspect"))
     }
 
     /// The chart an anchor frames, when it frames one we can model.

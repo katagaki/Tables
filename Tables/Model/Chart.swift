@@ -364,7 +364,8 @@ struct ChartCompanion: Hashable, Sendable {
 
 /// A non-chart object on a sheet's drawing — a picture, a shape, a chart type
 /// we do not model — kept exactly as the file had it.
-struct PreservedDrawingAnchor: Hashable, Sendable {
+struct PreservedDrawingAnchor: Identifiable, Hashable, Sendable {
+    var id = UUID()
     /// The anchor element, namespace declarations and all.
     var xml: String
     /// The relationships the fragment names, by their original id. They are
@@ -380,6 +381,17 @@ struct PreservedDrawingAnchor: Hashable, Sendable {
     var isChart: Bool
     /// The image the fragment shows, when it is a picture we can draw.
     var picture: DrawingPicture?
+    /// What the file forbids doing to the object by hand.
+    var locks = DrawingLocks()
+}
+
+/// The `noMove`, `noResize` and `noChangeAspect` locks DrawingML puts on an
+/// object. Excel sets the last on every picture it inserts, so dragging a
+/// picture's corner scales it rather than stretching it.
+struct DrawingLocks: Hashable, Sendable {
+    var noMove = false
+    var noResize = false
+    var noChangeAspect = false
 }
 
 /// A picture on a sheet's drawing: which image part it shows, and how much

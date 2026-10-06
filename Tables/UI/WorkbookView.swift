@@ -434,6 +434,19 @@ struct WorkbookView: View {
                 if !sheet.isChartSheet { state.selectChart(nil) }
             }
         }
+        // Likewise a picture.
+        if state.selectedDrawingID != nil, !isEditing {
+            switch press.key {
+            case .delete, .deleteForward:
+                state.deleteSelectedDrawing(in: &document.workbook)
+                return .handled
+            case .escape:
+                state.selectDrawing(nil)
+                return .handled
+            default:
+                state.selectDrawing(nil)
+            }
+        }
         // There are no cells on a chart sheet to move between or type into.
         guard !sheet.isChartSheet else { return .ignored }
 

@@ -1,13 +1,6 @@
 import SwiftUI
 
 /// One chart floating over the grid.
-///
-/// A tap picks it out; once picked out, dragging it moves it and the corner
-/// grip resizes it, and a further tap lets it go again. While it is not
-/// selected a drag over it scrolls the sheet like anywhere else — a chart that
-/// swallowed every pan would make a sheet full of them impossible to move
-/// around in, and one that filled the screen could only be scrolled past by
-/// letting it go.
 struct EmbeddedChartView: View {
     let chart: Chart
     let data: ResolvedChart
@@ -23,20 +16,76 @@ struct EmbeddedChartView: View {
     var onMoveToNewSheet: () -> Void
     var onDelete: () -> Void
 
+    var body: some View {
+        FloatingObjectView(
+            frame: frame, isSelected: isSelected, minimumSize: CGSize(width: 48, height: 36),
+            gripIdentifier: "chartResizeGrip", gripLabel: "Chart.Resize",
+            onSelect: onSelect, onDeselect: onDeselect, onCommit: onCommit
+        ) { size in
+            ChartView(chart: chart, data: data, zoom: zoom)
+                .equatable()
+                .frame(width: size.width, height: size.height)
+                // Here rather than on the whole view, so the grip keeps its own.
+                .accessibilityIdentifier("chart.\(chart.name)")
+        } menu: {
+            Button("Chart.Menu.Edit", systemImage: "slider.horizontal.3") {
+                onSelect()
+                onEdit()
+            }
+            Button("Chart.Menu.MoveToNewSheet", systemImage: "rectangle.portrait.on.rectangle.portrait") {
+                onSelect()
+                onMoveToNewSheet()
+            }
+            Divider()
+            Button("Chart.Menu.Delete", systemImage: "trash", role: .destructive) {
+                onSelect()
+                onDelete()
+            }
+        }
+        .accessibilityAction(named: Text("Chart.Menu.Edit")) {
+            onSelect()
+            onEdit()
+        }
+    }
+}
+
+/// Something floating over the grid that can be picked out, moved and
+/// resized: a chart, or a picture kept from the file.
+///
+/// A tap picks it out; once picked out, dragging it moves it and the corner
+/// grip resizes it, and a further tap lets it go again. While it is not
+/// selected a drag over it scrolls the sheet like anywhere else — an object
+/// that swallowed every pan would make a sheet full of them impossible to
+/// move around in, and one that filled the screen could only be scrolled past
+/// by letting it go.
+struct FloatingObjectView<Content: View, MenuItems: View>: View {
+    /// Where the object sits, in the grid's own zoomed coordinates.
+    let frame: CGRect
+    let isSelected: Bool
+    let minimumSize: CGSize
+    var isMovable = true
+    var isResizable = true
+    /// Whether the grip scales the object rather than stretching it.
+    var keepsAspectRatio = false
+    let gripIdentifier: String
+    let gripLabel: LocalizedStringKey
+    var onSelect: () -> Void
+    var onDeselect: () -> Void
+    /// The new frame, in the grid's zoomed coordinates.
+    var onCommit: (CGRect) -> Void
+    /// The object itself, at the size it is being shown.
+    @ViewBuilder var content: (CGSize) -> Content
+    @ViewBuilder var menu: () -> MenuItems
+
     @State private var translation: CGSize = .zero
     @State private var growth: CGSize = .zero
 
     private let gripDiameter: Double = 18
 
     var body: some View {
-        let width = max(48, frame.width + growth.width)
-        let height = max(36, frame.height + growth.height)
+        let size = resized(by: growth)
 
-        ChartView(chart: chart, data: data, zoom: zoom)
-            .equatable()
-            .frame(width: width, height: height)
-            // Here rather than on the whole view, so the grip keeps its own.
-            .accessibilityIdentifier("chart.\(chart.name)")
+        content(size)
             .shadow(color: .black.opacity(isSelected ? 0.18 : 0.08), radius: isSelected ? 8 : 3, y: 1)
             .overlay {
                 if isSelected {
@@ -49,46 +98,47 @@ struct EmbeddedChartView: View {
             .contentShape(.rect)
             .gesture(interaction)
             .overlay(alignment: .bottomTrailing) {
-                if isSelected { resizeGrip }
+                if isSelected, isResizable { resizeGrip }
             }
-            .contextMenu {
-                Button("Chart.Menu.Edit", systemImage: "slider.horizontal.3") {
-                    onSelect()
-                    onEdit()
-                }
-                Button("Chart.Menu.MoveToNewSheet", systemImage: "rectangle.portrait.on.rectangle.portrait") {
-                    onSelect()
-                    onMoveToNewSheet()
-                }
-                Divider()
-                Button("Chart.Menu.Delete", systemImage: "trash", role: .destructive) {
-                    onSelect()
-                    onDelete()
-                }
-            }
+            .contextMenu { menu() }
             .offset(x: frame.minX + translation.width, y: frame.minY + translation.height)
             .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-            .accessibilityAction(named: Text("Chart.Menu.Edit")) {
-                onSelect()
-                onEdit()
-            }
+    }
+
+    /// The frame's size grown by a drag of the grip, kept to its proportions
+    /// when it must be — by whichever side the drag stretched further — and
+    /// never smaller than the minimum.
+    private func resized(by drag: CGSize) -> CGSize {
+        guard keepsAspectRatio, frame.width > 0, frame.height > 0 else {
+            return CGSize(
+                width: max(minimumSize.width, frame.width + drag.width),
+                height: max(minimumSize.height, frame.height + drag.height)
+            )
+        }
+        let scale = max(
+            (frame.width + drag.width) / frame.width,
+            (frame.height + drag.height) / frame.height,
+            minimumSize.width / frame.width,
+            minimumSize.height / frame.height
+        )
+        return CGSize(width: frame.width * scale, height: frame.height * scale)
     }
 
     /// Unselected, a plain tap: anything more is the scroll view's. Selected,
-    /// a drag from a standing start, so the chart follows the finger from its
+    /// a drag from a standing start, so the object follows the finger from its
     /// first point — and a drag that never went anywhere was a tap, which
-    /// lets the chart go.
+    /// lets the object go.
     private var interaction: AnyGesture<Void> {
         if isSelected {
             return AnyGesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .global)
-                    .onChanged { translation = $0.translation }
+                    .onChanged { if isMovable { translation = $0.translation } }
                     .onEnded { value in
                         let distance = hypot(value.translation.width, value.translation.height)
-                        if distance > 4 {
-                            onCommit(frame.offsetBy(dx: value.translation.width, dy: value.translation.height))
-                        } else {
+                        if distance <= 4 {
                             onDeselect()
+                        } else if isMovable {
+                            onCommit(frame.offsetBy(dx: value.translation.width, dy: value.translation.height))
                         }
                         translation = .zero
                     }
@@ -111,15 +161,12 @@ struct EmbeddedChartView: View {
                 DragGesture(minimumDistance: 0, coordinateSpace: .global)
                     .onChanged { growth = $0.translation }
                     .onEnded { value in
-                        var resized = frame
-                        resized.size.width = max(48, frame.width + value.translation.width)
-                        resized.size.height = max(36, frame.height + value.translation.height)
-                        onCommit(resized)
+                        onCommit(CGRect(origin: frame.origin, size: resized(by: value.translation)))
                         growth = .zero
                     }
             )
-            .accessibilityIdentifier("chartResizeGrip")
-            .accessibilityLabel("Chart.Resize")
+            .accessibilityIdentifier(gripIdentifier)
+            .accessibilityLabel(gripLabel)
     }
 }
 

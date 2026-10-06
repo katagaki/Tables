@@ -405,6 +405,61 @@ extension PreservedDrawingAnchor {
     }
 }
 
+extension PreservedDrawingAnchor {
+    /// Puts a picture, shape or unmodelled chart where it was dragged to.
+    /// `frame` is in sheet points at 100% zoom.
+    ///
+    /// The anchor keeps its kind — a one-cell anchor is still pinned by its
+    /// corner and sized by its extent, an absolute one by its position — and
+    /// the object's own transform follows it, so a reader trusting either
+    /// finds the object in the same place.
+    mutating func place(at frame: CGRect, in sheet: Worksheet) {
+        guard let root = try? XMLLite.parse(Data(xml.utf8)) else { return }
+        var moved = ChartPlacement(frame: frame, in: sheet)
+        moved.editAs = placement?.editAs
+
+        func emus(_ points: Double) -> String { String(Int((points * 12_700).rounded())) }
+        func mark(_ name: String, _ corner: ChartAnchor) {
+            guard let marker = root.firstChild(named: name) else { return }
+            marker.firstChild(named: "col")?.setText(String(corner.column))
+            marker.firstChild(named: "colOff")?.setText(emus(corner.columnOffset))
+            marker.firstChild(named: "row")?.setText(String(corner.row))
+            marker.firstChild(named: "rowOff")?.setText(emus(corner.rowOffset))
+        }
+        func size(_ extent: XMLElement?) {
+            extent?.setAttribute("cx", emus(frame.width))
+            extent?.setAttribute("cy", emus(frame.height))
+        }
+        switch root.name {
+        case "twoCellAnchor":
+            mark("from", moved.from)
+            mark("to", moved.to)
+        case "oneCellAnchor":
+            mark("from", moved.from)
+            size(root.firstChild(named: "ext"))
+        case "absoluteAnchor":
+            root.firstChild(named: "pos")?.setAttribute("x", emus(frame.minX))
+            root.firstChild(named: "pos")?.setAttribute("y", emus(frame.minY))
+            size(root.firstChild(named: "ext"))
+        default:
+            return
+        }
+        // A graphic frame's transform is left alone: Excel writes it as zeros
+        // and places the frame by its anchor alone.
+        if let object = root.children.first(where: { DrawingReader.drawingObjects.contains($0.name) }),
+           let transform = object.children.first(where: { $0.name == "spPr" || $0.name == "grpSpPr" })?
+               .firstChild(named: "xfrm") {
+            transform.firstChild(named: "off")?.setAttribute("x", emus(frame.minX))
+            transform.firstChild(named: "off")?.setAttribute("y", emus(frame.minY))
+            size(transform.firstChild(named: "ext"))
+        }
+
+        guard let rewritten = XMLLite.serialize(root) else { return }
+        xml = rewritten
+        placement = moved
+    }
+}
+
 extension Workbook {
     /// Lets every chart in the workbook follow rows or columns inserted into or
     /// removed from one sheet. The sheet's own structure must already have

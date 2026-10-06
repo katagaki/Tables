@@ -28,6 +28,7 @@ struct FloatingActionBar: View {
             }
             .padding(.horizontal, 12)
             .animation(.snappy(duration: 0.2), value: state.selectedChartID)
+            .animation(.snappy(duration: 0.2), value: state.selectedDrawingID)
         }
         .scrollIndicators(.hidden)
         .scrollBounceBehavior(.basedOnSize)
@@ -72,6 +73,9 @@ struct FloatingActionBar: View {
                 if state.selectedChartID != nil {
                     chartGroup
                 }
+                if state.selectedDrawingID != nil {
+                    pictureGroup
+                }
             }
         }
     }
@@ -101,6 +105,17 @@ struct FloatingActionBar: View {
             action("trash", isOn: false, label: "Chart.Menu.Delete") {
                 state.deleteSelectedChart(in: &workbook)
             }
+        }
+        .transition(.scale.combined(with: .opacity))
+    }
+
+    /// What can be done to the picture that is picked out.
+    private var pictureGroup: some View {
+        group {
+            action("trash", isOn: false, label: "Picture.Menu.Delete") {
+                state.deleteSelectedDrawing(in: &workbook)
+            }
+            .accessibilityIdentifier("deletePicture")
         }
         .transition(.scale.combined(with: .opacity))
     }

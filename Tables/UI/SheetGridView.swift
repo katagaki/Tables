@@ -669,20 +669,18 @@ struct SheetGridView: View {
             ).insetBy(dx: -200, dy: -200)
 
             ZStack(alignment: .topLeading) {
-                ForEach(Array(sheet.preservedDrawingAnchors.enumerated()), id: \.offset) { _, anchor in
+                ForEach(sheet.preservedDrawingAnchors) { anchor in
                     if let placement = anchor.placement {
                         let frame = placement.frame(in: metrics)
                         if frame.intersects(window), frame.width > 0, frame.height > 0 {
-                            Group {
-                                if let picture = anchor.picture,
-                                   let data = workbook.preservedPackage.parts[picture.target] {
-                                    PreservedPictureView(picture: picture, data: data)
-                                } else {
-                                    PreservedDrawingPlaceholder(isChart: anchor.isChart, zoom: metrics.zoom)
-                                }
+                            if let picture = anchor.picture,
+                               let data = workbook.preservedPackage.parts[picture.target] {
+                                keptPicture(anchor, picture: picture, data: data, frame: frame)
+                            } else {
+                                PreservedDrawingPlaceholder(isChart: anchor.isChart, zoom: metrics.zoom)
+                                    .frame(width: frame.width, height: frame.height)
+                                    .offset(x: frame.minX, y: frame.minY)
                             }
-                            .frame(width: frame.width, height: frame.height)
-                            .offset(x: frame.minX, y: frame.minY)
                         }
                     }
                 }
@@ -723,6 +721,45 @@ struct SheetGridView: View {
             onMoveToNewSheet: { state.moveSelectedChartToNewSheet(in: &workbook) },
             onDelete: { state.deleteSelectedChart(in: &workbook) }
         )
+    }
+
+    private func keptPicture(
+        _ anchor: PreservedDrawingAnchor, picture: DrawingPicture, data: Data, frame: CGRect
+    ) -> some View {
+        FloatingObjectView(
+            frame: frame, isSelected: state.selectedDrawingID == anchor.id,
+            minimumSize: CGSize(width: 12, height: 12),
+            isMovable: !anchor.locks.noMove, isResizable: !anchor.locks.noResize,
+            keepsAspectRatio: anchor.locks.noChangeAspect,
+            gripIdentifier: "pictureResizeGrip", gripLabel: "Picture.Resize",
+            onSelect: {
+                if state.editingAddress != nil { state.commitEditing(in: &workbook, then: nil) }
+                state.selectDrawing(anchor.id)
+            },
+            onDeselect: { state.selectDrawing(nil) },
+            onCommit: { frame in
+                let zoom = metrics.zoom
+                state.moveDrawing(
+                    anchor.id,
+                    to: CGRect(
+                        x: frame.minX / zoom, y: frame.minY / zoom,
+                        width: frame.width / zoom, height: frame.height / zoom
+                    ),
+                    in: &workbook
+                )
+            }
+        ) { size in
+            PreservedPictureView(picture: picture, data: data)
+                .frame(width: size.width, height: size.height)
+                .accessibilityElement()
+                .accessibilityLabel("Picture.Label")
+                .accessibilityIdentifier("picture")
+        } menu: {
+            Button("Picture.Menu.Delete", systemImage: "trash", role: .destructive) {
+                state.selectDrawing(anchor.id)
+                state.deleteSelectedDrawing(in: &workbook)
+            }
+        }
     }
 
     // MARK: - In-cell editor

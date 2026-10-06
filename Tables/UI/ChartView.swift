@@ -580,7 +580,6 @@ struct PreservedPictureView: View {
         if let image = PictureCache.shared.image(for: picture, data: data) {
             Image(decorative: image, scale: 1)
                 .resizable()
-                .allowsHitTesting(false)
         } else {
             PreservedDrawingPlaceholder(isChart: false)
         }

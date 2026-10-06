@@ -28,9 +28,12 @@ extension EditorState {
         change(&workbook.sheets[location.sheet].charts[location.chart])
     }
 
+    /// Picks a chart out, letting go of any picture; with `nil`, lets go of
+    /// both.
     func selectChart(_ id: Chart.ID?) {
         if id != nil, editingAddress != nil { cancelEditing() }
         selectedChartID = id
+        selectedDrawingID = nil
     }
 
     // MARK: - Inserting
