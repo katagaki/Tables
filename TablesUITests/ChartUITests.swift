@@ -138,7 +138,14 @@ final class ChartUITests: XCTestCase {
         XCTAssertTrue(waitFor { self.charts.count == before }, "undo left the chart on the sheet")
         capture("chart-undone")
 
-        let redo = app.buttons["redo"]
+        // A phone's bar has no room for Redo, so it sits in the "…" menu,
+        // where it keeps its label but not its identifier.
+        var redo = app.buttons["redo"]
+        if !redo.exists {
+            app.buttons["OverflowBarButtonItem"].tap()
+            redo = app.buttons["Redo"]
+            XCTAssertTrue(redo.waitForExistence(timeout: 5), "the Redo button is missing")
+        }
         XCTAssertTrue(redo.isEnabled)
         redo.tap()
         XCTAssertTrue(waitFor { self.charts.count == before + 1 }, "redo did not bring the chart back")
