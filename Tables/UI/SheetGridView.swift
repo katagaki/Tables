@@ -371,6 +371,16 @@ struct SheetGridView: View {
             }
             spillsFromOutside(row: row, of: plan, in: sheet, into: &painted)
         }
+        for (address, comment) in sheet.comments
+        where plan.rows.contains(address.row) && plan.columns.contains(address.column)
+            && !sheet.hiddenRows.contains(address.row) && !sheet.hiddenColumns.contains(address.column) {
+            // A comment on a merged cell marks the whole region's corner.
+            let merge = sheet.mergedRange(containing: address)?.normalized
+            if let merge, merge.start != address { continue }
+            let frame = merge.map { metrics.frame(for: $0) } ?? metrics.frame(for: address)
+            painted.comments.append(CommentMark(
+                address: address, frame: frame, kind: comment.kind, isResolved: comment.isResolved))
+        }
         return painted
     }
 

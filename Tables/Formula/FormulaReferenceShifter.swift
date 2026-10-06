@@ -67,6 +67,33 @@ enum FormulaReferenceShifter {
                 index += 1
                 continue
             }
+            // A table's column names in brackets are names, not references,
+            // however much `[Q1]` looks like a cell.
+            if character == "[" {
+                var depth = 0
+                while index < characters.count {
+                    let inner = characters[index]
+                    result.append(inner)
+                    index += 1
+                    if inner == "'", index < characters.count {
+                        result.append(characters[index])
+                        index += 1
+                        continue
+                    }
+                    if inner == "[" { depth += 1 }
+                    if inner == "]" {
+                        depth -= 1
+                        if depth == 0 { break }
+                    }
+                }
+                continue
+            }
+
+            if let span = scanLineSpan(characters, from: index) {
+                result += transform(span, operation: operation, axis: axis)
+                index = span.endIndex
+                continue
+            }
 
             if let token = scanReference(characters, from: index) {
                 // A word immediately followed by "(" is a function name, not a reference.
@@ -135,6 +162,89 @@ enum FormulaReferenceShifter {
             columnAnchored: columnAnchored, columnLetters: letters,
             rowAnchored: rowAnchored, rowDigits: digits, end: index
         )
+    }
+
+    /// A whole-column (`A:C`) or whole-row (`1:3`) reference.
+    private struct LineSpanToken {
+        enum Kind { case columns, rows }
+        var kind: Kind
+        var startAnchored: Bool
+        var start: String
+        var endAnchored: Bool
+        var end: String
+        /// Offset just past the token.
+        var endIndex: Int
+    }
+
+    private static func scanLineSpan(_ characters: [Character], from start: Int) -> LineSpanToken? {
+        // Glued to a preceding word, this is part of a name or a sheet-qualified
+        // 3-D span, not a span of its own.
+        if start > 0 {
+            let previous = characters[start - 1]
+            if previous.isLetter || previous.isNumber || previous == "_" || previous == "." || previous == "$" {
+                return nil
+            }
+        }
+        func side(at position: Int, _ accepts: (Character) -> Bool) -> (anchored: Bool, text: String, end: Int)? {
+            var index = position
+            var anchored = false
+            if index < characters.count, characters[index] == "$" {
+                anchored = true
+                index += 1
+            }
+            var text = ""
+            while index < characters.count, accepts(characters[index]) {
+                text.append(characters[index])
+                index += 1
+            }
+            return text.isEmpty ? nil : (anchored, text, index)
+        }
+        for kind in [LineSpanToken.Kind.columns, .rows] {
+            let accepts: (Character) -> Bool = kind == .columns ? { $0.isLetter } : { $0.isNumber }
+            guard let first = side(at: start, accepts),
+                  first.end < characters.count, characters[first.end] == ":",
+                  let second = side(at: first.end + 1, accepts) else { continue }
+            // Anything glued on after means this was a cell range or a name.
+            if second.end < characters.count {
+                let next = characters[second.end]
+                if next.isLetter || next.isNumber || next == "_" || next == "." || next == "(" || next == "!" { continue }
+            }
+            if kind == .columns {
+                guard first.text.count <= 3, second.text.count <= 3,
+                      CellAddress.columnIndex(first.text) != nil, CellAddress.columnIndex(second.text) != nil else { continue }
+            } else {
+                guard Int(first.text) != nil, Int(second.text) != nil else { continue }
+            }
+            return LineSpanToken(kind: kind, startAnchored: first.anchored, start: first.text,
+                                 endAnchored: second.anchored, end: second.text, endIndex: second.end)
+        }
+        return nil
+    }
+
+    private static func transform(_ token: LineSpanToken, operation: Operation, axis: Axis) -> String {
+        func render(_ anchored: Bool, _ text: String) -> String { (anchored ? "$" : "") + text }
+        let original = render(token.startAnchored, token.start) + ":" + render(token.endAnchored, token.end)
+        // Rows never move a column span, and columns never move a row span.
+        guard (token.kind == .columns) == (axis == .column) else { return original }
+
+        func line(_ text: String) -> Int? {
+            token.kind == .columns ? CellAddress.columnIndex(text) : Int(text).map { $0 - 1 }
+        }
+        func name(_ line: Int) -> String {
+            token.kind == .columns ? CellAddress.columnName(line) : String(line + 1)
+        }
+        func moved(_ anchored: Bool, _ text: String) -> String? {
+            guard let index = line(text) else { return render(anchored, text) }
+            if case .translate = operation, anchored { return render(anchored, text) }
+            switch shift(index, operation: operation) {
+            case .broken: return nil
+            case .same: return render(anchored, text)
+            case .moved(let updated): return render(anchored, name(updated))
+            }
+        }
+        guard let first = moved(token.startAnchored, token.start),
+              let last = moved(token.endAnchored, token.end) else { return CellError.referenceError.rawValue }
+        return first + ":" + last
     }
 
     private static func transform(_ token: ReferenceToken, operation: Operation, axis: Axis) -> String {

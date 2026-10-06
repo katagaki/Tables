@@ -8,6 +8,7 @@ enum EditorPanel: String, Identifiable, Hashable {
     case rowsAndColumns
     case functions
     case chart
+    case comment
 
     var id: String { rawValue }
 
@@ -18,6 +19,7 @@ enum EditorPanel: String, Identifiable, Hashable {
         case .rowsAndColumns: return String(localized: "Panel.RowsAndColumns.Title")
         case .functions: return String(localized: "Panel.Functions.Title")
         case .chart: return String(localized: "Panel.Chart.Title")
+        case .comment: return String(localized: "Panel.Comment.Title")
         }
     }
 }
@@ -59,10 +61,17 @@ final class EditorState {
     var pendingReferenceRange: CellRange?
 
     var presentedPanel: EditorPanel?
+    /// The kind of comment the comment panel starts when a cell has none.
+    var newCommentKind: CellComment.Kind = .thread
     /// False for delimited text, which has nowhere to keep styling.
     var allowsFormatting = true
     var errorMessage: String?
     var clipboard: [[Cell]]?
+    /// The comments on the copied cells, position for position.
+    var clipboardComments: [[CellComment?]] = []
+    /// Where the copied cells came from, so pasted formulas can move their
+    /// relative references by the distance travelled.
+    var clipboardOrigin: CellAddress?
     /// Whether the toolbar's popover about parts of the file we cannot edit is up.
     var isShowingUnsupportedFeatureNotice = false
 

@@ -375,6 +375,10 @@ extension EditorState {
         clipboard = box.rowRange.map { row in
             box.columnRange.map { column in sheet[CellAddress(row: row, column: column)] }
         }
+        clipboardComments = box.rowRange.map { row in
+            box.columnRange.map { column in sheet.comments[CellAddress(row: row, column: column)] }
+        }
+        clipboardOrigin = box.start
         #if canImport(UIKit)
         UIPasteboard.general.string = plainText(for: box, in: sheet)
         #else
@@ -383,14 +387,18 @@ extension EditorState {
         #endif
     }
 
+    /// Cutting takes the comments too; they come back wherever the cells are pasted.
     func cutSelection(in workbook: inout Workbook) {
         copySelection(in: workbook)
         clearContents(in: &workbook)
+        let index = activeIndex(in: workbook)
+        let box = selection.normalized
+        workbook.sheets[index].comments = workbook.sheets[index].comments.filter { !box.contains($0.key) }
     }
 
     func paste(in workbook: inout Workbook) {
         if let clipboard, !clipboard.isEmpty {
-            paste(cells: clipboard, in: &workbook)
+            paste(cells: clipboard, comments: clipboardComments, from: clipboardOrigin, in: &workbook)
             return
         }
         #if canImport(UIKit)
@@ -406,17 +414,32 @@ extension EditorState {
         paste(cells: cells, in: &workbook)
     }
 
-    private func paste(cells: [[Cell]], in workbook: inout Workbook) {
+    /// Pastes cells at the selection, as Excel's paste does: relative
+    /// references in formulas move by the distance pasted, comments come
+    /// along, and what was a spilled value lands as a value of its own.
+    private func paste(
+        cells: [[Cell]], comments: [[CellComment?]] = [], from source: CellAddress? = nil,
+        in workbook: inout Workbook
+    ) {
         let index = activeIndex(in: workbook)
         let origin = selection.normalized.start
         var lastRow = origin.row
         var lastColumn = origin.column
 
         for (rowOffset, row) in cells.enumerated() {
-            for (columnOffset, cell) in row.enumerated() {
+            for (columnOffset, original) in row.enumerated() {
                 let address = CellAddress(row: origin.row + rowOffset, column: origin.column + columnOffset)
                 guard workbook.sheets[index].contains(address) else { continue }
+                var cell = original
+                if let formula = cell.formula, let source {
+                    cell.formula = FormulaReferenceShifter.translated(
+                        formula, rowDelta: origin.row - source.row, columnDelta: origin.column - source.column)
+                }
+                cell.isSpilled = false
                 workbook.sheets[index][address] = cell
+                if rowOffset < comments.count, columnOffset < comments[rowOffset].count {
+                    workbook.sheets[index].comments[address] = comments[rowOffset][columnOffset]
+                }
                 lastRow = max(lastRow, address.row)
                 lastColumn = max(lastColumn, address.column)
             }

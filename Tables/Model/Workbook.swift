@@ -215,6 +215,8 @@ struct Workbook: Hashable, Sendable {
     /// The theme's six accent colours, as six-digit RGB. Chart series without
     /// a colour of their own take these in turn, exactly as Excel draws them.
     var themeAccentColors = ThemeColorScheme.office.accentColors
+    /// The file's tables, so structured references in formulas resolve.
+    var tables: [TableDefinition] = []
     /// The name the macros know the workbook by, `ThisWorkbook` unless the
     /// file renamed it. Like a sheet's, it binds the workbook to its module.
     var codeName: String?

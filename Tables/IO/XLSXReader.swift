@@ -34,6 +34,8 @@ enum XLSXReader {
         var sheetFindings: [[(feature: UnsupportedFeature, elementName: String)]] = []
         /// The relationship id each sheet's `<drawing>` names, if it has one.
         var drawingIDs: [String?] = []
+        /// And its `<legacyDrawing>`, the VML drawing its notes are drawn in.
+        var legacyDrawingIDs: [String?] = []
         let sheetElements = workbookXML.firstChild(named: "sheets")?.children(named: "sheet") ?? []
 
         for (position, element) in sheetElements.enumerated() {
@@ -53,6 +55,7 @@ enum XLSXReader {
                 sheetPaths.append(path)
                 sheetFindings.append([])
                 drawingIDs.append(nil)
+                legacyDrawingIDs.append(nil)
                 continue
             }
             let sheetXML = try XMLLite.parse(payload)
@@ -71,6 +74,7 @@ enum XLSXReader {
             // The drawing is regenerated from the model on every save, so the
             // element naming it is too.
             drawingIDs.append(sheetXML.firstChild(named: "drawing")?.attribute("id"))
+            legacyDrawingIDs.append(sheetXML.firstChild(named: "legacyDrawing")?.attribute("id"))
             sheet.preservedElements.removeAll { $0.name == "drawing" }
             sheet.name = name
             sheet.isHidden = isHidden
@@ -89,6 +93,7 @@ enum XLSXReader {
         var workbook = Workbook(sheets: sheets, definedNames: parseDefinedNames(workbookXML, sheets: sheets))
         workbook.themeAccentColors = theme.accentColors
         workbook.codeName = workbookXML.firstChild(named: "workbookPr")?.attribute("codeName")
+        adoptArrayFormulas(in: &workbook)
 
         // Drawings are read into the model — charts as charts, everything
         // else as anchors kept verbatim — and written afresh on save.
@@ -137,10 +142,33 @@ enum XLSXReader {
         let anchorTargets = workbook.sheets.flatMap(\.preservedDrawingAnchors).flatMap(\.relationships)
             .filter(\.isPackagePart).map(\.target)
 
+        // Comments are read into the model and written afresh, so their parts
+        // and the relationships naming them are taken over too.
+        let persons = CommentParts.persons(
+            entries: entries, workbookRelationships: PackagePreservation.relationships(in: entries["xl/_rels/workbook.xml.rels"]))
+        var commentParts: Set<String> = persons.path.map { [$0] } ?? []
+        var commentRelationshipIDs: [Worksheet.ID: Set<String>] = [:]
+        var shapeTargets: [String] = []
+        for index in workbook.sheets.indices where !workbook.sheets[index].isChartSheet {
+            let found = CommentParts.read(sheetPath: sheetPaths[index], legacyDrawingID: legacyDrawingIDs[index],
+                                          entries: entries, persons: persons.names)
+            workbook.sheets[index].comments = found.comments
+            workbook.sheets[index].preservedVMLShapes = found.preservedShapes
+            workbook.sheets[index].preservedVMLRelationships = found.preservedShapeRelationships
+            commentParts.formUnion(found.parts)
+            commentRelationshipIDs[workbook.sheets[index].id] = found.relationshipIDs
+            shapeTargets += found.shapeTargets
+            if let legacy = legacyDrawingIDs[index], found.relationshipIDs.contains(legacy) {
+                workbook.sheets[index].preservedElements.removeAll { $0.name == "legacyDrawing" }
+            }
+        }
+
         var report = UnsupportedFeatureReport()
         var preserved = PackagePreservation.plan(
             entries: entries, sheets: workbook.sheets, sheetPaths: sheetPaths,
-            takenOver: drawingPaths.union(consumedParts), extraRoots: anchorTargets, report: &report
+            takenOver: drawingPaths.union(consumedParts).union(commentParts),
+            extraRoots: anchorTargets + shapeTargets,
+            droppedSheetRelationshipIDs: commentRelationshipIDs, report: &report
         )
         preserved.styleSheetElements = styleSheetElements
 
@@ -176,6 +204,7 @@ enum XLSXReader {
         }
         workbook.preservedPackage = preserved
         workbook.unsupportedFeatures = report
+        workbook.tables = readTables(workbook: workbook, preserved: preserved, sheetPaths: sheetPaths)
         workbook.recalculate()
         return workbook
     }
@@ -246,7 +275,7 @@ enum XLSXReader {
                 guard sheets.indices.contains(position) else { continue }
                 scope = sheets[position].id
             }
-            result.append(DefinedName(name: name, formula: formula, scope: scope))
+            result.append(DefinedName(name: name, formula: FormulaDialect.fromFile(formula), scope: scope))
         }
         return result
     }
@@ -490,6 +519,18 @@ enum XLSXReader {
                 }
                 if let element = cellElement.firstChild(named: "f") {
                     cell.formula = formula(from: element, at: address, shared: &sharedFormulas)
+                        .map(FormulaDialect.fromFile)
+                    // An array formula names the block it fills. Excel marks the
+                    // dynamic ones, which spill, with cell metadata; the rest are
+                    // the fixed blocks of Ctrl+Shift+Enter.
+                    if element.attribute("t") == "array", let ref = element.attribute("ref"),
+                       let block = CellRange(a1Range: ref)?.normalized {
+                        if cellElement.attribute("cm") != nil {
+                            sheet.spills[address] = block
+                        } else {
+                            cell.arrayExtent = ArrayExtent(rows: block.rowRange.count, columns: block.columnRange.count)
+                        }
+                    }
                 }
                 cell.value = decodeValue(cellElement, sharedStrings: sharedStrings)
                 if usesMacEpoch, case .number(let serial) = cell.value,
@@ -645,6 +686,16 @@ enum XLSXReader {
             return Data(("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n" + xml).utf8)
         }
 
+        /// A `_rels` part without the relationships with the given ids.
+        static func removingRelationships(withIDs ids: Set<String>, from payload: Data) -> Data {
+            guard !ids.isEmpty, let root = try? XMLLite.parse(payload) else { return payload }
+            let dropped = root.children(named: "Relationship").filter { ids.contains($0.attribute("Id") ?? "") }
+            guard !dropped.isEmpty else { return payload }
+            dropped.forEach(root.removeChild)
+            guard let xml = XMLLite.serialize(root) else { return payload }
+            return Data(("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n" + xml).utf8)
+        }
+
         /// `takenOver` names parts the model now holds — drawings and the
         /// charts read out of them — which count as generated, so whatever
         /// points at them stays valid. `extraRoots` are parts that something
@@ -652,6 +703,7 @@ enum XLSXReader {
         static func plan(
             entries: [String: Data], sheets: [Worksheet], sheetPaths: [String],
             takenOver: Set<String> = [], extraRoots: [String] = [],
+            droppedSheetRelationshipIDs: [Worksheet.ID: Set<String>] = [:],
             report: inout UnsupportedFeatureReport
         ) -> PreservedPackage {
             let types = contentTypes(entries["[Content_Types].xml"])
@@ -694,7 +746,9 @@ enum XLSXReader {
             for (index, sheet) in sheets.enumerated() {
                 let path = relationshipsPath(for: sheetPaths[index])
                 guard let original = entries[path] else { continue }
-                let payload = removingRelationships(ofTypes: droppedSheetRelationshipTypes, from: original)
+                let payload = removingRelationships(
+                    withIDs: droppedSheetRelationshipIDs[sheet.id] ?? [],
+                    from: removingRelationships(ofTypes: droppedSheetRelationshipTypes, from: original))
                 let targets = relationships(in: payload).compactMap {
                     packagePath(of: $0, relativeTo: directory(of: sheetPaths[index]))
                 }
@@ -930,6 +984,70 @@ enum XLSXReader {
             rowDelta: address.row - master.origin.row,
             columnDelta: address.column - master.origin.column
         )
+    }
+
+    /// The tables each sheet's relationships name, from the parts kept for a save.
+    private static func readTables(
+        workbook: Workbook, preserved: PreservedPackage, sheetPaths: [String]
+    ) -> [TableDefinition] {
+        let tableType = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/table"
+        var tables: [TableDefinition] = []
+        for (index, sheet) in workbook.sheets.enumerated() {
+            let directory = PackagePreservation.directory(of: sheetPaths[index])
+            for entry in PackagePreservation.relationships(in: preserved.sheetRelationshipParts[sheet.id])
+            where entry.type == tableType {
+                guard let path = PackagePreservation.packagePath(of: entry, relativeTo: directory),
+                      let data = preserved.parts[path], let root = try? XMLLite.parse(data),
+                      let name = root.attribute("displayName") ?? root.attribute("name"),
+                      let ref = root.attribute("ref"), let range = CellRange(a1Range: ref)?.normalized else { continue }
+                let columns = root.firstChild(named: "tableColumns")?.children(named: "tableColumn")
+                    .map { $0.attribute("name") ?? "" } ?? []
+                tables.append(TableDefinition(
+                    name: name, sheetID: sheet.id, range: range,
+                    headerRowCount: root.attribute("headerRowCount").flatMap(Int.init) ?? 1,
+                    totalsRowCount: root.attribute("totalsRowCount").flatMap(Int.init) ?? 0,
+                    columns: columns))
+            }
+        }
+        return tables
+    }
+
+    /// Brings formulas written before dynamic arrays into today's meaning, and
+    /// marks the cells array formulas filled.
+    ///
+    /// An ordinary formula from the file was calculated by Excel's old rules,
+    /// under which a range standing where one value belongs collapses to the
+    /// cell in line with the formula. Today's rules would spill it instead, so
+    /// each such place gets the `@` that keeps the old answer — what Excel
+    /// shows when it opens the same file.
+    private static func adoptArrayFormulas(in workbook: inout Workbook) {
+        let isRangeName = workbook.isRangeName
+        for index in workbook.sheets.indices {
+            let sheet = workbook.sheets[index]
+            var blocks = sheet.spills
+            for (address, cell) in sheet.cells {
+                guard let formula = cell.formula else { continue }
+                // Excel's result for a function Tables approximates is the
+                // better answer until the inputs change.
+                if !cell.value.isEmpty, let node = try? FormulaParser.parse(formula),
+                   FormulaFunctions.callsApproximatedFunction(node) {
+                    workbook.sheets[index].cells[address]?.savedResultInputs = Cell.unverifiedInputs
+                }
+                if let extent = cell.arrayExtent {
+                    blocks[address] = CellRange(start: address, end: CellAddress(
+                        row: address.row + extent.rows - 1, column: address.column + extent.columns - 1))
+                } else if sheet.spills[address] == nil {
+                    let converted = FormulaDialect.legacyToDynamic(formula, isRangeName: isRangeName)
+                    if converted != formula { workbook.sheets[index].cells[address]?.formula = converted }
+                }
+            }
+            for (anchor, block) in blocks {
+                for address in sheet.storedAddresses(in: block) where address != anchor {
+                    guard workbook.sheets[index].cells[address]?.formula == nil else { continue }
+                    workbook.sheets[index].cells[address]?.isSpilled = true
+                }
+            }
+        }
     }
 
     /// Days between the 1900 and 1904 epochs. Only date-formatted values are

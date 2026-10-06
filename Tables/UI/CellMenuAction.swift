@@ -49,6 +49,28 @@ struct CellMenuBuilder {
             },
         ]
         if state.allowsFormatting {
+            actions.append(.separator)
+            if activeSheet.comments[address] != nil {
+                actions += [
+                    HeaderMenuAction(title: String(localized: "CellMenu.ShowComment"), symbol: "text.bubble") {
+                        state.showComment(at: address, kind: .thread, in: workbook.wrappedValue)
+                    },
+                    HeaderMenuAction(
+                        title: String(localized: "CellMenu.DeleteComment"), symbol: "trash", kind: .destructive
+                    ) {
+                        state.deleteComment(at: address, in: &workbook.wrappedValue)
+                    },
+                ]
+            } else {
+                actions += [
+                    HeaderMenuAction(title: String(localized: "CellMenu.NewComment"), symbol: "plus.bubble") {
+                        state.showComment(at: address, kind: .thread, in: workbook.wrappedValue)
+                    },
+                    HeaderMenuAction(title: String(localized: "CellMenu.NewNote"), symbol: "note.text.badge.plus") {
+                        state.showComment(at: address, kind: .note, in: workbook.wrappedValue)
+                    },
+                ]
+            }
             actions += [
                 .separator,
                 HeaderMenuAction(

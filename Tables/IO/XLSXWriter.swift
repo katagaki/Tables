@@ -10,23 +10,31 @@ enum XLSXWriter {
         let styles = StyleTable(workbook: workbook)
         let preserved = macroEnabled ? workbook.preservedPackage : workbook.preservedPackage.removingMacros()
         let drawings = DrawingPlan(workbook: workbook)
+        let formulas = FormulaPlan(workbook: workbook)
+        let comments = CommentPlan(workbook: workbook, preserved: preserved)
 
         var parts: [(path: String, data: Data)] = [
             (
                 "[Content_Types].xml",
-                contentTypes(
-                    workbook: workbook, drawings: drawings, preserved: preserved, macroEnabled: macroEnabled
-                ).utf8Data
+                contentTypes(workbook: workbook, drawings: drawings, preserved: preserved,
+                             hasMetadata: formulas.usesDynamicArrays, comments: comments,
+                             macroEnabled: macroEnabled).utf8Data
             ),
             ("_rels/.rels", rootRelationships(preserved: preserved).utf8Data),
             ("xl/workbook.xml", workbookPart(workbook).utf8Data),
             (
                 "xl/_rels/workbook.xml.rels",
-                workbookRelationships(workbook: workbook, drawings: drawings, preserved: preserved).utf8Data
+                workbookRelationships(workbook: workbook, drawings: drawings, preserved: preserved,
+                                      hasMetadata: formulas.usesDynamicArrays,
+                                      hasPersons: comments.personsPath != nil).utf8Data
             ),
             ("xl/styles.xml", styles.xml.utf8Data),
             ("xl/sharedStrings.xml", strings.xml.utf8Data),
         ]
+        if formulas.usesDynamicArrays { parts.append((FormulaPlan.metadataPath, FormulaPlan.metadataPart.utf8Data)) }
+        if let personsPath = comments.personsPath {
+            parts.append((personsPath, CommentParts.personsPart(comments.authors).utf8Data))
+        }
         for (index, sheet) in workbook.sheets.enumerated() {
             let preservedRelationships = preserved.sheetRelationshipParts[sheet.id]
             let sheetDrawing = drawings.sheets[sheet.id]
@@ -47,6 +55,32 @@ enum XLSXWriter {
                 ))
             }
 
+            // Comments: the notes part, the VML drawing they are drawn in,
+            // and the threaded conversations.
+            var legacyDrawingID: String?
+            if let sheetComments = comments.sheets[sheet.id] {
+                func relate(_ type: String, _ target: String) -> String {
+                    let id = Self.freshRelationshipID(avoiding: Set(relationships.compactMap(\.id)))
+                    relationships.append(.init(id: id, type: type, target: relativePath(from: path, to: target),
+                                               targetMode: nil))
+                    return id
+                }
+                legacyDrawingID = relate(CommentParts.vmlType, sheetComments.vmlPath)
+                parts.append((sheetComments.vmlPath, CommentParts.vmlPart(
+                    sheet.comments, preservedShapes: sheet.preservedVMLShapes, sheetNumber: index + 1).utf8Data))
+                if let payload = sheet.preservedVMLRelationships {
+                    parts.append((XLSXReader.PackagePreservation.relationshipsPath(for: sheetComments.vmlPath), payload))
+                }
+                if let commentsPath = sheetComments.commentsPath {
+                    _ = relate(CommentParts.commentsType, commentsPath)
+                    parts.append((commentsPath, CommentParts.commentsPart(sheet.comments).utf8Data))
+                }
+                if let threadsPath = sheetComments.threadsPath, let xml = CommentParts.threadsPart(sheet.comments) {
+                    _ = relate(CommentParts.threadType, threadsPath)
+                    parts.append((threadsPath, xml.utf8Data))
+                }
+            }
+
             let body: String
             if drawings.isChartSheet(sheet) {
                 body = ChartWriter.chartSheet(
@@ -55,8 +89,9 @@ enum XLSXWriter {
                 )
             } else {
                 body = sheetPart(
-                    sheet, strings: strings, styles: styles,
-                    hasRelationshipsPart: preservedRelationships != nil, drawingRelationshipID: drawingID
+                    sheet, strings: strings, styles: styles, formulas: formulas.forms[sheet.id] ?? [:],
+                    hasRelationshipsPart: preservedRelationships != nil, drawingRelationshipID: drawingID,
+                    legacyDrawingRelationshipID: legacyDrawingID
                 )
             }
             parts.append((path, body.utf8Data))
@@ -239,7 +274,8 @@ enum XLSXWriter {
     // MARK: - Package parts
 
     private static func contentTypes(
-        workbook: Workbook, drawings: DrawingPlan, preserved: PreservedPackage, macroEnabled: Bool
+        workbook: Workbook, drawings: DrawingPlan, preserved: PreservedPackage, hasMetadata: Bool,
+        comments: CommentPlan, macroEnabled: Bool
     ) -> String {
         var xml = declaration
         xml += "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
@@ -275,8 +311,23 @@ enum XLSXWriter {
         }
         xml += "<Override PartName=\"/xl/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml\"/>"
         xml += "<Override PartName=\"/xl/sharedStrings.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml\"/>"
+        if hasMetadata {
+            xml += "<Override PartName=\"/\(FormulaPlan.metadataPath)\" ContentType=\"\(FormulaPlan.metadataContentType)\"/>"
+        }
+        for sheetComments in comments.sheets.values.sorted(by: { $0.vmlPath < $1.vmlPath }) {
+            xml += "<Override PartName=\"/\(sheetComments.vmlPath)\" ContentType=\"\(CommentParts.vmlContentType)\"/>"
+            if let path = sheetComments.commentsPath {
+                xml += "<Override PartName=\"/\(path)\" ContentType=\"\(CommentParts.commentsContentType)\"/>"
+            }
+            if let path = sheetComments.threadsPath {
+                xml += "<Override PartName=\"/\(path)\" ContentType=\"\(CommentParts.threadContentType)\"/>"
+            }
+        }
+        if let path = comments.personsPath {
+            xml += "<Override PartName=\"/\(path)\" ContentType=\"\(CommentParts.personContentType)\"/>"
+        }
         for (name, type) in preserved.contentTypeOverrides.sorted(by: { $0.key < $1.key })
-        where !generatedPartNames.contains(name) {
+        where !generatedPartNames.contains(name) && !comments.generatedPartNames.contains(name) {
             xml += "<Override PartName=\"\(XMLLite.escape(name))\" ContentType=\"\(XMLLite.escape(type))\"/>"
         }
         xml += "</Types>"
@@ -286,7 +337,7 @@ enum XLSXWriter {
     /// Part names we always write an override for ourselves, so a preserved
     /// one naming the same part is skipped rather than duplicated.
     private static let generatedPartNames: Set<String> = [
-        "/xl/workbook.xml", "/xl/styles.xml", "/xl/sharedStrings.xml",
+        "/xl/workbook.xml", "/xl/styles.xml", "/xl/sharedStrings.xml", "/xl/metadata.xml",
     ]
 
     private static func rootRelationships(preserved: PreservedPackage) -> String {
@@ -299,7 +350,7 @@ enum XLSXWriter {
     }
 
     private static func workbookRelationships(
-        workbook: Workbook, drawings: DrawingPlan, preserved: PreservedPackage
+        workbook: Workbook, drawings: DrawingPlan, preserved: PreservedPackage, hasMetadata: Bool, hasPersons: Bool
     ) -> String {
         let sheetCount = workbook.sheets.count
         var xml = declaration
@@ -311,7 +362,18 @@ enum XLSXWriter {
         }
         xml += "<Relationship Id=\"rId\(sheetCount + 1)\" Type=\"\(relationshipNamespace)/styles\" Target=\"styles.xml\"/>"
         xml += "<Relationship Id=\"rId\(sheetCount + 2)\" Type=\"\(relationshipNamespace)/sharedStrings\" Target=\"sharedStrings.xml\"/>"
-        xml += relationshipEntries(preserved.workbookRelationships, startingAt: sheetCount + 3)
+        let carried = preserved.workbookRelationships.filter {
+            $0.type != FormulaPlan.metadataRelationshipType && $0.type != CommentParts.personType
+        }
+        xml += relationshipEntries(carried, startingAt: sheetCount + 3)
+        var nextID = sheetCount + 3 + carried.count
+        if hasMetadata {
+            xml += "<Relationship Id=\"rId\(nextID)\" Type=\"\(FormulaPlan.metadataRelationshipType)\" Target=\"metadata.xml\"/>"
+            nextID += 1
+        }
+        if hasPersons {
+            xml += "<Relationship Id=\"rId\(nextID)\" Type=\"\(CommentParts.personType)\" Target=\"persons/person.xml\"/>"
+        }
         xml += "</Relationships>"
         return xml
     }
@@ -367,7 +429,7 @@ enum XLSXWriter {
             for (name, position) in names {
                 xml += "<definedName name=\"\(XMLLite.escape(name.name))\""
                 if let position { xml += " localSheetId=\"\(position)\"" }
-                xml += ">\(XMLLite.escape(name.formula))</definedName>"
+                xml += ">\(XMLLite.escape(FormulaDialect.toFile(name.formula)))</definedName>"
             }
             xml += "</definedNames>"
         }
@@ -396,8 +458,8 @@ enum XLSXWriter {
     ]
 
     private static func sheetPart(
-        _ sheet: Worksheet, strings: SharedStringTable, styles: StyleTable,
-        hasRelationshipsPart: Bool, drawingRelationshipID: String? = nil
+        _ sheet: Worksheet, strings: SharedStringTable, styles: StyleTable, formulas: [CellAddress: FormulaPlan.Form] = [:],
+        hasRelationshipsPart: Bool, drawingRelationshipID: String? = nil, legacyDrawingRelationshipID: String? = nil
     ) -> String {
         /// Fragments paired with their schema position, plus the order they
         /// were added in so repeatable children — several `<conditionalFormatting>`
@@ -466,7 +528,7 @@ enum XLSXWriter {
             cells.sort { $0.address.column < $1.address.column }
             xml += "<row \(attributes)>"
             for (address, cell) in cells {
-                xml += cellPart(cell, at: address, strings: strings, styles: styles)
+                xml += cellPart(cell, at: address, strings: strings, styles: styles, formula: formulas[address])
             }
             xml += "</row>"
         }
@@ -497,6 +559,9 @@ enum XLSXWriter {
         }
 
         if let drawingRelationshipID { add("drawing", "<drawing r:id=\"\(drawingRelationshipID)\"/>") }
+        if let legacyDrawingRelationshipID {
+            add("legacyDrawing", "<legacyDrawing r:id=\"\(legacyDrawingRelationshipID)\"/>")
+        }
 
         // Sorting rather than appending in place is what keeps the carried-over
         // fragments in their schema slots instead of wherever we happened to
@@ -509,15 +574,25 @@ enum XLSXWriter {
     }
 
     private static func cellPart(
-        _ cell: Cell, at address: CellAddress, strings: SharedStringTable, styles: StyleTable
+        _ cell: Cell, at address: CellAddress, strings: SharedStringTable, styles: StyleTable,
+        formula form: FormulaPlan.Form? = nil
     ) -> String {
         var attributes = "r=\"\(address.a1)\""
         let styleIndex = styles.index(for: cell.style)
         if styleIndex != 0 { attributes += " s=\"\(styleIndex)\"" }
 
         var body = ""
-        if let formula = cell.formula {
-            body += "<f>\(XMLLite.escape(formula))</f>"
+        var isDynamic = false
+        switch form {
+        case .plain(let text)?:
+            body += "<f>\(XMLLite.escape(text))</f>"
+        case .array(let text, let block, let dynamic)?:
+            body += "<f t=\"array\" ref=\"\(block.a1)\">\(XMLLite.escape(text))</f>"
+            isDynamic = dynamic
+        case nil:
+            if let formula = cell.formula {
+                body += "<f>\(XMLLite.escape(FormulaDialect.toFile(formula)))</f>"
+            }
         }
 
         switch cell.value {
@@ -541,6 +616,9 @@ enum XLSXWriter {
             }
         }
 
+        // `cm` points at the metadata marking the formula as a dynamic array;
+        // the schema puts it after `t`.
+        if isDynamic { attributes += " cm=\"1\"" }
         return body.isEmpty ? "<c \(attributes)/>" : "<c \(attributes)>\(body)</c>"
     }
 

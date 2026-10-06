@@ -139,6 +139,7 @@ struct WorkbookView: View {
         case .rowsAndColumns: RowsColumnsPanel(workbook: workbook, state: state)
         case .functions: FunctionsPanel(workbook: workbook, state: state)
         case .chart: ChartPanel(workbook: workbook, state: state)
+        case .comment: CommentPanel(workbook: workbook, state: state)
         }
     }
 

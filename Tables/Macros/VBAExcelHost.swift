@@ -188,6 +188,8 @@ final class VBAExcelHost: VBAHost {
         case .nameError: return 2029
         case .numberError: return 2036
         case .notAvailable: return 2042
+        case .spill: return 2045
+        case .calc: return 2050
         case .circularReference: return 2023
         }
     }
@@ -200,6 +202,8 @@ final class VBAExcelHost: VBAHost {
         case 2029: return .nameError
         case 2036: return .numberError
         case 2042: return .notAvailable
+        case 2045: return .spill
+        case 2050: return .calc
         default: return .valueError
         }
     }
@@ -357,7 +361,7 @@ enum VBAExcelConstants {
         "xlcelltypeblanks": 4, "xlcelltypevisible": 12,
         "xlwhole": 1, "xlpart": 2, "xlbyrows": 1, "xlbycolumns": 2, "xlnext": 1, "xlprevious": 2,
         "xlerrdiv0": 2007, "xlerrna": 2042, "xlerrname": 2029, "xlerrnull": 2000, "xlerrnum": 2036,
-        "xlerrref": 2023, "xlerrvalue": 2015,
+        "xlerrref": 2023, "xlerrvalue": 2015, "xlerrspill": 2045, "xlerrcalc": 2050,
         "xlsheetvisible": -1, "xlsheethidden": 0, "xlsheetveryhidden": 2,
         "xlshiftup": -4162, "xlshiftdown": -4121, "xlshifttoleft": -4159, "xlshifttoright": -4161,
         "xlcontinuous": 1, "xldash": -4115, "xldot": -4118, "xldouble": -4119, "xldashdot": 4,

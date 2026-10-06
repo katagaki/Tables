@@ -5,6 +5,20 @@ struct Cell: Hashable, Sendable {
     var value: CellValue = .empty
     var formula: String?
     var style: CellStyle = .default
+    /// Set on a cell holding part of a neighbour's spilled array. The value is
+    /// that formula's, not the cell's own: it does not block the spill, and it
+    /// is cleared when the spill shrinks away.
+    var isSpilled = false
+    /// For a legacy array formula, entered with Ctrl+Shift+Enter in Excel, the
+    /// fixed block its result fills, counted from this cell.
+    var arrayExtent: ArrayExtent?
+    /// For a formula whose function Tables can only approximate, a fingerprint
+    /// of the inputs its saved result was worked out from. While they are
+    /// unchanged that result — Excel's own — is kept.
+    var savedResultInputs: Int?
+
+    /// Marks a result read from a file, before its inputs have been seen.
+    static let unverifiedInputs = Int.min
 
     var isBlank: Bool { value.isEmpty && formula == nil }
     var isEmptyEntirely: Bool { isBlank && style.isDefault }
@@ -20,6 +34,12 @@ struct Cell: Hashable, Sendable {
         case .error(let error): return error.rawValue
         }
     }
+}
+
+/// The size of a legacy array formula's block.
+struct ArrayExtent: Hashable, Sendable {
+    var rows: Int
+    var columns: Int
 }
 
 /// A single sheet of a workbook. Row and column counts are explicit, Numbers-style:
@@ -118,6 +138,17 @@ struct Worksheet: Identifiable, Hashable, Sendable {
     var codeName: String?
     /// Worksheet children we do not understand, in the order the file had them.
     var preservedElements: [PreservedElement] = []
+    /// Where each array formula spilled at the last recalculation, by the
+    /// address of the formula. Recalculation starts from this so that cells
+    /// reading a spilled range see it on the first pass.
+    var spills: [CellAddress: CellRange] = [:]
+    /// Notes and threaded comments, by the cell they belong to.
+    var comments: [CellAddress: CellComment] = [:]
+    /// Shapes from the file's VML drawing that are not notes — form controls,
+    /// mostly — carried verbatim into the drawing written with the notes.
+    var preservedVMLShapes: String?
+    /// That drawing's own relationships, for the pictures those shapes show.
+    var preservedVMLRelationships: Data?
 
     /// A chart sheet holds one chart and no cells — Excel's "Move Chart to New
     /// Sheet". It is still a sheet: it takes a tab and a position, and
@@ -289,6 +320,7 @@ struct Worksheet: Identifiable, Hashable, Sendable {
         guard rowCount - count >= 1 else { return }
         FormulaReferenceShifter.apply(.remove(range: range), axis: .row, to: &cells)
         cells = cells.filter { !range.contains($0.key.row) }
+        comments = comments.filter { !range.contains($0.key.row) }
         remapCells { $0.row > range.upperBound ? CellAddress(row: $0.row - count, column: $0.column) : $0 }
         rowHeights = Self.shift(rowHeights.filter { !range.contains($0.key) }, from: range.upperBound + 1, by: -count)
         fittedRows = Self.shift(fittedRows.filter { !range.contains($0) }, from: range.upperBound + 1, by: -count)
@@ -303,6 +335,7 @@ struct Worksheet: Identifiable, Hashable, Sendable {
         guard columnCount - count >= 1 else { return }
         FormulaReferenceShifter.apply(.remove(range: range), axis: .column, to: &cells)
         cells = cells.filter { !range.contains($0.key.column) }
+        comments = comments.filter { !range.contains($0.key.column) }
         remapCells { $0.column > range.upperBound ? CellAddress(row: $0.row, column: $0.column - count) : $0 }
         columnWidths = Self.shift(columnWidths.filter { !range.contains($0.key) }, from: range.upperBound + 1, by: -count)
         hiddenColumns = Self.shift(hiddenColumns.filter { !range.contains($0) }, from: range.upperBound + 1, by: -count)
@@ -333,11 +366,17 @@ struct Worksheet: Identifiable, Hashable, Sendable {
         hiddenColumns.removeAll()
     }
 
+    /// Moves cells, and the comments on them, to new addresses.
     private mutating func remapCells(_ transform: (CellAddress) -> CellAddress) {
         var moved: [CellAddress: Cell] = [:]
         moved.reserveCapacity(cells.count)
         for (address, cell) in cells { moved[transform(address)] = cell }
         cells = moved
+        var movedComments: [CellAddress: CellComment] = [:]
+        for (address, comment) in comments { movedComments[transform(address)] = comment }
+        comments = movedComments
+        // Where arrays spilled is worked out again on the next recalculation.
+        spills = [:]
     }
 
     private static func shift(_ values: [Int: Double], from index: Int, by delta: Int) -> [Int: Double] {

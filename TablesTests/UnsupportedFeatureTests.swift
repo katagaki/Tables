@@ -479,10 +479,10 @@ struct UnsupportedFeatureTests {
 
     @Test("The report names what is kept and what is not, and nothing else")
     func reportContents() throws {
-        let comments = Part(
-            "xl/comments1.xml",
-            "<?xml version=\"1.0\"?><comments xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"/>",
-            contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml"
+        let table = Part(
+            "xl/tables/table1.xml",
+            "<?xml version=\"1.0\"?><table xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"/>",
+            contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"
         )
         // A pivot cache is always dropped: what binds it to the workbook lives
         // in the part we regenerate.
@@ -493,17 +493,17 @@ struct UnsupportedFeatureTests {
         )
         let data = try package(
             sheets: ["<sheetProtection sheet=\"1\"/>"],
-            extraParts: [comments, pivot],
+            extraParts: [table, pivot],
             sheetRelationships: [
                 0: "<Relationship Id=\"rId1\" "
-                    + "Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments\" "
-                    + "Target=\"../comments1.xml\"/>",
+                    + "Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/table\" "
+                    + "Target=\"../tables/table1.xml\"/>",
             ]
         )
         let workbook = try XLSXReader.workbook(from: data)
         let report = workbook.unsupportedFeatures
 
-        #expect(report.preserved == [.sheetProtection, .comments])
+        #expect(report.preserved == [.sheetProtection, .tables])
         #expect(report.lost == [.pivotTables])
         #expect(!report.isEmpty)
 
@@ -515,7 +515,7 @@ struct UnsupportedFeatureTests {
         // difference plain rather than listing everything together.
         #expect(halves.count == 2)
         #expect(halves.first?.contains(UnsupportedFeature.sheetProtection.label) == true)
-        #expect(halves.first?.contains(UnsupportedFeature.comments.label) == true)
+        #expect(halves.first?.contains(UnsupportedFeature.tables.label) == true)
         #expect(halves.last?.contains(UnsupportedFeature.pivotTables.label) == true)
         #expect(halves.first?.contains(UnsupportedFeature.pivotTables.label) == false)
     }
