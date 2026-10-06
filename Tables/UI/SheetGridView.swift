@@ -707,6 +707,7 @@ struct SheetGridView: View {
                 if state.editingAddress != nil { state.commitEditing(in: &workbook, then: nil) }
                 state.selectChart(chart.id)
             },
+            onDeselect: { state.selectChart(nil) },
             onEdit: { state.presentedPanel = .chart },
             onCommit: { frame in
                 let zoom = metrics.zoom

@@ -97,6 +97,7 @@ struct FloatingActionBar: View {
     private var chartGroup: some View {
         group {
             panelAction("slider.horizontal.3", label: "Toolbar.EditChart", panel: .chart)
+                .accessibilityIdentifier("editChart")
             action("trash", isOn: false, label: "Chart.Menu.Delete") {
                 state.deleteSelectedChart(in: &workbook)
             }

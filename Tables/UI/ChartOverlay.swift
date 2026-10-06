@@ -2,11 +2,12 @@ import SwiftUI
 
 /// One chart floating over the grid.
 ///
-/// A tap picks it out; once picked out, dragging it moves it, the corner grip
-/// resizes it, and a further tap opens the chart panel. While it is not
+/// A tap picks it out; once picked out, dragging it moves it and the corner
+/// grip resizes it, and a further tap lets it go again. While it is not
 /// selected a drag over it scrolls the sheet like anywhere else — a chart that
 /// swallowed every pan would make a sheet full of them impossible to move
-/// around in.
+/// around in, and one that filled the screen could only be scrolled past by
+/// letting it go.
 struct EmbeddedChartView: View {
     let chart: Chart
     let data: ResolvedChart
@@ -15,6 +16,7 @@ struct EmbeddedChartView: View {
     let zoom: Double
     let isSelected: Bool
     var onSelect: () -> Void
+    var onDeselect: () -> Void
     var onEdit: () -> Void
     /// The new frame, in the grid's zoomed coordinates.
     var onCommit: (CGRect) -> Void
@@ -74,7 +76,8 @@ struct EmbeddedChartView: View {
 
     /// Unselected, a plain tap: anything more is the scroll view's. Selected,
     /// a drag from a standing start, so the chart follows the finger from its
-    /// first point — and a drag that never went anywhere was a tap.
+    /// first point — and a drag that never went anywhere was a tap, which
+    /// lets the chart go.
     private var interaction: AnyGesture<Void> {
         if isSelected {
             return AnyGesture(
@@ -85,7 +88,7 @@ struct EmbeddedChartView: View {
                         if distance > 4 {
                             onCommit(frame.offsetBy(dx: value.translation.width, dy: value.translation.height))
                         } else {
-                            onEdit()
+                            onDeselect()
                         }
                         translation = .zero
                     }
