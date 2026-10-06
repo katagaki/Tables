@@ -116,6 +116,9 @@ struct VBAStatement: Sendable {
         /// `Debug.Print a; b, c` keeps its separators, which decide spacing.
         case debugPrint([VBAPrintItem])
         case file(VBAFileStatement)
+        /// `LSet` and `RSet`: a string placed left or right within the length
+        /// the variable already has.
+        case alignedAssign(target: VBAExpression, value: VBAExpression, isRight: Bool)
         /// The `End` statement, which stops everything at once.
         case end
         case stop

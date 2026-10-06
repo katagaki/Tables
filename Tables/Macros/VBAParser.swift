@@ -458,7 +458,7 @@ struct VBAParser {
             advance()
             return statement(.call(.call(.identifier("__DebugAssert"), [VBAArgument(value: try parseExpression())])))
         }
-        for keyword in ["RaiseEvent", "Load", "Unload", "LSet", "RSet"]
+        for keyword in ["RaiseEvent", "Load", "Unload"]
         where isKeyword(keyword) && !(peek(1) == .symbol("=") || peek(1) == .symbol(".")) {
             let start = line
             var text = keyword
@@ -487,7 +487,7 @@ struct VBAParser {
     }
 
     /// The statements whose syntax is not that of a call: file I/O with its
-    /// `#` numbers. Nil for any other word.
+    /// `#` numbers, `LSet`/`RSet`. Nil for any other word.
     private mutating func parseKeywordStatement(_ word: String) throws -> VBAStatement.Kind? {
         switch word {
         case "open":
@@ -592,6 +592,11 @@ struct VBAParser {
             let from = try parseExpression()
             try expect("As")
             return .file(.rename(from: from, to: try parseExpression()))
+        case "lset", "rset":
+            advance()
+            let target = try parsePostfix(statementStart: false)
+            try expectSymbol("=")
+            return .alignedAssign(target: target, value: try parseExpression(), isRight: word == "rset")
         default:
             return nil
         }

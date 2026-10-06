@@ -619,6 +619,14 @@ final class VBAInterpreter {
         case .file(let fileStatement):
             try execute(fileStatement, frame)
 
+        case .alignedAssign(let target, let valueExpression, let isRight):
+            // The variable keeps its length; the new text is padded with
+            // spaces or cut to fit, against the left or the right.
+            let width = try letValue(evaluate(target, frame)).asString().count
+            let text = String(try letValue(evaluate(valueExpression, frame)).asString().prefix(width))
+            let padding = String(repeating: " ", count: width - text.count)
+            try assignValue(.string(isRight ? padding + text : text + padding), to: target, isSet: false, frame)
+
         case .label:
             break
 

@@ -356,4 +356,21 @@ struct VBALanguageAdditionTests {
         #expect(printed == [" 50  1 "])
     }
 
+    @Test("LSet and RSet fit text into a string's existing length")
+    func alignedAssign() throws {
+        let printed = try run("""
+        Sub Main()
+            Dim s As String
+            s = "12345"
+            LSet s = "ab"
+            Debug.Print "[" & s & "]"
+            RSet s = "ab"
+            Debug.Print "[" & s & "]"
+            LSet s = "abcdefgh"
+            Debug.Print "[" & s & "]"
+        End Sub
+        """)
+        #expect(printed == ["[ab   ]", "[   ab]", "[abcde]"])
+    }
+
 }
