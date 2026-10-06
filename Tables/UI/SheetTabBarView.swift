@@ -183,26 +183,18 @@ struct SheetTabBarView: View {
     ///
     /// The long press has to come first: a bare drag on a tab is how the strip
     /// itself is scrolled, and claiming it here would make a crowded workbook
-    /// impossible to move around in.
-    private func reorderGesture(for sheet: Worksheet) -> some Gesture {
-        LongPressGesture(minimumDuration: 0.35)
-            .sequenced(before: DragGesture(minimumDistance: 0))
-            .onChanged { value in
-                switch value {
-                // `.first(true)` is the long press completing; the tab is picked
-                // up here rather than on the earlier, not-yet-held touch.
-                case .first(true):
-                    beginDragging(sheet)
-                case .second(true, let drag):
-                    beginDragging(sheet)
-                    guard let drag else { return }
-                    dragTranslation = drag.translation.width
-                    reorder(sheet, by: dragTranslation - layoutShift)
-                default:
-                    break
-                }
-            }
-            .onEnded { _ in endDragging() }
+    /// impossible to move around in. A UIKit recognizer rather than SwiftUI's
+    /// long press sequenced into a drag, which held the touch from the scroll
+    /// view even when the press never completed.
+    private func reorderGesture(for sheet: Worksheet) -> TabHoldGesture {
+        TabHoldGesture(
+            began: { beginDragging(sheet) },
+            moved: { translation in
+                dragTranslation = translation
+                reorder(sheet, by: dragTranslation - layoutShift)
+            },
+            ended: endDragging
+        )
     }
 
     private func beginDragging(_ sheet: Worksheet) {
@@ -255,5 +247,44 @@ struct SheetTabBarView: View {
         workbook.renameSheet(sheet.id, to: draftName)
         renamingSheetID = nil
         isRenaming = false
+    }
+}
+
+/// A press held in place, then tracked sideways until the finger lifts.
+///
+/// UIKit's long press gives up as soon as the finger wanders before the hold
+/// completes, which leaves that touch to the scroll view around it.
+private struct TabHoldGesture: UIGestureRecognizerRepresentable {
+    var began: () -> Void
+    /// How far the finger has moved sideways since the hold completed.
+    var moved: (Double) -> Void
+    var ended: () -> Void
+
+    func makeUIGestureRecognizer(context: Context) -> UILongPressGestureRecognizer {
+        let recognizer = UILongPressGestureRecognizer()
+        recognizer.minimumPressDuration = 0.35
+        return recognizer
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UILongPressGestureRecognizer, context: Context) {
+        // Measured in the window: the tab itself moves under the finger.
+        let x = recognizer.location(in: nil).x
+        switch recognizer.state {
+        case .began:
+            context.coordinator.startX = x
+            began()
+        case .changed:
+            moved(x - context.coordinator.startX)
+        case .ended, .cancelled, .failed:
+            ended()
+        default:
+            break
+        }
+    }
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator { Coordinator() }
+
+    final class Coordinator {
+        var startX: CGFloat = 0
     }
 }
