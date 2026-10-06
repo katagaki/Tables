@@ -906,6 +906,8 @@ final class VBABordersObject: VBAObject {
             return .integer(2)
         case "color":
             return try range.style { .integer(VBAExcelHost.colorValue($0.borderSides.values.first?.colorHex) ?? 0) }
+        case "colorindex":
+            return try range.style { $0.borderSides.isEmpty ? .integer(-4142) : .integer(-4105) }
         case "count":
             return .integer(edges.count)
         default:
