@@ -10,8 +10,11 @@ struct MacrosView: View {
     let isMacroEnabledFile: Bool
     /// Where this workbook's macros read and write files.
     let workingFolder: URL
-    let output: [String]
+    let runner: MacroRunner
     let run: (_ module: String, _ procedure: String) -> Void
+    /// Runs a macro without leaving the sheet, returning why it stopped
+    /// early when it did.
+    let testRun: (_ module: String, _ procedure: String) async -> String?
     /// Applies a change to the workbook's project as it is now, and saves it.
     let edit: (_ change: (inout VBAProject) throws -> Void) throws -> Void
     /// Gives a workbook without macros a project to write them in.
@@ -23,6 +26,7 @@ struct MacrosView: View {
     @State private var renamedName = ""
     @State private var moduleToRemove: String?
     @State private var editError: String?
+    @State private var promptInput = ""
 
     private var catalog: MacroCatalog { project.map(MacroCatalog.init(project:)) ?? MacroCatalog() }
 
@@ -48,9 +52,9 @@ struct MacrosView: View {
                 } else if loadError == nil {
                     createSection
                 }
-                if !output.isEmpty {
+                if !runner.output.isEmpty {
                     Section("Macros.Section.Output") {
-                        Text(output.joined(separator: "\n"))
+                        Text(runner.output.joined(separator: "\n"))
                             .font(.system(.footnote, design: .monospaced))
                             .textSelection(.enabled)
                     }
@@ -77,6 +81,8 @@ struct MacrosView: View {
                 Text(editError ?? "")
             }
         }
+        // A macro run from the editor asks its questions over the editor.
+        .modifier(MacroPrompts(runner: runner, input: $promptInput))
     }
 
     private var filesSection: some View {
@@ -154,7 +160,7 @@ struct MacrosView: View {
                 ForEach(project.modules) { module in
                     let isEditable = module.kind == .standard || module.kind == .classModule
                     NavigationLink {
-                        ModuleEditorView(module: module) { source in
+                        ModuleEditorView(module: module, runner: runner, testRun: testRun) { source in
                             try edit { $0.setSource(source, ofModule: module.name) }
                         }
                     } label: {
@@ -292,6 +298,8 @@ struct MacrosView: View {
 /// the code is checked as it is typed.
 private struct ModuleEditorView: View {
     let module: VBAProject.Module
+    let runner: MacroRunner
+    let testRun: (_ module: String, _ procedure: String) async -> String?
     let save: (String) throws -> Void
     @State private var text: String
     @State private var savedText: String
@@ -300,21 +308,40 @@ private struct ModuleEditorView: View {
     /// The problem being shown, which trails the typing by a moment.
     @State private var shownProblem: String?
     @State private var isProblemExpanded = false
+    /// The macros in this module that can be run, as of the last check.
+    @State private var runnable: [String] = []
+    @State private var runResult: RunResult?
 
-    init(module: VBAProject.Module, save: @escaping (String) throws -> Void) {
+    /// How the last run from here went.
+    private struct RunResult: Equatable {
+        var procedure: String
+        var failure: String?
+        var output: [String]
+    }
+
+    init(
+        module: VBAProject.Module, runner: MacroRunner,
+        testRun: @escaping (_ module: String, _ procedure: String) async -> String?,
+        save: @escaping (String) throws -> Void
+    ) {
         self.module = module
+        self.runner = runner
+        self.testRun = testRun
         self.save = save
         _text = State(initialValue: module.source)
         _savedText = State(initialValue: module.source)
     }
 
-    /// The first syntax error in the code as it stands, if any.
-    private static func problem(in source: String, module: String) -> String? {
+    /// The first syntax error in the code as it stands, or else the macros
+    /// it offers.
+    private func check(_ source: String) -> (problem: String?, runnable: [String]) {
         do {
-            _ = try VBAParser.parse(module: module, source: source)
-            return nil
+            let syntax = try VBAParser.parse(module: module.name, source: source)
+            // Only standard and document modules hold macros of their own.
+            guard module.kind == .standard || module.kind == .document else { return (nil, []) }
+            return (nil, syntax.procedures.filter(\.isRunnableMacro).map(\.name))
         } catch {
-            return error.localizedDescription
+            return (error.localizedDescription, [])
         }
     }
 
@@ -323,23 +350,40 @@ private struct ModuleEditorView: View {
             // Floating over the code rather than above it, so a problem
             // coming and going never moves the line being typed.
             .overlay(alignment: .bottom) {
-                if let shownProblem { problemBanner(shownProblem) }
+                VStack(spacing: 8) {
+                    if runner.isRunning {
+                        runningBanner
+                    } else if let runResult {
+                        resultBanner(runResult)
+                    }
+                    if let shownProblem { problemBanner(shownProblem) }
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 8)
             }
             .animation(.snappy(duration: 0.25), value: shownProblem)
+            .animation(.snappy(duration: 0.25), value: runResult)
+            .animation(.snappy(duration: 0.25), value: runner.isRunning)
+            .onAppear { (shownProblem, runnable) = check(text) }
             // Checked once typing pauses: a line half-written is nearly
             // always wrong, and saying so on every keystroke is noise.
             .task(id: text) {
                 if shownProblem != nil { try? await Task.sleep(for: .milliseconds(600)) }
                 else { try? await Task.sleep(for: .milliseconds(900)) }
                 guard !Task.isCancelled else { return }
-                let problem = Self.problem(in: text, module: module.name)
+                let (problem, runnable) = check(text)
                 if problem != shownProblem { isProblemExpanded = false }
                 shownProblem = problem
+                // A list gone empty mid-edit would only make the button flicker.
+                if problem == nil { self.runnable = runnable }
             }
             .navigationTitle(module.name)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 MacroHelpButton()
+            }
+            ToolbarItem(placement: .primaryAction) {
+                runControl
             }
             ToolbarItem(placement: .primaryAction) {
                 // A menu rather than a bare toggle: its glyph alone did not
@@ -392,10 +436,97 @@ private struct ModuleEditorView: View {
         }
         .buttonStyle(.plain)
         .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
-        .padding(.horizontal, 12)
-        .padding(.bottom, 8)
         .transition(.move(edge: .bottom).combined(with: .opacity))
         .accessibilityIdentifier("codeProblem")
+    }
+
+    // MARK: - Running
+
+    /// Run, or a choice of what to run, or Stop while something is running.
+    @ViewBuilder
+    private var runControl: some View {
+        if runner.isRunning {
+            Button("Macros.Stop", systemImage: "stop.fill") { runner.stop() }
+                .accessibilityIdentifier("stopMacro")
+        } else if runnable.count == 1 {
+            Button("Macros.Run", systemImage: "play.fill") { run(runnable[0]) }
+                .accessibilityIdentifier("runMacro")
+        } else {
+            Menu {
+                if runnable.isEmpty { Text("Macros.Run.NoMacros") }
+                ForEach(runnable, id: \.self) { name in
+                    Button(name, systemImage: "play") { run(name) }
+                }
+            } label: {
+                Label("Macros.Run", systemImage: "play.fill")
+            }
+            .accessibilityIdentifier("runMacro")
+        }
+    }
+
+    /// Saves the code, so the run is of what is on screen, then runs it.
+    private func run(_ procedure: String) {
+        commit()
+        guard text == savedText else { return }
+        runResult = nil
+        Task {
+            let failure = await testRun(module.name, procedure)
+            runResult = RunResult(procedure: procedure, failure: failure, output: runner.output)
+        }
+    }
+
+    private var runningBanner: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+            Text(String(format: String(localized: "Macros.Running"), runner.runningMacro ?? ""))
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .font(.callout)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    /// Whether the run finished, and what it printed with `Debug.Print`.
+    private func resultBanner(_ result: RunResult) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Image(systemName: result.failure == nil ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                    .foregroundStyle(result.failure == nil ? .green : .red)
+                Text(
+                    result.failure.map { String(format: String(localized: "Macros.Failed"), $0) }
+                        ?? String(format: String(localized: "Macros.RunResult.Finished"), result.procedure)
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Button {
+                    runResult = nil
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Macros.RunResult.Dismiss")
+            }
+            .font(.callout)
+            if !result.output.isEmpty {
+                ScrollView {
+                    Text(result.output.joined(separator: "\n"))
+                        .font(.system(.footnote, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 120)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+        .accessibilityIdentifier("runResult")
     }
 
     private func commit() {
@@ -441,10 +572,12 @@ struct MacroCatalog {
 struct MacroPrompts: ViewModifier {
     let runner: MacroRunner
     @Binding var input: String
+    /// Off where something presented on top is asking instead.
+    var isEnabled = true
     @Environment(\.openURL) private var openURL
 
     private var isPresented: Binding<Bool> {
-        Binding(get: { runner.prompt != nil }, set: { _ in /* Answering the prompt clears it. */ })
+        Binding(get: { isEnabled && runner.prompt != nil }, set: { _ in /* Answering the prompt clears it. */ })
     }
 
     func body(content: Content) -> some View {

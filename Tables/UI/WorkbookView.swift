@@ -58,7 +58,8 @@ struct WorkbookView: View {
         }
         .background(Color.sheetBackground)
         .overlay { if macroRunner.isRunning { runningMacroOverlay } }
-        .modifier(MacroPrompts(runner: macroRunner, input: $macroInput))
+        // The Macros sheet asks its own questions while it is up.
+        .modifier(MacroPrompts(runner: macroRunner, input: $macroInput, isEnabled: !isShowingMacros))
         .sheet(isPresented: $isShowingMacros) { macrosSheet }
         .confirmationDialog(
             "Macros.Confirm.Title",
@@ -438,7 +439,7 @@ struct WorkbookView: View {
             loadError: loaded.failureDescription,
             isMacroEnabledFile: document.isMacroEnabled,
             workingFolder: MacroFiles.folder(forWorkbookNamed: fileName),
-            output: macroRunner.output,
+            runner: macroRunner,
             run: { module, procedure in
                 let macro = MacroCatalog.Macro(module: module, procedure: procedure)
                 isShowingMacros = false
@@ -447,6 +448,11 @@ struct WorkbookView: View {
                 } else {
                     pendingMacro = macro
                 }
+            },
+            // From the code editor, where the code is the user's own and the
+            // sheet stays up to show how the run went.
+            testRun: { module, procedure in
+                await performMacro(MacroCatalog.Macro(module: module, procedure: procedure), reportingFailure: false)
             },
             edit: { change in
                 guard let data = document.workbook.macroProject else { return }
@@ -464,29 +470,35 @@ struct WorkbookView: View {
     /// Runs a macro on a copy of the workbook and puts back what it made
     /// of it in one change, so a single undo takes the whole run back.
     private func runMacro(_ macro: MacroCatalog.Macro) {
-        guard let data = document.workbook.macroProject, let project = try? VBAProject(data: data) else { return }
+        Task { await performMacro(macro, reportingFailure: true) }
+    }
+
+    /// Runs a macro and applies what it did, returning why it stopped early
+    /// when it did.
+    @discardableResult
+    private func performMacro(_ macro: MacroCatalog.Macro, reportingFailure: Bool) async -> String? {
+        guard let data = document.workbook.macroProject, let project = try? VBAProject(data: data) else { return nil }
         state.commitEditing(in: &document.workbook, then: nil)
         let before = document.workbook
-        Task {
-            let outcome = await macroRunner.run(
-                macro.procedure, in: macro.module, project: project, workbook: before,
-                workbookName: fileName ?? String(localized: "Macros.DefaultWorkbookName"),
-                activeSheet: state.activeSheetID, selection: state.selection,
-                workingFolder: MacroFiles.folder(forWorkbookNamed: fileName)
-            )
-            if outcome.workbook != before { document.workbook = outcome.workbook }
-            if outcome.activeSheetID != state.activeSheetID, outcome.workbook.index(of: outcome.activeSheetID) != nil {
-                state.selectSheet(outcome.activeSheetID, in: outcome.workbook)
-            }
-            state.selection = outcome.selection
-            state.anchor = outcome.selection.start
-            state.additionalSelections = []
-            state.clampSelection(to: state.activeSheet(in: document.workbook))
-            state.refreshMetrics(in: document.workbook)
-            if let failure = outcome.failure {
-                state.errorMessage = String(format: String(localized: "Macros.Failed"), failure)
-            }
+        let outcome = await macroRunner.run(
+            macro.procedure, in: macro.module, project: project, workbook: before,
+            workbookName: fileName ?? String(localized: "Macros.DefaultWorkbookName"),
+            activeSheet: state.activeSheetID, selection: state.selection,
+            workingFolder: MacroFiles.folder(forWorkbookNamed: fileName)
+        )
+        if outcome.workbook != before { document.workbook = outcome.workbook }
+        if outcome.activeSheetID != state.activeSheetID, outcome.workbook.index(of: outcome.activeSheetID) != nil {
+            state.selectSheet(outcome.activeSheetID, in: outcome.workbook)
         }
+        state.selection = outcome.selection
+        state.anchor = outcome.selection.start
+        state.additionalSelections = []
+        state.clampSelection(to: state.activeSheet(in: document.workbook))
+        state.refreshMetrics(in: document.workbook)
+        if let failure = outcome.failure, reportingFailure {
+            state.errorMessage = String(format: String(localized: "Macros.Failed"), failure)
+        }
+        return outcome.failure
     }
 
     /// Runs the macro a form control names, asking first as the macro list
