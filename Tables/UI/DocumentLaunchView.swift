@@ -1,10 +1,10 @@
 import SwiftUI
 
 /// The pieces of the document picker's top area: a green field ruled like a
-/// sheet, with a few cells of work set beside the title.
+/// sheet, with a wall of the app's features behind the actions.
 enum DocumentLaunch {
     /// A wash of the app icon's green, kept quiet: near white in light mode,
-    /// near black in dark, so the system's black or white title reads over it
+    /// near black in dark, so the system's buttons and browser read over it
     /// and the colour stays a backdrop rather than the whole page.
     static let topColor = adaptive(
         light: UIColor(red: 0.86, green: 0.95, blue: 0.89, alpha: 1),
@@ -20,10 +20,10 @@ enum DocumentLaunch {
         dark: UIColor(red: 0.66, green: 0.90, blue: 0.75, alpha: 1)
     )
 
-    /// Where the title's line sits. The scene's own title is left empty, but
-    /// its frame still starts where that title would, with the actions about
-    /// 100pt below; the line runs a little above halfway down that gap.
-    static func titleLine(in geometry: DocumentLaunchGeometryProxy) -> Double {
+    /// Where the middle of the header sits. The scene's title is left empty,
+    /// but its frame still starts where that title would, with the actions
+    /// about 100pt below; the line runs a little above halfway down that gap.
+    static func headerLine(in geometry: DocumentLaunchGeometryProxy) -> Double {
         geometry.titleViewFrame.minY + 40
     }
 
@@ -33,7 +33,7 @@ enum DocumentLaunch {
 }
 
 /// The green wash, ruled with faint gridlines that fade out towards the
-/// title so the page reads as a sheet without the lines competing with text.
+/// browser so the page reads as a sheet without the lines competing with text.
 struct DocumentLaunchBackground: View {
     private let cellSize = CGSize(width: 64, height: 26)
 
@@ -75,7 +75,7 @@ struct DocumentLaunchBackground: View {
 /// A wall of small tiles, one per thing Tables does — formulas, charts,
 /// comments, macros, formatting, sorting and filtering, drawing and fill
 /// colours — laid in staggered rows across the whole header. It sits behind
-/// the title and buttons, faded so it reads as a backdrop rather than content.
+/// the buttons, faded so it reads as a backdrop rather than content.
 /// Decoration only, so hidden from VoiceOver.
 struct DocumentLaunchFeatureWall: View {
     let geometry: DocumentLaunchGeometryProxy
@@ -98,9 +98,9 @@ struct DocumentLaunchFeatureWall: View {
     private let spacing = 8.0
 
     var body: some View {
-        // Centred on the title's line, so the wall runs from above the title
-        // to behind the button beneath it.
-        let titleLine = DocumentLaunch.titleLine(in: geometry)
+        // Centred in the header, so the wall runs from the top of the launch
+        // area to behind the button.
+        let headerLine = DocumentLaunch.headerLine(in: geometry)
 
         VStack(spacing: spacing) {
             ForEach(rows.indices, id: \.self) { index in
@@ -122,7 +122,7 @@ struct DocumentLaunchFeatureWall: View {
         .opacity(0.45)
         .position(
             x: geometry.frame.midX,
-            y: titleLine
+            y: headerLine
         )
         .accessibilityHidden(true)
     }
@@ -229,23 +229,5 @@ struct DocumentLaunchFeatureWall: View {
                 }
             }
         }
-    }
-}
-
-/// The app's name, centred in a Liquid Glass capsule above the actions. Drawn
-/// here rather than passed to the launch scene, whose own title is always
-/// leading-aligned and plain; the scene is given an empty one instead, since
-/// with none at all it falls back to showing the app's name itself.
-struct DocumentLaunchTitle: View {
-    let geometry: DocumentLaunchGeometryProxy
-
-    var body: some View {
-        Text(verbatim: "Tables")
-            .font(.system(size: 34, weight: .bold))
-            .padding(.horizontal, 28)
-            .padding(.vertical, 12)
-            .glassEffect(.clear, in: .capsule)
-            .position(x: geometry.frame.midX, y: DocumentLaunch.titleLine(in: geometry))
-            .accessibilityAddTraits(.isHeader)
     }
 }

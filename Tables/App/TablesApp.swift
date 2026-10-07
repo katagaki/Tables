@@ -10,16 +10,14 @@ struct TablesApp: App {
         .defaultSize(width: 1080, height: 720)
         #endif
 
-        // An empty system title: it cannot be styled, so `DocumentLaunchTitle`
-        // draws the app's name itself, centred on glass.
+        // An empty title, so the feature wall carries the header on its own.
+        // With no title at all, the scene falls back to the app's name.
         DocumentGroupLaunchScene(Text(verbatim: "")) {
             NewDocumentButton("Launch.NewWorkbook", contentType: .openXMLWorkbook)
         } background: {
             DocumentLaunchBackground()
         } backgroundAccessoryView: { geometry in
             DocumentLaunchFeatureWall(geometry: geometry)
-        } overlayAccessoryView: { geometry in
-            DocumentLaunchTitle(geometry: geometry)
         }
     }
 }
