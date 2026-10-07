@@ -66,47 +66,77 @@ struct DocumentLaunchBackground: View {
 }
 
 /// A wall of small tiles, one per thing Tables does — formulas, charts,
-/// comments, macros, formatting, sorting and filtering, drawing and Shortcuts —
-/// set flat in the empty space beside the leading-aligned title. Decoration
-/// only, so hidden from VoiceOver.
-struct DocumentLaunchOverlay: View {
+/// comments, macros, formatting, sorting and filtering, drawing and fill
+/// colours — laid in staggered rows across the whole header. It sits behind
+/// the title and buttons, faded so it reads as a backdrop rather than content.
+/// Decoration only, so hidden from VoiceOver.
+struct DocumentLaunchFeatureWall: View {
     let geometry: DocumentLaunchGeometryProxy
+
+    private enum Tile: CaseIterable {
+        case formula, comment, formatting, reference, chart, macro, drawing, sort, filter, swatches
+    }
+
+    /// Each row starts at a different tile so no two neighbours repeat. Rows
+    /// run wider than the screen and are cut off at its edges, like a wall
+    /// that carries on out of frame.
+    private let rows: [[Tile]] = [
+        [.formula, .comment, .formatting, .reference, .chart, .macro, .drawing],
+        [.chart, .macro, .drawing, .sort, .filter, .swatches, .formula],
+        [.sort, .filter, .swatches, .formula, .comment, .formatting, .reference],
+        [.reference, .drawing, .macro, .filter, .chart, .comment, .swatches],
+    ]
 
     private let tileHeight = 40.0
     private let spacing = 8.0
 
     var body: some View {
         // The title frame spans the title and the actions beneath it; the
-        // title's own line sits about 90pt below its top. The wall's last row
-        // shares that line, beside the title, and the rows above it stack up
-        // towards the top of the launch area.
+        // title's own line sits about 90pt below its top. The third row shares
+        // that line, so the wall runs from above the title to behind the
+        // button beneath it.
         let titleLine = geometry.titleViewFrame.minY + 90
-        let width = geometry.frame.width - 48
+        let rowPitch = tileHeight + spacing
 
-        VStack(alignment: .trailing, spacing: spacing) {
-            HStack(spacing: spacing) {
-                formulaTile
-                symbolTile("text.bubble.fill", color: .orange)
-                formattingTile
-            }
-            HStack(spacing: spacing) {
-                referenceTile
-                chartTile
-                macroTile
-                symbolTile("pencil.tip", color: .pink)
-            }
-            HStack(spacing: spacing) {
-                symbolTile("arrow.up.arrow.down", color: .blue)
-                symbolTile("line.3.horizontal.decrease", color: .teal)
-                swatchTile
+        VStack(spacing: spacing) {
+            ForEach(rows.indices, id: \.self) { index in
+                HStack(spacing: spacing) {
+                    ForEach(rows[index].indices, id: \.self) { position in
+                        tile(rows[index][position])
+                    }
+                }
+                .fixedSize()
+                // Alternate rows shift sideways, so the joints stagger like
+                // brickwork instead of lining up into columns.
+                .offset(x: index.isMultiple(of: 2) ? -24 : 24)
             }
         }
-        .frame(width: width, alignment: .trailing)
+        .frame(width: geometry.frame.width)
+        .clipped()
+        // Faded as one layer, so overlapping tile edges do not show through.
+        .compositingGroup()
+        .opacity(0.45)
         .position(
             x: geometry.frame.midX,
-            y: titleLine - (tileHeight + spacing)
+            y: titleLine - rowPitch / 2
         )
         .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private func tile(_ tile: Tile) -> some View {
+        switch tile {
+        case .formula: formulaTile
+        case .comment: symbolTile("text.bubble.fill", color: .orange)
+        case .formatting: formattingTile
+        case .reference: referenceTile
+        case .chart: chartTile
+        case .macro: macroTile
+        case .drawing: symbolTile("pencil.tip", color: .pink)
+        case .sort: symbolTile("arrow.up.arrow.down", color: .blue)
+        case .filter: symbolTile("line.3.horizontal.decrease", color: .teal)
+        case .swatches: swatchTile
+        }
     }
 
     private func tile(width: CGFloat? = nil, @ViewBuilder content: () -> some View) -> some View {

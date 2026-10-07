@@ -14,8 +14,8 @@ struct TablesApp: App {
             NewDocumentButton("Launch.NewWorkbook", contentType: .openXMLWorkbook)
         } background: {
             DocumentLaunchBackground()
-        } overlayAccessoryView: { geometry in
-            DocumentLaunchOverlay(geometry: geometry)
+        } backgroundAccessoryView: { geometry in
+            DocumentLaunchFeatureWall(geometry: geometry)
         }
     }
 }
