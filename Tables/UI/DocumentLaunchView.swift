@@ -20,6 +20,13 @@ enum DocumentLaunch {
         dark: UIColor(red: 0.66, green: 0.90, blue: 0.75, alpha: 1)
     )
 
+    /// Where the title's line sits. The scene's own title is left empty, but
+    /// its frame still starts where that title would, with the actions about
+    /// 100pt below; the line runs a little above halfway down that gap.
+    static func titleLine(in geometry: DocumentLaunchGeometryProxy) -> Double {
+        geometry.titleViewFrame.minY + 40
+    }
+
     private static func adaptive(light: UIColor, dark: UIColor) -> Color {
         Color(UIColor { $0.userInterfaceStyle == .dark ? dark : light })
     }
@@ -91,12 +98,9 @@ struct DocumentLaunchFeatureWall: View {
     private let spacing = 8.0
 
     var body: some View {
-        // The title frame spans the title and the actions beneath it; the
-        // title's own line sits about 90pt below its top. The third row shares
-        // that line, so the wall runs from above the title to behind the
-        // button beneath it.
-        let titleLine = geometry.titleViewFrame.minY + 90
-        let rowPitch = tileHeight + spacing
+        // Centred on the title's line, so the wall runs from above the title
+        // to behind the button beneath it.
+        let titleLine = DocumentLaunch.titleLine(in: geometry)
 
         VStack(spacing: spacing) {
             ForEach(rows.indices, id: \.self) { index in
@@ -118,7 +122,7 @@ struct DocumentLaunchFeatureWall: View {
         .opacity(0.45)
         .position(
             x: geometry.frame.midX,
-            y: titleLine - rowPitch / 2
+            y: titleLine
         )
         .accessibilityHidden(true)
     }
@@ -225,5 +229,23 @@ struct DocumentLaunchFeatureWall: View {
                 }
             }
         }
+    }
+}
+
+/// The app's name, centred in a Liquid Glass capsule above the actions. Drawn
+/// here rather than passed to the launch scene, whose own title is always
+/// leading-aligned and plain; the scene is given an empty one instead, since
+/// with none at all it falls back to showing the app's name itself.
+struct DocumentLaunchTitle: View {
+    let geometry: DocumentLaunchGeometryProxy
+
+    var body: some View {
+        Text(verbatim: "Tables")
+            .font(.system(size: 34, weight: .bold))
+            .padding(.horizontal, 28)
+            .padding(.vertical, 12)
+            .glassEffect(.regular, in: .capsule)
+            .position(x: geometry.frame.midX, y: DocumentLaunch.titleLine(in: geometry))
+            .accessibilityAddTraits(.isHeader)
     }
 }
