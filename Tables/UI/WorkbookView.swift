@@ -99,9 +99,14 @@ struct WorkbookView: View {
         #if os(iOS)
         .toolbar { undoToolbar }
         .toolbar { moreToolbar }
+        .sheet(isPresented: $state.isShowingUnsupportedFeatureNotice) {
+            UnsupportedFeatureNotice(report: document.unsupportedFeatures)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+        }
         #endif
-        .toolbar { sharingToolbar }
         #if os(macOS)
+        .toolbar { sharingToolbar }
         .toolbar { macToolbar }
         .popover(item: $state.presentedPanel) { panel in
             panelContent(panel)
@@ -248,9 +253,7 @@ struct WorkbookView: View {
     /// but here, and a hardware keyboard reaches them through these too.
     @ToolbarContentBuilder
     private var undoToolbar: some ToolbarContent {
-        // Pinned to the trailing edge: as primary actions the bar would fold
-        // Redo into the "…" menu once it ran short of room.
-        ToolbarItemGroup(placement: .topBarTrailing) {
+        ToolbarItemGroup(placement: .primaryAction) {
             Button("Toolbar.Undo", systemImage: "arrow.uturn.backward") { history.undo() }
                 .disabled(!history.canUndo)
                 .keyboardShortcut("z", modifiers: .command)
@@ -262,10 +265,22 @@ struct WorkbookView: View {
         }
     }
 
-    /// Secondary actions are gathered into the navigation bar's "…" menu.
+    /// Everything but undo and redo is gathered into the navigation bar's "…"
+    /// menu, so the bar keeps to those two and the menu.
     @ToolbarContentBuilder
     private var moreToolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .secondaryAction) {
+            Section {
+                ShareLink(item: export, preview: SharePreview(export.name, image: Image(systemName: "tablecells"))) {
+                    Label("Toolbar.Share.Label", systemImage: "square.and.arrow.up")
+                }
+                if !document.unsupportedFeatures.isEmpty {
+                    Button("Toolbar.UnsupportedFeatures.Label", systemImage: "exclamationmark.triangle") {
+                        state.isShowingUnsupportedFeatureNotice = true
+                    }
+                    .accessibilityIdentifier("unsupportedFeatures")
+                }
+            }
             Section {
                 Link(destination: URL(string: "https://github.com/katagaki/Tables")!) {
                     Label("Toolbar.SourceCode", systemImage: "chevron.left.forwardslash.chevron.right")
