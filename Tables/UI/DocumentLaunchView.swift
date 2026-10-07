@@ -20,13 +20,6 @@ enum DocumentLaunch {
         dark: UIColor(red: 0.66, green: 0.90, blue: 0.75, alpha: 1)
     )
 
-    /// Where the middle of the header sits. The scene's title is left empty,
-    /// but its frame still starts where that title would, with the actions
-    /// about 100pt below; the line runs a little above halfway down that gap.
-    static func headerLine(in geometry: DocumentLaunchGeometryProxy) -> Double {
-        geometry.titleViewFrame.minY + 40
-    }
-
     private static func adaptive(light: UIColor, dark: UIColor) -> Color {
         Color(UIColor { $0.userInterfaceStyle == .dark ? dark : light })
     }
@@ -87,11 +80,10 @@ struct DocumentLaunchFeatureWall: View {
         case comment, note, checkBox, optionButton, dropDown, picture
     }
 
-    /// No tile appears twice in a row, and the kinds are spread so neighbours
-    /// differ. Rows start just off the leading edge and run past the trailing
-    /// one, like a wall that carries on out of frame, so the most telling
-    /// tiles come first, where a phone shows them. The rows shifted furthest
-    /// open on a small icon tile, which loses little to the edge.
+    /// No tile appears twice in a pattern, and the kinds are spread so neighbours
+    /// differ. Rows start just off the leading edge, like a wall that carries
+    /// on out of frame, so the most telling tiles come first, where a phone
+    /// shows them; each row opens on a tile that loses little to the edge.
     private let rows: [[Tile]] = [
         [.formula("=SUM(B2:B9)"), .columnChart, .value("1,280.50"), .comment,
          .doughnutChart, .value("2026-10-07"), .value("12.5%"), .dataBar],
@@ -106,35 +98,60 @@ struct DocumentLaunchFeatureWall: View {
     private let tileHeight = 40.0
     private let spacing = 8.0
 
+    /// How far each row starts off the leading edge. Five offsets against four
+    /// row patterns, so the wall does not visibly repeat on a tall screen.
+    private let rowOffsets: [Double] = [-16, -44, -28, -8, -36]
+
     var body: some View {
-        // Centred in the header, so the wall runs from the top of the launch
-        // area to behind the button.
-        let headerLine = DocumentLaunch.headerLine(in: geometry)
+        // The wall fills the launch area from the top and fades out above the
+        // browser, rather than being fitted around the button: the system
+        // places the actions and browser differently on iPhone and iPad.
+        let frame = geometry.frame
+        let rowCount = Int(frame.height * fadeEnd / (tileHeight + spacing)) + 1
 
         VStack(alignment: .leading, spacing: spacing) {
-            ForEach(rows.indices, id: \.self) { index in
+            ForEach(0..<rowCount, id: \.self) { index in
+                // A row's pattern repeats until it is wider than any screen,
+                // and starts further along each time the patterns come round
+                // again, so a tall screen does not show the same rows twice.
+                let pattern = rows[index % rows.count]
+                let shift = (index / rows.count * 3) % pattern.count
+                let rotated = Array(pattern[shift...] + pattern[..<shift])
+                let tiles = Array(repeating: rotated, count: 3).flatMap { $0 }
                 HStack(spacing: spacing) {
-                    ForEach(rows[index].indices, id: \.self) { position in
-                        tile(rows[index][position])
+                    ForEach(tiles.indices, id: \.self) { position in
+                        tile(tiles[position])
                     }
                 }
                 .fixedSize()
-                // Alternate rows shift sideways, so the joints stagger like
-                // brickwork instead of lining up into columns.
-                .offset(x: index.isMultiple(of: 2) ? -16 : -44)
+                .offset(x: rowOffsets[index % rowOffsets.count])
             }
         }
-        .frame(width: geometry.frame.width, alignment: .leading)
+        .padding(.top, spacing)
+        .frame(width: frame.width, height: frame.height, alignment: .topLeading)
         .clipped()
+        .mask {
+            LinearGradient(
+                stops: [
+                    .init(color: .black, location: fadeStart),
+                    .init(color: .clear, location: fadeEnd),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
         // Faded as one layer, so overlapping tile edges do not show through.
         .compositingGroup()
-        .opacity(0.45)
-        .position(
-            x: geometry.frame.midX,
-            y: headerLine
-        )
+        .opacity(0.35)
+        .position(x: frame.midX, y: frame.midY)
         .accessibilityHidden(true)
     }
+
+    /// Where, down the launch area, the wall starts and finishes fading. The
+    /// browser's top edge sits a little under halfway down on both iPhone and
+    /// iPad, so the wall is gone by the time the browser starts.
+    private let fadeStart = 0.36
+    private let fadeEnd = 0.48
 
     @ViewBuilder
     private func tile(_ tile: Tile) -> some View {
