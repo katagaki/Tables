@@ -244,7 +244,7 @@ struct DocumentLaunchTitle: View {
             .font(.system(size: 34, weight: .bold))
             .padding(.horizontal, 28)
             .padding(.vertical, 12)
-            .glassEffect(.regular, in: .capsule)
+            .glassEffect(.clear, in: .capsule)
             .position(x: geometry.frame.midX, y: DocumentLaunch.titleLine(in: geometry))
             .accessibilityAddTraits(.isHeader)
     }
