@@ -102,19 +102,17 @@ struct DocumentLaunchFeatureWall: View {
     /// row patterns, so the wall does not visibly repeat on a tall screen.
     private let rowOffsets: [Double] = [-16, -44, -28, -8, -36]
 
-    /// How the wall comes in: tiles fly in from just off the screen's edge,
-    /// neighbouring rows from opposite sides, then the wall holds still.
-    /// Each row starts a little after the one above it, and within a row the
-    /// tiles that go furthest land first, so none passes over one that is
-    /// already in place.
-    private let rowStagger = 0.06
-    private let tileStagger = 0.45
-    private let tileFlight = 0.7
+    /// How the wall comes in: each row eases a short way in from the side as
+    /// it fades in, neighbouring rows from opposite sides, a row at a time
+    /// from the top. Then the wall holds still.
+    private let entranceSlide = 32.0
+    private let entranceDuration = 1.6
+    private let rowStagger = 0.15
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// How far through the wall's entrance, from 0 to 1. Animated once, in
-    /// a straight line; each tile eases within its own slice of it.
-    @State private var entrance = 0.0
+    /// Whether the rows have come in. Rows laid out after that, as when the
+    /// device turns, are simply there.
+    @State private var isRevealed = false
 
     var body: some View {
         // The wall fills the launch area from the top and fades out above the
@@ -135,24 +133,18 @@ struct DocumentLaunchFeatureWall: View {
                 HStack(spacing: spacing) {
                     ForEach(tiles.indices, id: \.self) { position in
                         tile(tiles[position])
-                            .modifier(TileEntrance(
-                                elapsed: entrance * entranceDuration(rowCount: rowCount),
-                                rowDelay: Double(index) * rowStagger,
-                                tileStagger: tileStagger,
-                                flight: tileFlight,
-                                fromTrailing: index.isMultiple(of: 2),
-                                wallWidth: frame.width,
-                                coordinateSpace: Self.coordinateSpace
-                            ))
                     }
                 }
                 .fixedSize()
                 .offset(x: rowOffsets[index % rowOffsets.count])
+                // With Reduce Motion the rows only fade in.
+                .offset(x: isRevealed || reduceMotion ? 0 : (index.isMultiple(of: 2) ? entranceSlide : -entranceSlide))
+                .opacity(isRevealed ? 1 : 0)
+                .animation(.easeOut(duration: entranceDuration).delay(Double(index) * rowStagger), value: isRevealed)
             }
         }
         .padding(.top, spacing)
         .frame(width: frame.width, height: frame.height, alignment: .topLeading)
-        .coordinateSpace(.named(Self.coordinateSpace))
         .clipped()
         .mask {
             LinearGradient(
@@ -168,24 +160,10 @@ struct DocumentLaunchFeatureWall: View {
         .compositingGroup()
         .opacity(0.35)
         .position(x: frame.midX, y: frame.midY)
-        // With Reduce Motion the tiles stay put and the wall only fades in.
-        .opacity(reduceMotion && entrance == 0 ? 0 : 1)
         // The system lays the wall out more than once while the browser loads
-        // and fades it in after, so the tiles wait until it can be seen.
-        // Watched from outside the wall's own fade, which would otherwise
-        // hold it back.
-        .background(DocumentLaunchVisibilityWatcher {
-            withAnimation(reduceMotion ? .easeIn(duration: 0.4) : .linear(duration: entranceDuration(rowCount: rowCount))) {
-                entrance = 1
-            }
-        })
+        // and fades it in after, so the rows wait until it can be seen.
+        .background(DocumentLaunchVisibilityWatcher { isRevealed = true })
         .accessibilityHidden(true)
-    }
-
-    private static let coordinateSpace = "DocumentLaunchFeatureWall"
-
-    private func entranceDuration(rowCount: Int) -> Double {
-        Double(rowCount - 1) * rowStagger + tileStagger + tileFlight
     }
 
     /// Where, down the launch area, the wall starts and finishes fading. The
@@ -476,45 +454,6 @@ private struct DocumentLaunchVisibilityWatcher: UIViewRepresentable {
             let onVisible = onVisible
             self.onVisible = nil
             onVisible?()
-        }
-    }
-}
-
-/// Flies a tile of the feature wall in from just off the screen's left or
-/// right edge. When it sets off depends on where it lands: the tiles that
-/// travel furthest go first, so the row fills from the far side.
-// Nonisolated so SwiftUI can read the animated value off the main actor.
-private nonisolated struct TileEntrance: ViewModifier, Animatable {
-    /// Seconds into the wall's entrance.
-    var elapsed: Double
-    let rowDelay: Double
-    let tileStagger: Double
-    let flight: Double
-    let fromTrailing: Bool
-    let wallWidth: Double
-    let coordinateSpace: String
-
-    var animatableData: Double {
-        get { elapsed }
-        set { elapsed = newValue }
-    }
-
-    @MainActor
-    func body(content: Content) -> some View {
-        content.visualEffect { [elapsed, rowDelay, tileStagger, flight, fromTrailing, wallWidth, coordinateSpace] content, proxy in
-            let frame = proxy.frame(in: .named(coordinateSpace))
-            // Tiles that land out of frame are never seen, so they stay put
-            // rather than sweeping across the wall to get there.
-            guard frame.maxX > 0, frame.minX < wallWidth else { return content.offset(x: 0) }
-            // How far across the wall the tile lands, measured from the edge
-            // it comes in from.
-            let across = min(max(frame.minX / max(wallWidth, 1), 0), 1)
-            let fromEdge = fromTrailing ? 1 - across : across
-            let start = rowDelay + (1 - fromEdge) * tileStagger
-            let progress = min(max((elapsed - start) / flight, 0), 1)
-            let eased = 1 - pow(1 - progress, 3)
-            let distance = fromTrailing ? wallWidth - frame.minX : -frame.maxX
-            return content.offset(x: distance * (1 - eased))
         }
     }
 }
