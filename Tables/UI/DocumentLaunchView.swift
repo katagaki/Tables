@@ -164,9 +164,11 @@ struct DocumentLaunchOverlay: View {
 
     private var chartChip: some View {
         HStack(alignment: .bottom, spacing: 4) {
-            ForEach([0.45, 0.8, 0.6, 1.0], id: \.self) { height in
+            // System colours, which already adapt to dark mode, and none of
+            // them green so the bars stand apart from everything around them.
+            ForEach(Array(zip([0.45, 0.8, 0.6, 1.0], [Color.blue, .orange, .pink, .purple])), id: \.0) { height, color in
                 Capsule()
-                    .fill(DocumentLaunch.ink.opacity(0.4 + height * 0.5))
+                    .fill(color)
                     .frame(width: 6, height: 22 * height)
             }
         }
