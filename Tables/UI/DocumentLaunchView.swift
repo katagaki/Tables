@@ -72,26 +72,28 @@ struct DocumentLaunchBackground: View {
     }
 }
 
-/// A wall of small tiles, one per thing Tables does — formulas, charts,
-/// comments, macros, formatting, sorting and filtering, drawing and fill
-/// colours — laid in staggered rows across the whole header. It sits behind
+/// A wall of small tiles, each something a workbook can hold — values,
+/// formulas, charts, comments, macros, form controls and pictures — laid in
+/// staggered rows across the whole header. It sits behind
 /// the buttons, faded so it reads as a backdrop rather than content.
 /// Decoration only, so hidden from VoiceOver.
 struct DocumentLaunchFeatureWall: View {
     let geometry: DocumentLaunchGeometryProxy
 
-    private enum Tile: CaseIterable {
-        case formula, comment, formatting, reference, chart, macro, drawing, sort, filter, swatches
+    private enum Tile {
+        case formula, number, percent, date, boolean
+        case columnChart, lineChart, pieChart
+        case comment, macro, checkBox, picture
     }
 
     /// Each row starts at a different tile so no two neighbours repeat. Rows
     /// run wider than the screen and are cut off at its edges, like a wall
     /// that carries on out of frame.
     private let rows: [[Tile]] = [
-        [.formula, .comment, .formatting, .reference, .chart, .macro, .drawing],
-        [.chart, .macro, .drawing, .sort, .filter, .swatches, .formula],
-        [.sort, .filter, .swatches, .formula, .comment, .formatting, .reference],
-        [.reference, .drawing, .macro, .filter, .chart, .comment, .swatches],
+        [.formula, .number, .columnChart, .comment, .date, .pieChart, .macro],
+        [.lineChart, .percent, .checkBox, .formula, .picture, .boolean, .number],
+        [.date, .pieChart, .macro, .columnChart, .percent, .comment, .checkBox],
+        [.picture, .boolean, .number, .lineChart, .formula, .pieChart, .date],
     ]
 
     private let tileHeight = 40.0
@@ -131,15 +133,17 @@ struct DocumentLaunchFeatureWall: View {
     private func tile(_ tile: Tile) -> some View {
         switch tile {
         case .formula: formulaTile
+        case .number: valueTile("1,280.50")
+        case .percent: valueTile("12.5%")
+        case .date: valueTile("2026-10-07")
+        case .boolean: valueTile("TRUE")
+        case .columnChart: columnChartTile
+        case .lineChart: lineChartTile
+        case .pieChart: pieChartTile
         case .comment: symbolTile("text.bubble.fill", color: .orange)
-        case .formatting: formattingTile
-        case .reference: referenceTile
-        case .chart: chartTile
         case .macro: macroTile
-        case .drawing: symbolTile("pencil.tip", color: .pink)
-        case .sort: symbolTile("arrow.up.arrow.down", color: .blue)
-        case .filter: symbolTile("line.3.horizontal.decrease", color: .teal)
-        case .swatches: swatchTile
+        case .checkBox: symbolTile("checkmark.square.fill", color: .blue)
+        case .picture: symbolTile("photo.fill", color: .cyan)
         }
     }
 
@@ -158,6 +162,16 @@ struct DocumentLaunchFeatureWall: View {
         }
     }
 
+    /// A cell's value. Numbers, dates and booleans rather than words, so the
+    /// wall reads the same in every language.
+    private func valueTile(_ value: String) -> some View {
+        tile {
+            Text(verbatim: value)
+                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                .foregroundStyle(.primary)
+        }
+    }
+
     private var formulaTile: some View {
         tile {
             HStack(spacing: 6) {
@@ -168,26 +182,6 @@ struct DocumentLaunchFeatureWall: View {
                     .font(.system(size: 13, weight: .medium, design: .monospaced))
                     .foregroundStyle(.primary)
             }
-        }
-    }
-
-    private var referenceTile: some View {
-        tile(width: 44) {
-            Text(verbatim: "A1")
-                .font(.system(size: 14, weight: .bold, design: .rounded))
-                .foregroundStyle(.primary)
-        }
-    }
-
-    private var formattingTile: some View {
-        tile {
-            HStack(spacing: 10) {
-                Text(verbatim: "B").bold()
-                Text(verbatim: "I").italic()
-                Text(verbatim: "U").underline()
-            }
-            .font(.system(size: 15, design: .serif))
-            .foregroundStyle(.primary)
         }
     }
 
@@ -204,11 +198,12 @@ struct DocumentLaunchFeatureWall: View {
         }
     }
 
-    private var chartTile: some View {
+    // The charts use system colours, which already adapt to dark mode, and
+    // none of them green so they stand apart from the backdrop.
+
+    private var columnChartTile: some View {
         tile(width: 60) {
             HStack(alignment: .bottom, spacing: 4) {
-                // System colours, which already adapt to dark mode, and none of
-                // them green so the bars stand apart from the backdrop.
                 ForEach(Array(zip([0.45, 0.8, 0.6, 1.0], [Color.blue, .orange, .pink, .purple])), id: \.0) { height, color in
                     Capsule()
                         .fill(color)
@@ -218,16 +213,31 @@ struct DocumentLaunchFeatureWall: View {
         }
     }
 
-    private var swatchTile: some View {
-        tile {
-            HStack(spacing: -4) {
-                ForEach([Color.red, .yellow, .cyan], id: \.self) { color in
-                    Circle()
-                        .fill(color)
-                        .stroke(Color(.secondarySystemGroupedBackground), lineWidth: 2)
-                        .frame(width: 18, height: 18)
+    private var lineChartTile: some View {
+        tile(width: 60) {
+            Path { path in
+                let points = [0.2, 0.55, 0.35, 0.8, 0.6, 1.0]
+                for (index, value) in points.enumerated() {
+                    let point = CGPoint(x: Double(index) * 7, y: 20 * (1 - value))
+                    if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
                 }
             }
+            .stroke(.blue, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+            .frame(width: 35, height: 20)
+        }
+    }
+
+    private var pieChartTile: some View {
+        tile(width: tileHeight) {
+            ZStack {
+                ForEach(Array(zip([(0.0, 0.45), (0.45, 0.75), (0.75, 1.0)], [Color.orange, .pink, .purple])), id: \.0.0) { slice, color in
+                    Circle()
+                        .trim(from: slice.0, to: slice.1)
+                        .stroke(color, lineWidth: 10)
+                        .rotationEffect(.degrees(-90))
+                }
+            }
+            .frame(width: 10, height: 10)
         }
     }
 }
