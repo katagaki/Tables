@@ -144,10 +144,10 @@ struct DocumentLaunchOverlay: View {
         HStack(spacing: 6) {
             Text(verbatim: "fx")
                 .font(.system(size: 12, weight: .semibold, design: .serif).italic())
-                .foregroundStyle(DocumentLaunch.ink.opacity(0.7))
+                .foregroundStyle(.secondary)
             Text(verbatim: "=SUM(B2:B9)")
                 .font(.system(size: 13, weight: .medium, design: .monospaced))
-                .foregroundStyle(DocumentLaunch.ink)
+                .foregroundStyle(.primary)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -157,7 +157,7 @@ struct DocumentLaunchOverlay: View {
     private var referenceChip: some View {
         Text(verbatim: "A1")
             .font(.system(size: 14, weight: .bold, design: .rounded))
-            .foregroundStyle(DocumentLaunch.ink)
+            .foregroundStyle(.primary)
             .frame(width: 44, height: 32)
             .background(DocumentLaunch.ink.opacity(0.14), in: .rect(cornerRadius: 10))
     }
