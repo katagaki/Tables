@@ -102,6 +102,16 @@ struct DocumentLaunchFeatureWall: View {
     /// row patterns, so the wall does not visibly repeat on a tall screen.
     private let rowOffsets: [Double] = [-16, -44, -28, -8, -36]
 
+    /// How fast each row drifts, in points a second. Neighbouring rows drift
+    /// opposite ways at slightly different paces, slowly enough that the wall
+    /// stays a backdrop. Three speeds against five offsets, so rows that start
+    /// alike do not move alike.
+    private let rowSpeeds: [Double] = [-7, 5, -6]
+
+    /// How many times a row's pattern repeats: enough that, with a row drifted
+    /// a whole pattern along, the rest still spans the widest iPad.
+    private let copies = 4
+
     var body: some View {
         // The wall fills the launch area from the top and fades out above the
         // browser, rather than being fitted around the button: the system
@@ -117,14 +127,19 @@ struct DocumentLaunchFeatureWall: View {
                 let pattern = rows[index % rows.count]
                 let shift = (index / rows.count * 3) % pattern.count
                 let rotated = Array(pattern[shift...] + pattern[..<shift])
-                let tiles = Array(repeating: rotated, count: 3).flatMap { $0 }
-                HStack(spacing: spacing) {
-                    ForEach(tiles.indices, id: \.self) { position in
-                        tile(tiles[position])
+                let tiles = Array(repeating: rotated, count: copies).flatMap { $0 }
+                DriftingRow(
+                    start: rowOffsets[index % rowOffsets.count],
+                    speed: rowSpeeds[index % rowSpeeds.count],
+                    copies: copies,
+                    spacing: spacing
+                ) {
+                    HStack(spacing: spacing) {
+                        ForEach(tiles.indices, id: \.self) { position in
+                            tile(tiles[position])
+                        }
                     }
                 }
-                .fixedSize()
-                .offset(x: rowOffsets[index % rowOffsets.count])
             }
         }
         .padding(.top, spacing)
@@ -385,5 +400,40 @@ struct DocumentLaunchFeatureWall: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+/// A row of the feature wall that drifts sideways forever. Its tiles are one
+/// pattern repeated, so once it has moved a pattern's width it looks as it did
+/// at the start and wraps back without a seam. Holds still with Reduce Motion.
+private struct DriftingRow<Content: View>: View {
+    let start: Double
+    /// Points a second; negative drifts towards the leading edge.
+    let speed: Double
+    let copies: Int
+    let spacing: Double
+    @ViewBuilder let content: Content
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var width = 0.0
+
+    var body: some View {
+        TimelineView(.animation(paused: reduceMotion)) { context in
+            content
+                .fixedSize()
+                .onGeometryChange(for: Double.self) { $0.size.width } action: { width = $0 }
+                .offset(x: offset(at: context.date))
+        }
+    }
+
+    private func offset(at date: Date) -> Double {
+        // The width of one pattern, including the gap before the next copy.
+        let period = (width + spacing) / Double(copies)
+        guard !reduceMotion, period > 0 else { return start }
+        // Measured from a fixed date rather than from when the row appeared,
+        // so rows rebuilt by a layout change carry on where they were.
+        let travelled = (date.timeIntervalSinceReferenceDate * abs(speed))
+            .truncatingRemainder(dividingBy: period)
+        return speed < 0 ? start - travelled : start - period + travelled
     }
 }
