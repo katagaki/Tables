@@ -94,8 +94,8 @@ struct DocumentLaunchFeatureWall: View {
     /// open on a small icon tile, which loses little to the edge.
     private let rows: [[Tile]] = [
         [.formula("=SUM(B2:B9)"), .columnChart, .value("1,280.50"), .comment,
-         .doughnutChart, .value("2026-10-07"), .macro("Sub Main()"), .dataBar],
-        [.checkBox, .table, .value("12.5%"), .scatterChart,
+         .doughnutChart, .value("2026-10-07"), .value("12.5%"), .dataBar],
+        [.checkBox, .table, .macro("Sub Main()"), .scatterChart,
          .formula("=AVERAGE(C2:C31)"), .picture, .value("TRUE"), .lineChart],
         [.value("09:30"), .areaChart, .dropDown, .colorScale,
          .formula("=TODAY()"), .pieChart, .value("-42.00"), .optionButton],
