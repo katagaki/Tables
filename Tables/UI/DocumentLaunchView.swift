@@ -1,12 +1,11 @@
 import SwiftUI
 
 /// The pieces of the document picker's top area: a green field ruled like a
-/// sheet, the app's table glyph above the title, and a few cells of work
-/// floating around it.
+/// sheet, with a few cells of work set beside the title.
 enum DocumentLaunch {
     /// A wash of the app icon's green, kept quiet: near white in light mode,
     /// near black in dark, so the system's black or white title reads over it
-    /// and the colour comes from the artwork rather than the whole page.
+    /// and the colour stays a backdrop rather than the whole page.
     static let topColor = adaptive(
         light: UIColor(red: 0.86, green: 0.95, blue: 0.89, alpha: 1),
         dark: UIColor(red: 0.07, green: 0.20, blue: 0.13, alpha: 1)
@@ -15,7 +14,7 @@ enum DocumentLaunch {
         light: UIColor(red: 0.95, green: 0.98, blue: 0.96, alpha: 1),
         dark: UIColor(red: 0.04, green: 0.09, blue: 0.06, alpha: 1)
     )
-    /// The colour the glyph, chips and gridlines are drawn in.
+    /// The colour the gridlines are drawn in.
     static let ink = adaptive(
         light: UIColor(red: 0.10, green: 0.56, blue: 0.31, alpha: 1),
         dark: UIColor(red: 0.66, green: 0.90, blue: 0.75, alpha: 1)
@@ -66,44 +65,8 @@ struct DocumentLaunchBackground: View {
     }
 }
 
-/// The table glyph from the app icon — two columns by three rows, rounded
-/// only at the outer corners — drawn above the title.
-struct DocumentLaunchGlyph: View {
-    /// Each cell's opacity, row by row, matching the icon artwork.
-    private let opacities: [[Double]] = [[0.95, 0.55], [0.72, 0.95], [0.45, 0.78]]
-    var cellSize = CGSize(width: 56, height: 30)
-    var spacing = 3.0
-    var cornerRadius = 9.0
-
-    var body: some View {
-        VStack(spacing: spacing) {
-            ForEach(0..<3, id: \.self) { row in
-                HStack(spacing: spacing) {
-                    ForEach(0..<2, id: \.self) { column in
-                        UnevenRoundedRectangle(cornerRadii: corners(row: row, column: column))
-                            .fill(DocumentLaunch.ink.opacity(opacities[row][column]))
-                            .frame(width: cellSize.width, height: cellSize.height)
-                    }
-                }
-            }
-        }
-        .accessibilityHidden(true)
-    }
-
-    private func corners(row: Int, column: Int) -> RectangleCornerRadii {
-        let top = row == 0, bottom = row == 2
-        let leading = column == 0, trailing = column == 1
-        return RectangleCornerRadii(
-            topLeading: top && leading ? cornerRadius : 0,
-            bottomLeading: bottom && leading ? cornerRadius : 0,
-            bottomTrailing: bottom && trailing ? cornerRadius : 0,
-            topTrailing: top && trailing ? cornerRadius : 0
-        )
-    }
-}
-
-/// The table glyph with a formula, a reference and a small chart set flat
-/// around it, in the empty space beside the leading-aligned title.
+/// A formula, a reference and a small chart set flat in the empty space
+/// beside the leading-aligned title.
 /// Decoration only, so hidden from VoiceOver.
 struct DocumentLaunchOverlay: View {
     let geometry: DocumentLaunchGeometryProxy
@@ -115,28 +78,17 @@ struct DocumentLaunchOverlay: View {
         // edge where a short title leaves room.
         let bandTop = geometry.frame.minY
         let bandBottom = geometry.titleViewFrame.minY + 90
-        let center = CGPoint(
-            x: geometry.frame.maxX - 96,
-            y: (bandTop + bandBottom) / 2
-        )
+        let width = 200.0
 
-        ZStack {
-            DocumentLaunchGlyph()
-                .position(center)
-
-            // The chips line up against the glyph's edges, 10pt clear of it:
-            // the formula with its top, the reference with its bottom, and the
-            // chart beneath it with its trailing edge.
+        VStack(alignment: .trailing, spacing: 10) {
             formulaChip
-                .frame(width: 200, alignment: .trailing)
-                .position(x: center.x - 168, y: center.y - 32)
-
-            referenceChip
-                .position(x: center.x - 90, y: center.y + 32)
-
-            chartChip
-                .position(x: center.x + 28, y: center.y + 81)
+            HStack(alignment: .bottom, spacing: 10) {
+                referenceChip
+                chartChip
+            }
         }
+        .frame(width: width, alignment: .trailing)
+        .position(x: geometry.frame.maxX - 24 - width / 2, y: (bandTop + bandBottom) / 2)
         .accessibilityHidden(true)
     }
 
