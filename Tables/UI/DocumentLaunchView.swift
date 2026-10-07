@@ -151,7 +151,7 @@ struct DocumentLaunchOverlay: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(DocumentLaunch.ink.opacity(0.14), in: .capsule)
+        .background(Color(.secondarySystemGroupedBackground), in: .capsule)
     }
 
     private var referenceChip: some View {
@@ -159,7 +159,7 @@ struct DocumentLaunchOverlay: View {
             .font(.system(size: 14, weight: .bold, design: .rounded))
             .foregroundStyle(.primary)
             .frame(width: 44, height: 32)
-            .background(DocumentLaunch.ink.opacity(0.14), in: .rect(cornerRadius: 10))
+            .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 10))
     }
 
     private var chartChip: some View {
@@ -173,6 +173,6 @@ struct DocumentLaunchOverlay: View {
             }
         }
         .frame(width: 60, height: 46)
-        .background(DocumentLaunch.ink.opacity(0.14), in: .rect(cornerRadius: 12))
+        .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 12))
     }
 }
