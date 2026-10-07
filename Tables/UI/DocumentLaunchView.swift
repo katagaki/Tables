@@ -102,15 +102,19 @@ struct DocumentLaunchFeatureWall: View {
     /// row patterns, so the wall does not visibly repeat on a tall screen.
     private let rowOffsets: [Double] = [-16, -44, -28, -8, -36]
 
-    /// How fast each row drifts, in points a second. Neighbouring rows drift
-    /// opposite ways at slightly different paces, slowly enough that the wall
-    /// stays a backdrop. Three speeds against five offsets, so rows that start
-    /// alike do not move alike.
-    private let rowSpeeds: [Double] = [-7, 5, -6]
+    /// How the wall comes in: tiles fly in from just off the screen's edge,
+    /// neighbouring rows from opposite sides, then the wall holds still.
+    /// Each row starts a little after the one above it, and within a row the
+    /// tiles that go furthest land first, so none passes over one that is
+    /// already in place.
+    private let rowStagger = 0.06
+    private let tileStagger = 0.45
+    private let tileFlight = 0.7
 
-    /// How many times a row's pattern repeats: enough that, with a row drifted
-    /// a whole pattern along, the rest still spans the widest iPad.
-    private let copies = 4
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// How far through the wall's entrance, from 0 to 1. Animated once, in
+    /// a straight line; each tile eases within its own slice of it.
+    @State private var entrance = 0.0
 
     var body: some View {
         // The wall fills the launch area from the top and fades out above the
@@ -127,23 +131,28 @@ struct DocumentLaunchFeatureWall: View {
                 let pattern = rows[index % rows.count]
                 let shift = (index / rows.count * 3) % pattern.count
                 let rotated = Array(pattern[shift...] + pattern[..<shift])
-                let tiles = Array(repeating: rotated, count: copies).flatMap { $0 }
-                DriftingRow(
-                    start: rowOffsets[index % rowOffsets.count],
-                    speed: rowSpeeds[index % rowSpeeds.count],
-                    copies: copies,
-                    spacing: spacing
-                ) {
-                    HStack(spacing: spacing) {
-                        ForEach(tiles.indices, id: \.self) { position in
-                            tile(tiles[position])
-                        }
+                let tiles = Array(repeating: rotated, count: 3).flatMap { $0 }
+                HStack(spacing: spacing) {
+                    ForEach(tiles.indices, id: \.self) { position in
+                        tile(tiles[position])
+                            .modifier(TileEntrance(
+                                elapsed: entrance * entranceDuration(rowCount: rowCount),
+                                rowDelay: Double(index) * rowStagger,
+                                tileStagger: tileStagger,
+                                flight: tileFlight,
+                                fromTrailing: index.isMultiple(of: 2),
+                                wallWidth: frame.width,
+                                coordinateSpace: Self.coordinateSpace
+                            ))
                     }
                 }
+                .fixedSize()
+                .offset(x: rowOffsets[index % rowOffsets.count])
             }
         }
         .padding(.top, spacing)
         .frame(width: frame.width, height: frame.height, alignment: .topLeading)
+        .coordinateSpace(.named(Self.coordinateSpace))
         .clipped()
         .mask {
             LinearGradient(
@@ -159,7 +168,20 @@ struct DocumentLaunchFeatureWall: View {
         .compositingGroup()
         .opacity(0.35)
         .position(x: frame.midX, y: frame.midY)
+        // With Reduce Motion the tiles stay put and the wall only fades in.
+        .opacity(reduceMotion && entrance == 0 ? 0 : 1)
         .accessibilityHidden(true)
+        .onAppear {
+            withAnimation(reduceMotion ? .easeIn(duration: 0.4) : .linear(duration: entranceDuration(rowCount: rowCount))) {
+                entrance = 1
+            }
+        }
+    }
+
+    private static let coordinateSpace = "DocumentLaunchFeatureWall"
+
+    private func entranceDuration(rowCount: Int) -> Double {
+        Double(rowCount - 1) * rowStagger + tileStagger + tileFlight
     }
 
     /// Where, down the launch area, the wall starts and finishes fading. The
@@ -403,37 +425,39 @@ struct DocumentLaunchFeatureWall: View {
     }
 }
 
-/// A row of the feature wall that drifts sideways forever. Its tiles are one
-/// pattern repeated, so once it has moved a pattern's width it looks as it did
-/// at the start and wraps back without a seam. Holds still with Reduce Motion.
-private struct DriftingRow<Content: View>: View {
-    let start: Double
-    /// Points a second; negative drifts towards the leading edge.
-    let speed: Double
-    let copies: Int
-    let spacing: Double
-    @ViewBuilder let content: Content
+/// Flies a tile of the feature wall in from just off the screen's left or
+/// right edge. When it sets off depends on where it lands: the tiles that
+/// travel furthest go first, so the row fills from the far side.
+// Nonisolated so SwiftUI can read the animated value off the main actor.
+private nonisolated struct TileEntrance: ViewModifier, Animatable {
+    /// Seconds into the wall's entrance.
+    var elapsed: Double
+    let rowDelay: Double
+    let tileStagger: Double
+    let flight: Double
+    let fromTrailing: Bool
+    let wallWidth: Double
+    let coordinateSpace: String
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var width = 0.0
-
-    var body: some View {
-        TimelineView(.animation(paused: reduceMotion)) { context in
-            content
-                .fixedSize()
-                .onGeometryChange(for: Double.self) { $0.size.width } action: { width = $0 }
-                .offset(x: offset(at: context.date))
-        }
+    var animatableData: Double {
+        get { elapsed }
+        set { elapsed = newValue }
     }
 
-    private func offset(at date: Date) -> Double {
-        // The width of one pattern, including the gap before the next copy.
-        let period = (width + spacing) / Double(copies)
-        guard !reduceMotion, period > 0 else { return start }
-        // Measured from a fixed date rather than from when the row appeared,
-        // so rows rebuilt by a layout change carry on where they were.
-        let travelled = (date.timeIntervalSinceReferenceDate * abs(speed))
-            .truncatingRemainder(dividingBy: period)
-        return speed < 0 ? start - travelled : start - period + travelled
+    @MainActor
+    func body(content: Content) -> some View {
+        content.visualEffect { [elapsed, rowDelay, tileStagger, flight, fromTrailing, wallWidth, coordinateSpace] content, proxy in
+            let frame = proxy.frame(in: .named(coordinateSpace))
+            // How far across the wall the tile lands, measured from the edge
+            // it comes in from. Tiles that land out of frame count as on the
+            // edge, so they go last and are never waited on.
+            let across = min(max(frame.minX / max(wallWidth, 1), 0), 1)
+            let fromEdge = fromTrailing ? 1 - across : across
+            let start = rowDelay + (1 - fromEdge) * tileStagger
+            let progress = min(max((elapsed - start) / flight, 0), 1)
+            let eased = 1 - pow(1 - progress, 3)
+            let distance = fromTrailing ? wallWidth - frame.minX : -frame.maxX
+            return content.offset(x: distance * (1 - eased))
+        }
     }
 }
