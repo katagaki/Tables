@@ -102,12 +102,11 @@ struct DocumentLaunchFeatureWall: View {
     /// row patterns, so the wall does not visibly repeat on a tall screen.
     private let rowOffsets: [Double] = [-16, -44, -28, -8, -36]
 
-    /// How the wall comes in: each row eases a short way in from the side as
-    /// it fades in, neighbouring rows from opposite sides, a row at a time
-    /// from the top. Then the wall holds still.
+    /// How the wall comes in: every row at once, each easing a short way in
+    /// from the side as it fades in, neighbouring rows from opposite sides.
+    /// Then the wall holds still.
     private let entranceSlide = 32.0
     private let entranceDuration = 1.6
-    private let rowStagger = 0.15
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Whether the rows have come in. Rows laid out after that, as when the
@@ -140,7 +139,7 @@ struct DocumentLaunchFeatureWall: View {
                 // With Reduce Motion the rows only fade in.
                 .offset(x: isRevealed || reduceMotion ? 0 : (index.isMultiple(of: 2) ? entranceSlide : -entranceSlide))
                 .opacity(isRevealed ? 1 : 0)
-                .animation(.easeOut(duration: entranceDuration).delay(Double(index) * rowStagger), value: isRevealed)
+                .animation(.easeOut(duration: entranceDuration), value: isRevealed)
             }
         }
         .padding(.top, spacing)
