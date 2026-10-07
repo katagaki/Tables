@@ -503,9 +503,11 @@ private nonisolated struct TileEntrance: ViewModifier, Animatable {
     func body(content: Content) -> some View {
         content.visualEffect { [elapsed, rowDelay, tileStagger, flight, fromTrailing, wallWidth, coordinateSpace] content, proxy in
             let frame = proxy.frame(in: .named(coordinateSpace))
+            // Tiles that land out of frame are never seen, so they stay put
+            // rather than sweeping across the wall to get there.
+            guard frame.maxX > 0, frame.minX < wallWidth else { return content.offset(x: 0) }
             // How far across the wall the tile lands, measured from the edge
-            // it comes in from. Tiles that land out of frame count as on the
-            // edge, so they go last and are never waited on.
+            // it comes in from.
             let across = min(max(frame.minX / max(wallWidth, 1), 0), 1)
             let fromEdge = fromTrailing ? 1 - across : across
             let start = rowDelay + (1 - fromEdge) * tileStagger
