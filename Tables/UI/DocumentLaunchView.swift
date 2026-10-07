@@ -65,66 +65,135 @@ struct DocumentLaunchBackground: View {
     }
 }
 
-/// A formula, a reference and a small chart set flat in the empty space
-/// beside the leading-aligned title.
-/// Decoration only, so hidden from VoiceOver.
+/// A wall of small tiles, one per thing Tables does — formulas, charts,
+/// comments, macros, formatting, sorting and filtering, drawing and Shortcuts —
+/// set flat in the empty space beside the leading-aligned title. Decoration
+/// only, so hidden from VoiceOver.
 struct DocumentLaunchOverlay: View {
     let geometry: DocumentLaunchGeometryProxy
 
-    var body: some View {
-        // The title frame spans the title and the actions beneath it, so the
-        // title's own line sits near its top. The scene centres in the band
-        // from the top of the launch area down to that line, at the trailing
-        // edge where a short title leaves room.
-        let bandTop = geometry.frame.minY
-        let bandBottom = geometry.titleViewFrame.minY + 90
-        let width = 200.0
+    private let tileHeight = 40.0
+    private let spacing = 8.0
 
-        VStack(alignment: .trailing, spacing: 10) {
-            formulaChip
-            HStack(alignment: .bottom, spacing: 10) {
-                referenceChip
-                chartChip
+    var body: some View {
+        // The title frame spans the title and the actions beneath it; the
+        // title's own line sits about 90pt below its top. The wall's last row
+        // shares that line, beside the title, and the rows above it stack up
+        // towards the top of the launch area.
+        let titleLine = geometry.titleViewFrame.minY + 90
+        let width = geometry.frame.width - 48
+
+        VStack(alignment: .trailing, spacing: spacing) {
+            HStack(spacing: spacing) {
+                formulaTile
+                symbolTile("text.bubble.fill", color: .orange)
+                formattingTile
+            }
+            HStack(spacing: spacing) {
+                referenceTile
+                chartTile
+                macroTile
+                symbolTile("pencil.tip", color: .pink)
+            }
+            HStack(spacing: spacing) {
+                symbolTile("arrow.up.arrow.down", color: .blue)
+                symbolTile("line.3.horizontal.decrease", color: .teal)
+                swatchTile
             }
         }
         .frame(width: width, alignment: .trailing)
-        .position(x: geometry.frame.maxX - 24 - width / 2, y: (bandTop + bandBottom) / 2)
+        .position(
+            x: geometry.frame.midX,
+            y: titleLine - (tileHeight + spacing)
+        )
         .accessibilityHidden(true)
     }
 
-    private var formulaChip: some View {
-        HStack(spacing: 6) {
-            Text(verbatim: "fx")
-                .font(.system(size: 12, weight: .semibold, design: .serif).italic())
-                .foregroundStyle(.secondary)
-            Text(verbatim: "=SUM(B2:B9)")
-                .font(.system(size: 13, weight: .medium, design: .monospaced))
-                .foregroundStyle(.primary)
+    private func tile(width: CGFloat? = nil, @ViewBuilder content: () -> some View) -> some View {
+        content()
+            .padding(.horizontal, width == nil ? 12 : 0)
+            .frame(width: width, height: tileHeight)
+            .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 12))
+    }
+
+    private func symbolTile(_ name: String, color: Color) -> some View {
+        tile(width: tileHeight) {
+            Image(systemName: name)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(color)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color(.secondarySystemGroupedBackground), in: .capsule)
     }
 
-    private var referenceChip: some View {
-        Text(verbatim: "A1")
-            .font(.system(size: 14, weight: .bold, design: .rounded))
-            .foregroundStyle(.primary)
-            .frame(width: 44, height: 32)
-            .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 10))
-    }
-
-    private var chartChip: some View {
-        HStack(alignment: .bottom, spacing: 4) {
-            // System colours, which already adapt to dark mode, and none of
-            // them green so the bars stand apart from everything around them.
-            ForEach(Array(zip([0.45, 0.8, 0.6, 1.0], [Color.blue, .orange, .pink, .purple])), id: \.0) { height, color in
-                Capsule()
-                    .fill(color)
-                    .frame(width: 6, height: 22 * height)
+    private var formulaTile: some View {
+        tile {
+            HStack(spacing: 6) {
+                Text(verbatim: "fx")
+                    .font(.system(size: 12, weight: .semibold, design: .serif).italic())
+                    .foregroundStyle(.secondary)
+                Text(verbatim: "=SUM(B2:B9)")
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.primary)
             }
         }
-        .frame(width: 60, height: 46)
-        .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 12))
+    }
+
+    private var referenceTile: some View {
+        tile(width: 44) {
+            Text(verbatim: "A1")
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .foregroundStyle(.primary)
+        }
+    }
+
+    private var formattingTile: some View {
+        tile {
+            HStack(spacing: 10) {
+                Text(verbatim: "B").bold()
+                Text(verbatim: "I").italic()
+                Text(verbatim: "U").underline()
+            }
+            .font(.system(size: 15, design: .serif))
+            .foregroundStyle(.primary)
+        }
+    }
+
+    private var macroTile: some View {
+        tile {
+            HStack(spacing: 6) {
+                Image(systemName: "play.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.indigo)
+                Text(verbatim: "Sub Main()")
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.primary)
+            }
+        }
+    }
+
+    private var chartTile: some View {
+        tile(width: 60) {
+            HStack(alignment: .bottom, spacing: 4) {
+                // System colours, which already adapt to dark mode, and none of
+                // them green so the bars stand apart from the backdrop.
+                ForEach(Array(zip([0.45, 0.8, 0.6, 1.0], [Color.blue, .orange, .pink, .purple])), id: \.0) { height, color in
+                    Capsule()
+                        .fill(color)
+                        .frame(width: 6, height: 20 * height)
+                }
+            }
+        }
+    }
+
+    private var swatchTile: some View {
+        tile {
+            HStack(spacing: -4) {
+                ForEach([Color.red, .yellow, .cyan], id: \.self) { color in
+                    Circle()
+                        .fill(color)
+                        .stroke(Color(.secondarySystemGroupedBackground), lineWidth: 2)
+                        .frame(width: 18, height: 18)
+                }
+            }
+        }
     }
 }
