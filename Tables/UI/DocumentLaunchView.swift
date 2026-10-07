@@ -170,12 +170,16 @@ struct DocumentLaunchFeatureWall: View {
         .position(x: frame.midX, y: frame.midY)
         // With Reduce Motion the tiles stay put and the wall only fades in.
         .opacity(reduceMotion && entrance == 0 ? 0 : 1)
-        .accessibilityHidden(true)
-        .onAppear {
+        // The system lays the wall out more than once while the browser loads
+        // and fades it in after, so the tiles wait until it can be seen.
+        // Watched from outside the wall's own fade, which would otherwise
+        // hold it back.
+        .background(DocumentLaunchVisibilityWatcher {
             withAnimation(reduceMotion ? .easeIn(duration: 0.4) : .linear(duration: entranceDuration(rowCount: rowCount))) {
                 entrance = 1
             }
-        }
+        })
+        .accessibilityHidden(true)
     }
 
     private static let coordinateSpace = "DocumentLaunchFeatureWall"
@@ -421,6 +425,57 @@ struct DocumentLaunchFeatureWall: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+}
+
+/// Calls back once, the first time the view it sits behind is fully on
+/// screen: in a window, with nothing above it hidden or faded.
+private struct DocumentLaunchVisibilityWatcher: UIViewRepresentable {
+    var onVisible: () -> Void
+
+    func makeUIView(context: Context) -> WatcherView {
+        let view = WatcherView()
+        view.onVisible = onVisible
+        return view
+    }
+
+    func updateUIView(_ uiView: WatcherView, context: Context) {
+        // Once called back, the watcher has nothing more to do.
+        if uiView.hasCalledBack { return }
+        uiView.onVisible = onVisible
+    }
+
+    final class WatcherView: UIView {
+        var onVisible: (() -> Void)?
+        private(set) var hasCalledBack = false
+        private var displayLink: CADisplayLink?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            displayLink?.invalidate()
+            displayLink = nil
+            guard window != nil, !hasCalledBack else { return }
+            // Checked every frame, since the system fades the wall in by
+            // animating a view above it rather than telling it anything.
+            let link = CADisplayLink(target: self, selector: #selector(check))
+            link.add(to: .main, forMode: .common)
+            displayLink = link
+        }
+
+        @objc private func check() {
+            var view: UIView? = self
+            while let current = view {
+                let opacity = current.layer.presentation()?.opacity ?? current.layer.opacity
+                if current.isHidden || opacity < 0.99 { return }
+                view = current.superview
+            }
+            displayLink?.invalidate()
+            displayLink = nil
+            hasCalledBack = true
+            let onVisible = onVisible
+            self.onVisible = nil
+            onVisible?()
         }
     }
 }
