@@ -40,8 +40,6 @@ struct Screenshot {
     let name: String
     /// Keyed by language code. A language without copy is skipped.
     let copy: [String: Copy]
-    let gradientTop: NSColor
-    let gradientBottom: NSColor
 }
 
 func color(_ hex: UInt32) -> NSColor {
@@ -53,10 +51,10 @@ func color(_ hex: UInt32) -> NSColor {
     )
 }
 
-// The Tables green, the Kivotos sky, and the deep blue of the sheet headers.
-let green = (color(0x4CC38A), color(0x1B7A4E))
-let sky = (color(0x7CC8F8), color(0x2A78D4))
-let navy = (color(0x4F6FB5), color(0x1F3864))
+// The app's accent green, deepening toward the bottom.
+let accent = color(0x2EA666)
+let gradientTop = accent
+let gradientBottom = accent.blended(withFraction: 0.3, of: .black)!
 
 let functionsCopy = [
     "en": Copy(header: "Over 100 functions", caption: "SUMIFS, XLOOKUP, and results as you type"),
@@ -81,13 +79,12 @@ let iPhoneScreenshots = [
         copy: [
             "en": Copy(header: "Your spreadsheets, anywhere", caption: "Open and edit Excel and CSV files"),
             "ja": Copy(header: "表計算を、どこでも", caption: "ExcelやCSVをそのまま開いて編集"),
-        ],
-        gradientTop: sky.0, gradientBottom: sky.1
+        ]
     ),
-    Screenshot(name: "02-functions", copy: functionsCopy, gradientTop: green.0, gradientBottom: green.1),
-    Screenshot(name: "03-format", copy: formatCopy, gradientTop: navy.0, gradientBottom: navy.1),
-    Screenshot(name: "04-number-format", copy: numberFormatCopy, gradientTop: sky.0, gradientBottom: sky.1),
-    Screenshot(name: "05-dark", copy: darkCopy, gradientTop: navy.0, gradientBottom: navy.1),
+    Screenshot(name: "02-functions", copy: functionsCopy),
+    Screenshot(name: "03-format", copy: formatCopy),
+    Screenshot(name: "04-number-format", copy: numberFormatCopy),
+    Screenshot(name: "05-dark", copy: darkCopy),
 ]
 
 let iPadScreenshots = [
@@ -96,21 +93,19 @@ let iPadScreenshots = [
         copy: [
             "en": Copy(header: "Big sheets, on a big screen", caption: "A whole year of figures at a glance"),
             "ja": Copy(header: "大きな画面で、大きな表を", caption: "1年分の数字をひと目で"),
-        ],
-        gradientTop: sky.0, gradientBottom: sky.1
+        ]
     ),
     Screenshot(
         name: "02-clubs",
         copy: [
             "en": Copy(header: "Formulas that keep up", caption: "Totals recalculate the moment you type"),
             "ja": Copy(header: "数式がすぐに反映", caption: "入力したそばから合計を再計算"),
-        ],
-        gradientTop: green.0, gradientBottom: green.1
+        ]
     ),
-    Screenshot(name: "03-functions", copy: functionsCopy, gradientTop: navy.0, gradientBottom: navy.1),
-    Screenshot(name: "04-format", copy: formatCopy, gradientTop: sky.0, gradientBottom: sky.1),
-    Screenshot(name: "05-number-format", copy: numberFormatCopy, gradientTop: green.0, gradientBottom: green.1),
-    Screenshot(name: "06-dark", copy: darkCopy, gradientTop: navy.0, gradientBottom: navy.1),
+    Screenshot(name: "03-functions", copy: functionsCopy),
+    Screenshot(name: "04-format", copy: formatCopy),
+    Screenshot(name: "05-number-format", copy: numberFormatCopy),
+    Screenshot(name: "06-dark", copy: darkCopy),
 ]
 
 // MARK: - Text
@@ -300,7 +295,7 @@ func compose(_ shot: Screenshot, language: String, device: Device) -> Bool {
     let image = NSImage(size: canvasSize)
     image.lockFocus()
 
-    NSGradient(starting: shot.gradientTop, ending: shot.gradientBottom)?
+    NSGradient(starting: gradientTop, ending: gradientBottom)?
         .draw(in: NSRect(origin: .zero, size: canvasSize), angle: -90)
 
     // One-line header and caption. AppKit's origin is bottom-left.
