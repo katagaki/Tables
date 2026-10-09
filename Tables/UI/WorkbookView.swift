@@ -18,6 +18,9 @@ struct WorkbookView: View {
     /// A conversion waiting on the user's say-so because it would drop macros.
     @State private var pendingConversion: DocumentConversion.Target?
     @Environment(\.undoManager) private var undoManager
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
     @Namespace private var panelTransition
 
     private var workbook: Binding<Workbook> { $document.workbook }
@@ -97,8 +100,7 @@ struct WorkbookView: View {
             document.csvExport.sheetIndex = state.activeIndex(in: document.workbook)
         }
         #if os(iOS)
-        .toolbar { undoToolbar }
-        .toolbar { moreToolbar }
+        .toolbar { editorToolbar }
         .sheet(isPresented: $state.isShowingUnsupportedFeatureNotice) {
             UnsupportedFeatureNotice(report: document.unsupportedFeatures)
                 .presentationDetents([.medium])
@@ -250,11 +252,36 @@ struct WorkbookView: View {
     }
 
     #if os(iOS)
+    /// Clipboard, history, Find, then Share sharing a group with "…". An
+    /// iPhone's bar has room for history and "…" only, so there the clipboard,
+    /// Find and Share move into the menu.
+    @ToolbarContentBuilder
+    private var editorToolbar: some ToolbarContent {
+        if horizontalSizeClass != .compact {
+            ToolbarItemGroup(placement: .topBarTrailing) { clipboardButtons }
+            ToolbarSpacer(.fixed, placement: .topBarTrailing)
+        }
+        undoToolbar
+        ToolbarSpacer(.fixed, placement: .topBarTrailing)
+        if horizontalSizeClass != .compact {
+            ToolbarItem(placement: .topBarTrailing) { findButton }
+            ToolbarSpacer(.fixed, placement: .topBarTrailing)
+        }
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            if horizontalSizeClass != .compact {
+                shareButton
+            }
+            moreMenu
+        }
+    }
+
     /// macOS has Undo and Redo in its Edit menu; iOS has nowhere to put them
     /// but here, and a hardware keyboard reaches them through these too.
     @ToolbarContentBuilder
     private var undoToolbar: some ToolbarContent {
-        ToolbarItemGroup(placement: .primaryAction) {
+        // Pinned to the trailing edge: as primary actions the bar would fold
+        // Redo into its own overflow menu once it ran short of room.
+        ToolbarItemGroup(placement: .topBarTrailing) {
             Button("Toolbar.Undo", systemImage: "arrow.uturn.backward") { history.undo() }
                 .disabled(!history.canUndo)
                 .keyboardShortcut("z", modifiers: .command)
@@ -266,28 +293,59 @@ struct WorkbookView: View {
         }
     }
 
-    /// Everything but undo and redo is gathered into the navigation bar's "…"
-    /// menu, so the bar keeps to those two and the menu.
-    @ToolbarContentBuilder
-    private var moreToolbar: some ToolbarContent {
-        ToolbarItemGroup(placement: .secondaryAction) {
+    @ViewBuilder
+    private var clipboardButtons: some View {
+        Button("CellMenu.Cut", systemImage: "scissors") {
+            state.cutSelection(in: &document.workbook)
+        }
+        .accessibilityIdentifier("cut")
+        Button("CellMenu.Copy", systemImage: "doc.on.doc") {
+            state.copySelection(in: document.workbook)
+        }
+        .accessibilityIdentifier("copy")
+        Button("CellMenu.Paste", systemImage: "doc.on.clipboard") {
+            state.paste(in: &document.workbook)
+        }
+        .accessibilityIdentifier("paste")
+    }
+
+    private var shareButton: some View {
+        ShareLink(item: export, preview: SharePreview(export.name, image: Image(systemName: "tablecells"))) {
+            Label("Toolbar.Share.Label", systemImage: "square.and.arrow.up")
+        }
+        .accessibilityIdentifier("share")
+    }
+
+    private var findButton: some View {
+        Button("Toolbar.Find", systemImage: "magnifyingglass") {
+            state.presentedPanel = .find
+        }
+        .keyboardShortcut("f", modifiers: .command)
+        .accessibilityIdentifier("find")
+    }
+
+    /// The "…" menu. A menu of its own rather than secondary actions, which an
+    /// iPad's document bar lays out across the middle instead of folding away.
+    private var moreMenu: some View {
+        Menu("Toolbar.More", systemImage: "ellipsis") {
+            if horizontalSizeClass == .compact {
+                Section { clipboardButtons }
+                Section { findButton }
+                Section { shareButton }
+            }
             Section {
-                ShareLink(item: export, preview: SharePreview(export.name, image: Image(systemName: "tablecells"))) {
-                    Label("Toolbar.Share.Label", systemImage: "square.and.arrow.up")
-                }
                 if !document.unsupportedFeatures.isEmpty {
                     Button("Toolbar.UnsupportedFeatures.Label", systemImage: "exclamationmark.triangle") {
                         state.isShowingUnsupportedFeatureNotice = true
                     }
                     .accessibilityIdentifier("unsupportedFeatures")
                 }
-            }
-            Section {
                 Link(destination: URL(string: "https://github.com/katagaki/Tables")!) {
                     Label("Toolbar.SourceCode", systemImage: "chevron.left.forwardslash.chevron.right")
                 }
             }
         }
+        .accessibilityIdentifier("more")
     }
     #endif
 
