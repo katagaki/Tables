@@ -167,6 +167,7 @@ struct WorkbookView: View {
         case .functions: FunctionsPanel(workbook: workbook, state: state)
         case .chart: ChartPanel(workbook: workbook, state: state)
         case .comment: CommentPanel(workbook: workbook, state: state)
+        case .find: FindPanel(workbook: workbook, state: state)
         }
     }
 
@@ -175,7 +176,7 @@ struct WorkbookView: View {
     private func panelDetents(_ panel: EditorPanel) -> Set<PresentationDetent> {
         switch panel {
         case .format, .numberFormat, .rowsAndColumns: return [.medium]
-        case .functions, .chart, .comment: return [.medium, .large]
+        case .functions, .chart, .comment, .find: return [.medium, .large]
         }
     }
     #endif
